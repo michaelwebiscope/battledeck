@@ -1,0 +1,16 @@
+# Copy to terraform.tfvars and fill in values
+
+azure_region   = "eastus"
+environment    = "prod"
+project_name   = "navalarchive"
+
+# Use existing resource group (required if you can't create resource groups)
+resource_group_name = "NE-LAB"
+
+# App Service (requires resource group create permission) or VM
+use_app_service = false
+
+# For VM deployment (use_app_service = false), set:
+vm_admin_username = "azureadmin"
+vm_admin_password = "YourSecurePassword123!"
+vm_size           = "Standard_B2s"
