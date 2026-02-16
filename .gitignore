@@ -1,5 +1,8 @@
-# Terraform (infra config, not app code)
+# Infra/deployment (not required to run app)
 terraform/
+docs/
+puppet/
+scripts/
 
 # Database
 *.db
