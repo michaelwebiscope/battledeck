@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('partials/head') %>
+</head>
+<body>
+  <%- include('partials/header') %>
+  <main>
+    <div class="container py-4">
+      <h1 class="mb-4">Live Battle</h1>
+      <p class="text-muted mb-4">Mission Control — Join the live naval exercise. Click rapidly to simulate multiple users joining at once.</p>
+      <div class="card">
+        <div class="card-body text-center py-5">
+          <h3 class="mb-4">Ready to Join?</h3>
+          <button id="joinBtn" class="btn btn-success btn-lg px-5 py-3">JOIN LIVE EXERCISE</button>
+          <div id="status" class="mt-4"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+  <%- include('partials/footer') %>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    document.getElementById('joinBtn').addEventListener('click', function() {
+      const status = document.getElementById('status');
+      status.innerHTML = '<span class="text-muted">Joining...</span>';
+      fetch('/simulation/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userName: 'Visitor_' + Date.now() })
+      })
+      .then(r => r.json().catch(() => ({})))
+      .then(data => {
+        status.innerHTML = data.message
+          ? '<span class="text-success">' + data.message + '</span>'
+          : '<span class="text-danger">Error: ' + (data.error || 'Failed to join') + '</span>';
+      })
+      .catch(err => {
+        status.innerHTML = '<span class="text-danger">Error: ' + (err.message || 'Failed to join') + '</span>';
+      });
+    });
+  </script>
+</body>
+</html>

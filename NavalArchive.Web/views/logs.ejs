@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('partials/head') %>
+</head>
+<body>
+  <%- include('partials/header') %>
+  <main>
+    <div class="container py-4">
+      <h1 class="mb-4">Daily Logs</h1>
+      <p class="text-muted mb-4">Search the Captain's Logs — content from Wikipedia naval battle articles. Try: Bismarck, Midway, Yamato, Enterprise, Pearl Harbor, Leyte Gulf</p>
+      <div class="card mb-4">
+        <div class="card-body">
+          <form id="logSearchForm" method="POST" action="/logs/search" class="row g-2">
+            <div class="col">
+              <input type="text" name="query" id="logQuery" class="form-control form-control-lg" placeholder="Enter search term... (press Enter to search)" value="<%= typeof query !== 'undefined' ? query : '' %>" autofocus>
+            </div>
+            <div class="col-auto">
+              <button type="submit" class="btn btn-dark btn-lg">Search</button>
+            </div>
+          </form>
+        </div>
+      </div>
+      <% if (typeof error !== 'undefined' && error) { %>
+        <div class="alert alert-danger"><%= error %></div>
+      <% } %>
+      <div id="logResults"></div>
+
+      <div class="modal fade" id="dayLogModal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title" id="dayLogModalTitle">Full Day Log</h5>
+              <button type="button" class="btn btn-outline-light btn-sm me-2" id="dayLogCopyBtn" title="Copy to clipboard">📋 Copy</button>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+              <p class="text-muted small mb-2" id="dayLogSource"></p>
+              <div id="dayLogEntries" class="font-monospace small"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+  <%- include('partials/footer') %>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    (function() {
+      var input = document.getElementById('logQuery');
+      var results = document.getElementById('logResults');
+      var form = document.getElementById('logSearchForm');
+      var debounceTimer;
+
+      function getQueryFromUrl() {
+        var params = new URLSearchParams(window.location.search);
+        return params.get('q') || '';
+      }
+
+      function setQueryInUrl(q) {
+        var url = new URL(window.location);
+        if (q) url.searchParams.set('q', q);
+        else url.searchParams.delete('q');
+        window.history.replaceState({}, '', url.toString());
+      }
+
+      if (input && getQueryFromUrl()) {
+        input.value = getQueryFromUrl();
+        debounceTimer = setTimeout(doSearch, 0);
+      }
+
+      function renderResults(data) {
+        var html = '';
+        if (data.matches > 0 || data.message) {
+          html = '<div class="card"><div class="card-header">Search Results</div><div class="card-body">';
+          html += '<p class="mb-3"><strong>Matches found:</strong> ' + data.matches + '</p>';
+          if (data.excerpts && data.excerpts.length > 0) {
+            html += '<div class="list-group list-group-flush">';
+            data.excerpts.forEach(function(item, idx) {
+              var excerpt = typeof item === 'string' ? item : item.excerpt;
+              var shipName = typeof item === 'object' ? item.shipName : null;
+              var logDate = typeof item === 'object' ? item.logDate : null;
+              var clickable = shipName && logDate;
+              var itemClass = clickable ? 'list-group-item px-0 list-group-item-action cursor-pointer' : 'list-group-item px-0';
+              var dataAttrs = clickable ? ' data-ship="' + escapeHtml(shipName) + '" data-date="' + escapeHtml(logDate) + '"' : '';
+              html += '<div class="' + itemClass + '"' + dataAttrs + ' title="' + (clickable ? 'Click to view full day log' : '') + '"><p class="mb-0 font-monospace small">' + escapeHtml(excerpt) + '</p></div>';
+            });
+            html += '</div>';
+            if (data.matches > data.excerpts.length) {
+              html += '<p class="text-muted small mt-2 mb-0">Showing first ' + data.excerpts.length + ' of ' + data.matches + ' matches.</p>';
+            }
+          } else {
+            html += '<p class="text-muted mb-0">' + escapeHtml(data.message) + '</p>';
+          }
+          html += '</div></div>';
+        }
+        results.innerHTML = html;
+        results.querySelectorAll('[data-ship][data-date]').forEach(function(el) {
+          el.addEventListener('click', function() { showDayLog(el.dataset.ship, el.dataset.date); });
+        });
+      }
+
+      function showDayLog(shipName, logDate) {
+        var modal = new bootstrap.Modal(document.getElementById('dayLogModal'));
+        var titleEl = document.getElementById('dayLogModalTitle');
+        var sourceEl = document.getElementById('dayLogSource');
+        var entriesEl = document.getElementById('dayLogEntries');
+        var copyBtn = document.getElementById('dayLogCopyBtn');
+        titleEl.textContent = shipName + ' — ' + logDate;
+        sourceEl.textContent = 'Loading…';
+        entriesEl.innerHTML = '';
+        copyBtn.style.display = 'none';
+        modal.show();
+        fetch('/logs/day.json?shipName=' + encodeURIComponent(shipName) + '&logDate=' + encodeURIComponent(logDate))
+          .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
+          .then(function(data) {
+            sourceEl.textContent = data.source || '';
+            entriesEl.innerHTML = (data.entries || []).map(function(e) {
+              return '<p class="mb-2 border-bottom pb-2">' + escapeHtml(e) + '</p>';
+            }).join('');
+            entriesEl.dataset.copyText = [data.shipName + ' — ' + data.logDate, data.source || '', ''].concat(data.entries || []).join('\n\n');
+            copyBtn.style.display = 'inline-block';
+          })
+          .catch(function() {
+            sourceEl.textContent = '';
+            entriesEl.innerHTML = '<p class="text-danger">Could not load full day log.</p>';
+          });
+      }
+
+      document.getElementById('dayLogCopyBtn')?.addEventListener('click', function() {
+        var text = document.getElementById('dayLogEntries')?.dataset?.copyText || '';
+        if (text && navigator.clipboard?.writeText) {
+          navigator.clipboard.writeText(text).then(function() {
+            var btn = document.getElementById('dayLogCopyBtn');
+            var orig = btn.textContent;
+            btn.textContent = '✓ Copied';
+            setTimeout(function() { btn.textContent = orig; }, 1500);
+          });
+        }
+      });
+
+      function escapeHtml(s) {
+        var div = document.createElement('div');
+        div.textContent = s;
+        return div.innerHTML;
+      }
+
+      function doSearch() {
+        var q = (input?.value || '').trim();
+        setQueryInUrl(q);
+        if (!q) {
+          results.innerHTML = '';
+          return;
+        }
+        fetch('/logs/search.json?q=' + encodeURIComponent(q))
+          .then(function(r) { return r.json(); })
+          .then(renderResults)
+          .catch(function() { renderResults({ matches: 0, message: 'Search failed', excerpts: [] }); });
+      }
+
+      input?.addEventListener('input', function() {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(doSearch, 300);
+      });
+
+      input?.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          clearTimeout(debounceTimer);
+          doSearch();
+        }
+      });
+
+      form?.addEventListener('submit', function(e) {
+        e.preventDefault();
+        clearTimeout(debounceTimer);
+        doSearch();
+      });
+    })();
+  </script>
+</body>
+</html>

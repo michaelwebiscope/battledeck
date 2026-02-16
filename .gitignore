@@ -1,0 +1,25 @@
+# Terraform (infra config, not app code)
+terraform/
+
+# Database
+*.db
+
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.dll
+*.pdb
+*.log
+.vs/
+packages/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('partials/head') %>
+</head>
+<body>
+  <%- include('partials/header') %>
+  <main>
+    <div class="container py-4">
+      <h1 class="mb-4">Fleet Roster</h1>
+      <form action="/fleet/search" method="GET" class="mb-3">
+        <div class="input-group">
+          <input type="text" name="q" class="form-control form-control-lg" placeholder="Search ships by name or description..." value="<%= typeof searchQuery !== 'undefined' ? searchQuery : '' %>">
+          <button type="submit" class="btn btn-dark">Search</button>
+        </div>
+      </form>
+      <% if (typeof filters !== 'undefined' && classes && classes.length > 0) { %>
+      <form action="/fleet" method="GET" class="mb-4">
+        <div class="row g-2 align-items-end">
+          <div class="col-auto">
+            <label class="form-label small mb-0">Country</label>
+            <select name="country" class="form-select form-select-sm" style="width: auto;">
+              <option value="">All</option>
+              <% var countries = [...new Set(classes.map(c => c.country))].sort(); %>
+              <% countries.forEach(function(c) { %>
+                <option value="<%= c %>" <%= (filters.country === c) ? 'selected' : '' %>><%= c %></option>
+              <% }); %>
+            </select>
+          </div>
+          <div class="col-auto">
+            <label class="form-label small mb-0">Type</label>
+            <select name="type" class="form-select form-select-sm" style="width: auto;">
+              <option value="">All</option>
+              <% var types = [...new Set(classes.map(c => c.type))].sort(); %>
+              <% types.forEach(function(t) { %>
+                <option value="<%= t %>" <%= (filters.type === t) ? 'selected' : '' %>><%= t %></option>
+              <% }); %>
+            </select>
+          </div>
+          <div class="col-auto">
+            <label class="form-label small mb-0">Year</label>
+            <div class="input-group input-group-sm" style="width: auto;">
+              <input type="number" name="yearMin" class="form-control" placeholder="Min" value="<%= filters.yearMin || '' %>" style="width: 70px;">
+              <span class="input-group-text">–</span>
+              <input type="number" name="yearMax" class="form-control" placeholder="Max" value="<%= filters.yearMax || '' %>" style="width: 70px;">
+            </div>
+          </div>
+          <div class="col-auto">
+            <button type="submit" class="btn btn-outline-dark btn-sm">Filter</button>
+            <a href="/fleet" class="btn btn-outline-secondary btn-sm ms-1">Clear</a>
+          </div>
+        </div>
+      </form>
+      <% } %>
+      <% if (typeof error !== 'undefined' && error) { %>
+        <div class="alert alert-warning"><%= error %></div>
+      <% } %>
+      <div class="card">
+        <div class="card-header">
+          <h2 class="h5 mb-0">Complete Ship Registry</h2>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th>Name</th>
+                  <th>Class</th>
+                  <th>Type</th>
+                  <th>Country</th>
+                  <th>Captain</th>
+                  <th>Rank</th>
+                  <th>Year</th>
+                  <th>Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% if (ships && ships.length > 0) { %>
+                  <% ships.forEach(function(ship) { %>
+                    <tr>
+                      <td>
+                        <div class="d-flex align-items-center">
+                          <% if (ship.imageUrl && ship.imageUrl.startsWith('http')) { %>
+                            <img src="<%= ship.imageUrl %>" alt="" class="rounded me-2" style="width: 48px; height: 32px; object-fit: cover;">
+                          <% } %>
+                          <a href="/ships/<%= ship.id %>" class="text-decoration-none fw-bold"><%= ship.name %></a>
+                          <a href="/compare?id1=<%= ship.id %>" class="text-muted small ms-1" title="Compare">↔</a>
+                        </div>
+                      </td>
+                      <td><%= ship.class ? ship.class.name : '-' %></td>
+                      <td><%= ship.class ? ship.class.type : '-' %></td>
+                      <td><%= ship.class ? ship.class.country : '-' %></td>
+                      <td><%= ship.captain ? ship.captain.name : '-' %></td>
+                      <td><%= ship.captain ? ship.captain.rank : '-' %></td>
+                      <td><%= ship.yearCommissioned %></td>
+                      <td class="small text-muted" style="max-width: 200px;"><%= ship.description %></td>
+                    </tr>
+                  <% }); %>
+                <% } else { %>
+                  <tr><td colspan="8" class="text-center py-4 text-muted">No ships loaded.</td></tr>
+                <% } %>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+  <%- include('partials/footer') %>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

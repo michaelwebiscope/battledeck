@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('partials/head') %>
+</head>
+<body>
+  <%- include('partials/header') %>
+  <main>
+    <div class="container py-5 text-center">
+      <h1 class="mb-3"><%= typeof title !== 'undefined' ? title : 'Error' %></h1>
+      <p class="text-muted mb-4"><%= typeof message !== 'undefined' ? message : 'Something went wrong.' %></p>
+      <a href="/" class="btn btn-dark">Return Home</a>
+    </div>
+  </main>
+  <%- include('partials/footer') %>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
