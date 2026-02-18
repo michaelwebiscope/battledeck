@@ -2,7 +2,7 @@
 
 /**
  * New Relic agent configuration.
- * Use API_URL=http://navalarchive-api:5000 so traces show "NavalArchive-API" instead of "localhost:5000"
+ * API calls go through http://localhost (IIS routes /api to API) so external entity is "localhost" not a separate host.
  */
 exports.config = {
   app_name: [process.env.NEW_RELIC_APP_NAME || 'Navalarchive'],
