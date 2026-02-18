@@ -2,6 +2,7 @@
 docs/
 puppet/
 scripts/
+newrelic/
 
 # Database
 *.db

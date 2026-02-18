@@ -49,6 +49,9 @@
             <% if (ship.captain) { %>
               <div class="col-md-6 mb-3">
                 <div class="card h-100">
+                  <% if (ship.captain.imageUrl && ship.captain.imageUrl.startsWith('http')) { %>
+                    <img src="<%= ship.captain.imageUrl %>" class="card-img-top" alt="<%= ship.captain.name %>" style="height: 160px; object-fit: cover;">
+                  <% } %>
                   <div class="card-header">Captain</div>
                   <div class="card-body">
                     <h5><%= ship.captain.name %></h5>

@@ -101,9 +101,9 @@ cd terraform && terraform init && terraform apply
 
 See **[terraform/README.md](terraform/README.md)** for details.
 
-### Manual (Azure, IIS, Windows)
+### Deployment reference (Azure, IIS, Windows)
 
-See **[docs/DEPLOYMENT-AZURE-IIS-WINDOWS.md](docs/DEPLOYMENT-AZURE-IIS-WINDOWS.md)** for manual deployment on:
+See **[docs/DEPLOYMENT-AZURE-IIS-WINDOWS.md](docs/DEPLOYMENT-AZURE-IIS-WINDOWS.md)** for deployment on:
 
 - Windows Server with IIS
 - Azure App Service

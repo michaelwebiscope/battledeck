@@ -14,6 +14,19 @@
           <li class="breadcrumb-item active"><%= captain.name %></li>
         </ol>
       </nav>
+      <div class="row">
+        <div class="col-lg-4 mb-4">
+          <div class="card">
+            <% if (captain.imageUrl && captain.imageUrl.startsWith('http')) { %>
+              <img src="<%= captain.imageUrl %>" class="card-img-top" alt="<%= captain.name %>" style="height: 280px; object-fit: cover;">
+            <% } else { %>
+              <div class="card-img-top bg-secondary d-flex align-items-center justify-content-center" style="height: 280px;">
+                <span class="text-white-50"><%= captain.name %></span>
+              </div>
+            <% } %>
+          </div>
+        </div>
+        <div class="col-lg-8">
       <h1 class="mb-2"><%= captain.name %></h1>
       <p class="text-muted mb-4"><%= captain.rank %> · <%= captain.serviceYears %> years of service</p>
       <h3 class="mb-3">Ships Commanded</h3>
@@ -40,6 +53,8 @@
             <% } %>
           </tbody>
         </table>
+      </div>
+        </div>
       </div>
     </div>
   </main>

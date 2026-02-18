@@ -56,7 +56,7 @@ app.get('/fleet', async (req, res) => {
       ships: [],
       classes: [],
       filters: {},
-      error: 'Unable to load fleet data. Ensure the API is running on port 5000.',
+      error: `Unable to load fleet data. Ensure the API is running at ${API_BASE}.`,
       searchQuery: ''
     });
   }
@@ -335,7 +335,8 @@ app.get('/simulation', (req, res) => {
 
 app.post('/admin/sync', async (req, res) => {
   try {
-    const response = await api.post('/api/admin/sync');
+    const force = req.query.force === 'true' || req.body?.force === true;
+    const response = await api.post(`/api/admin/sync${force ? '?force=true' : ''}`);
     res.json(response.data);
   } catch (err) {
     console.error('Sync error:', err.message);

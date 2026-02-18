@@ -115,7 +115,7 @@
       const btn = this;
       btn.disabled = true;
       btn.textContent = 'Fetching...';
-      fetch('/admin/sync', { method: 'POST' })
+      fetch('/admin/sync?force=true', { method: 'POST' })
         .then(r => r.json())
         .then(data => { btn.textContent = '✓ Done'; setTimeout(() => { btn.disabled = false; btn.textContent = '↻ Refresh from Wikipedia'; }, 2000); })
         .catch(() => { btn.textContent = 'Failed'; btn.disabled = false; });

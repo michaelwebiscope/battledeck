@@ -61,7 +61,43 @@ public class WikipediaDataFetcher
         ["HMS Rodney"] = "HMS_Rodney_(29)",
         ["USS Essex"] = "USS_Essex_(CV-9)",
         ["USS Intrepid"] = "USS_Intrepid_(CV-11)",
-        ["USS Franklin"] = "USS_Franklin_(CV-13)"
+        ["USS Franklin"] = "USS_Franklin_(CV-13)",
+        ["USS Gambier Bay"] = "USS_Gambier_Bay_(CVE-73)",
+        ["HMS Hermes"] = "HMS_Hermes_(95)",
+        ["USS Quincy"] = "USS_Quincy_(CA-39)",
+        ["USS Vincennes"] = "USS_Vincennes_(CA-44)",
+        ["HMS Ajax"] = "HMS_Ajax_(22)",
+        ["HMS Achilles"] = "HMS_Achilles_(70)"
+    };
+
+    // Captain name -> Wikipedia page title (for portrait images)
+    private static readonly Dictionary<string, string> CaptainTitles = new()
+    {
+        ["Ernst Lindemann"] = "Ernst_Lindemann",
+        ["Karl Topp"] = "Karl_Topp",
+        ["Kosaku Aruga"] = "Kosaku_Aruga",
+        ["Toshihira Inoguchi"] = "Toshihira_Inoguchi",
+        ["John McCrea"] = "John_L._McCrea",
+        ["Charles F. Adams"] = "Charles_F._Adams_(admiral)",
+        ["William Callaghan"] = "William_M._Callaghan",
+        ["Glenn Davis"] = "Glenn_B._Davis",
+        ["George Murray"] = "George_D._Murray",
+        ["Elliott Buckmaster"] = "Elliott_Buckmaster",
+        ["Marc Mitscher"] = "Marc_Mitscher",
+        ["Frederick Sherman"] = "Frederick_C._Sherman",
+        ["Dewey B. Bronson"] = "Dewey_B._Bronson",
+        ["Ralph Kerr"] = "Ralph_Kerr",
+        ["Denis Boyd"] = "Denis_Boyd_(Royal_Navy_officer)",
+        ["Arthur Power"] = "Arthur_Power",
+        ["Henry Bovell"] = "Henry_Bovell",
+        ["Philip Vian"] = "Philip_Vian",
+        ["Takatsugu Jojima"] = "Takatsugu_Jojima",
+        ["Tamon Yamaguchi"] = "Tamon_Yamaguchi",
+        ["Frederick Bell"] = "Frederick_Bell_(Royal_Navy_officer)",
+        ["Charles McVay"] = "Charles_B._McVay_III",
+        ["Walter Deakins"] = "Walter_Deakins",
+        ["William Cole"] = "William_Cole",
+        ["Ernest Evans"] = "Ernest_Evans"
     };
 
     public async Task<List<FetchedShipData>> FetchAllAsync(CancellationToken ct = default)
@@ -110,6 +146,52 @@ public class WikipediaDataFetcher
 
         return results;
     }
+
+    public async Task<List<FetchedCaptainData>> FetchCaptainsAsync(CancellationToken ct = default)
+    {
+        var results = new List<FetchedCaptainData>();
+        var batchSize = 5;
+        var titles = CaptainTitles.ToList();
+
+        for (var i = 0; i < titles.Count; i += batchSize)
+        {
+            var batch = titles.Skip(i).Take(batchSize).ToList();
+            var titleParam = string.Join("|", batch.Select(x => x.Value));
+
+            var url = $"{ApiBase}?action=query&titles={Uri.EscapeDataString(titleParam)}" +
+                      "&prop=pageimages&pithumbsize=400&format=json";
+
+            try
+            {
+                var json = await _http.GetStringAsync(url, ct);
+                var doc = JsonDocument.Parse(json);
+                var pages = doc.RootElement.GetProperty("query").GetProperty("pages");
+
+                foreach (var page in pages.EnumerateObject())
+                {
+                    if (page.Name == "-1") continue;
+
+                    var title = page.Value.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "";
+                    var imageUrl = "";
+                    if (page.Value.TryGetProperty("thumbnail", out var thumb) && thumb.TryGetProperty("source", out var src))
+                        imageUrl = src.GetString() ?? "";
+
+                    var captainName = batch.FirstOrDefault(x =>
+                        x.Value.Replace("_", " ") == title || x.Value == title).Key ?? title;
+                    results.Add(new FetchedCaptainData(captainName, imageUrl));
+                }
+
+                await Task.Delay(200, ct);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Wikipedia captain fetch batch failed: {ex.Message}");
+            }
+        }
+
+        return results;
+    }
 }
 
 public record FetchedShipData(string Name, string Description, string ImageUrl);
+public record FetchedCaptainData(string Name, string ImageUrl);

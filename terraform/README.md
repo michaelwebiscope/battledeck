@@ -69,9 +69,9 @@ When `use_app_service = false`, Terraform creates a Windows VM and **automatical
 
 4. Open `http://<vm_public_ip>` — the app should be live.
 
-### Bootstrap only (manual deploy)
+### Bootstrap only
 
-Leave `github_repo_url` empty. The script will install IIS, .NET 8, Node.js, and create directories. You then deploy the app manually (RDP + copy files, or use your own CI/CD).
+Leave `github_repo_url` empty. The script installs IIS, .NET 8, Node.js, and creates directories. Deploy the app via your CI/CD pipeline.
 
 ---
 
@@ -90,7 +90,7 @@ puppet/
     navalarchive.pp
 
 scripts/
-  bootstrap.ps1   # Windows setup (Chocolatey, .NET, Node, IIS)
-  deploy.ps1      # Deploy to App Service (Windows)
-  deploy.sh       # Deploy to App Service (Mac/Linux)
+  setup-vm.ps1.tpl   # Single bootstrap script (Bootstrap or Fix mode)
+  deploy.ps1         # Deploy to App Service (Windows)
+  deploy.sh          # Deploy to App Service (Mac/Linux)
 ```

@@ -30,33 +30,33 @@ public class NavalArchiveDbContext : DbContext
             new ShipClass { Id = 10, Name = "Tribal-class", Type = "Destroyer", Country = "UK" }
         );
 
-        // Seed Captains
+        // Seed Captains (ImageUrl populated by Wikipedia sync)
         modelBuilder.Entity<Captain>().HasData(
-            new Captain { Id = 1, Name = "Ernst Lindemann", Rank = "Captain", ServiceYears = 28 },
-            new Captain { Id = 2, Name = "Karl Topp", Rank = "Captain", ServiceYears = 30 },
-            new Captain { Id = 3, Name = "Kosaku Aruga", Rank = "Admiral", ServiceYears = 35 },
-            new Captain { Id = 4, Name = "Toshihira Inoguchi", Rank = "Captain", ServiceYears = 32 },
-            new Captain { Id = 5, Name = "John McCrea", Rank = "Captain", ServiceYears = 28 },
-            new Captain { Id = 6, Name = "Charles F. Adams", Rank = "Admiral", ServiceYears = 40 },
-            new Captain { Id = 7, Name = "William Callaghan", Rank = "Captain", ServiceYears = 35 },
-            new Captain { Id = 8, Name = "Glenn Davis", Rank = "Captain", ServiceYears = 30 },
-            new Captain { Id = 9, Name = "George Murray", Rank = "Admiral", ServiceYears = 38 },
-            new Captain { Id = 10, Name = "Elliott Buckmaster", Rank = "Captain", ServiceYears = 32 },
-            new Captain { Id = 11, Name = "Marc Mitscher", Rank = "Admiral", ServiceYears = 42 },
-            new Captain { Id = 12, Name = "Frederick Sherman", Rank = "Captain", ServiceYears = 35 },
-            new Captain { Id = 13, Name = "Dewey B. Bronson", Rank = "Captain", ServiceYears = 30 },
-            new Captain { Id = 14, Name = "Ralph Kerr", Rank = "Captain", ServiceYears = 28 },
-            new Captain { Id = 15, Name = "Denis Boyd", Rank = "Admiral", ServiceYears = 36 },
-            new Captain { Id = 16, Name = "Arthur Power", Rank = "Captain", ServiceYears = 33 },
-            new Captain { Id = 17, Name = "Henry Bovell", Rank = "Captain", ServiceYears = 30 },
-            new Captain { Id = 18, Name = "Philip Vian", Rank = "Admiral", ServiceYears = 40 },
-            new Captain { Id = 19, Name = "Takatsugu Jojima", Rank = "Captain", ServiceYears = 32 },
-            new Captain { Id = 20, Name = "Tamon Yamaguchi", Rank = "Admiral", ServiceYears = 35 },
-            new Captain { Id = 21, Name = "Frederick Bell", Rank = "Captain", ServiceYears = 30 },
-            new Captain { Id = 22, Name = "Charles McVay", Rank = "Captain", ServiceYears = 28 },
-            new Captain { Id = 23, Name = "Walter Deakins", Rank = "Captain", ServiceYears = 32 },
-            new Captain { Id = 24, Name = "William Cole", Rank = "Commander", ServiceYears = 25 },
-            new Captain { Id = 25, Name = "Ernest Evans", Rank = "Commander", ServiceYears = 22 }
+            new Captain { Id = 1, Name = "Ernst Lindemann", Rank = "Captain", ServiceYears = 28, ImageUrl = (string?)null },
+            new Captain { Id = 2, Name = "Karl Topp", Rank = "Captain", ServiceYears = 30, ImageUrl = (string?)null },
+            new Captain { Id = 3, Name = "Kosaku Aruga", Rank = "Admiral", ServiceYears = 35, ImageUrl = (string?)null },
+            new Captain { Id = 4, Name = "Toshihira Inoguchi", Rank = "Captain", ServiceYears = 32, ImageUrl = (string?)null },
+            new Captain { Id = 5, Name = "John McCrea", Rank = "Captain", ServiceYears = 28, ImageUrl = (string?)null },
+            new Captain { Id = 6, Name = "Charles F. Adams", Rank = "Admiral", ServiceYears = 40, ImageUrl = (string?)null },
+            new Captain { Id = 7, Name = "William Callaghan", Rank = "Captain", ServiceYears = 35, ImageUrl = (string?)null },
+            new Captain { Id = 8, Name = "Glenn Davis", Rank = "Captain", ServiceYears = 30, ImageUrl = (string?)null },
+            new Captain { Id = 9, Name = "George Murray", Rank = "Admiral", ServiceYears = 38, ImageUrl = (string?)null },
+            new Captain { Id = 10, Name = "Elliott Buckmaster", Rank = "Captain", ServiceYears = 32, ImageUrl = (string?)null },
+            new Captain { Id = 11, Name = "Marc Mitscher", Rank = "Admiral", ServiceYears = 42, ImageUrl = (string?)null },
+            new Captain { Id = 12, Name = "Frederick Sherman", Rank = "Captain", ServiceYears = 35, ImageUrl = (string?)null },
+            new Captain { Id = 13, Name = "Dewey B. Bronson", Rank = "Captain", ServiceYears = 30, ImageUrl = (string?)null },
+            new Captain { Id = 14, Name = "Ralph Kerr", Rank = "Captain", ServiceYears = 28, ImageUrl = (string?)null },
+            new Captain { Id = 15, Name = "Denis Boyd", Rank = "Admiral", ServiceYears = 36, ImageUrl = (string?)null },
+            new Captain { Id = 16, Name = "Arthur Power", Rank = "Captain", ServiceYears = 33, ImageUrl = (string?)null },
+            new Captain { Id = 17, Name = "Henry Bovell", Rank = "Captain", ServiceYears = 30, ImageUrl = (string?)null },
+            new Captain { Id = 18, Name = "Philip Vian", Rank = "Admiral", ServiceYears = 40, ImageUrl = (string?)null },
+            new Captain { Id = 19, Name = "Takatsugu Jojima", Rank = "Captain", ServiceYears = 32, ImageUrl = (string?)null },
+            new Captain { Id = 20, Name = "Tamon Yamaguchi", Rank = "Admiral", ServiceYears = 35, ImageUrl = (string?)null },
+            new Captain { Id = 21, Name = "Frederick Bell", Rank = "Captain", ServiceYears = 30, ImageUrl = (string?)null },
+            new Captain { Id = 22, Name = "Charles McVay", Rank = "Captain", ServiceYears = 28, ImageUrl = (string?)null },
+            new Captain { Id = 23, Name = "Walter Deakins", Rank = "Captain", ServiceYears = 32, ImageUrl = (string?)null },
+            new Captain { Id = 24, Name = "William Cole", Rank = "Commander", ServiceYears = 25, ImageUrl = (string?)null },
+            new Captain { Id = 25, Name = "Ernest Evans", Rank = "Commander", ServiceYears = 22, ImageUrl = (string?)null }
         );
 
         // Seed 50 famous ships - ImageUrl: real Wikimedia Commons URLs for display, /images/{id} for memory-leak API
@@ -111,7 +111,13 @@ public class NavalArchiveDbContext : DbContext
             new Ship { Id = 47, Name = "HMS Rodney", ClassId = 3, CaptainId = 22, YearCommissioned = 1927, Description = "16-inch guns, finished Bismarck.", ImageUrl = "https://upload.wikimedia.org/wikipedia/commons/thumb/8/81/HMS_Rodney_after_refitting_at_Liverpool.jpg/800px-HMS_Rodney_after_refitting_at_Liverpool.jpg" },
             new Ship { Id = 48, Name = "USS Essex", ClassId = 4, CaptainId = 23, YearCommissioned = 1942, Description = "Lead of Essex class, 20 battle stars.", ImageUrl = "https://upload.wikimedia.org/wikipedia/commons/thumb/5/53/USS_Essex_CVS-9_June_1967.jpg/800px-USS_Essex_CVS-9_June_1967.jpg" },
             new Ship { Id = 49, Name = "USS Intrepid", ClassId = 4, CaptainId = 24, YearCommissioned = 1943, Description = "Survived multiple kamikaze hits.", ImageUrl = "https://upload.wikimedia.org/wikipedia/commons/thumb/2/23/USS_Intrepid_%28CVS-11%29_underway_in_the_South_China_Sea_on_17_October_1968_%28NNMA.1996.488.244.058%29.jpg/800px-USS_Intrepid_%28CVS-11%29_underway_in_the_South_China_Sea_on_17_October_1968_%28NNMA.1996.488.244.058%29.jpg" },
-            new Ship { Id = 50, Name = "USS Franklin", ClassId = 4, CaptainId = 25, YearCommissioned = 1944, Description = "Heavily damaged, survived to tell.", ImageUrl = "https://upload.wikimedia.org/wikipedia/commons/thumb/9/98/USS_Franklin_%28CV-13%29_in_the_Elizabeth_River%2C_off_Norfolk%2C_Virginia_%28USA%29%2C_21_February_1944_%2880-G-224596%29.jpg/800px-USS_Franklin_%28CV-13%29_in_the_Elizabeth_River%2C_off_Norfolk%2C_Virginia_%28USA%29%2C_21_February_1944_%2880-G-224596%29.jpg" }
+            new Ship { Id = 50, Name = "USS Franklin", ClassId = 4, CaptainId = 25, YearCommissioned = 1944, Description = "Heavily damaged, survived to tell.", ImageUrl = "https://upload.wikimedia.org/wikipedia/commons/thumb/9/98/USS_Franklin_%28CV-13%29_in_the_Elizabeth_River%2C_off_Norfolk%2C_Virginia_%28USA%29%2C_21_February_1944_%2880-G-224596%29.jpg/800px-USS_Franklin_%28CV-13%29_in_the_Elizabeth_River%2C_off_Norfolk%2C_Virginia_%28USA%29%2C_21_February_1944_%2880-G-224596%29.jpg" },
+            new Ship { Id = 51, Name = "USS Gambier Bay", ClassId = 4, CaptainId = 1, YearCommissioned = 1943, Description = "Escort carrier, sunk at Leyte Gulf.", ImageUrl = "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2e/USS_Gambier_Bay_%28CVE-73%29_underway%2C_circa_1944_%28NH_95699%29.jpg/800px-USS_Gambier_Bay_%28CVE-73%29_underway%2C_circa_1944_%28NH_95699%29.jpg" },
+            new Ship { Id = 52, Name = "HMS Hermes", ClassId = 5, CaptainId = 2, YearCommissioned = 1924, Description = "First purpose-built carrier, sunk off Ceylon.", ImageUrl = "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4e/HMS_Hermes_%2895%29.jpg/800px-HMS_Hermes_%2895%29.jpg" },
+            new Ship { Id = 53, Name = "USS Quincy", ClassId = 8, CaptainId = 3, YearCommissioned = 1936, Description = "Heavy cruiser, lost at Savo Island.", ImageUrl = "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/USS_Quincy_%28CA-39%29_off_the_Mare_Island_Naval_Shipyard_on_12_September_1940.jpg/800px-USS_Quincy_%28CA-39%29_off_the_Mare_Island_Naval_Shipyard_on_12_September_1940.jpg" },
+            new Ship { Id = 54, Name = "USS Vincennes", ClassId = 8, CaptainId = 4, YearCommissioned = 1937, Description = "Heavy cruiser, lost at Savo Island.", ImageUrl = "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8a/USS_Vincennes_%28CA-44%29_underway_on_14_May_1942.jpg/800px-USS_Vincennes_%28CA-44%29_underway_on_14_May_1942.jpg" },
+            new Ship { Id = 55, Name = "HMS Ajax", ClassId = 7, CaptainId = 5, YearCommissioned = 1935, Description = "River Plate veteran with Exeter.", ImageUrl = "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6d/HMS_Ajax_%2822%29.jpg/800px-HMS_Ajax_%2822%29.jpg" },
+            new Ship { Id = 56, Name = "HMS Achilles", ClassId = 7, CaptainId = 6, YearCommissioned = 1933, Description = "New Zealand cruiser, River Plate.", ImageUrl = "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0e/HMS_Achilles_%2870%29_1930s.jpg/800px-HMS_Achilles_%2870%29_1930s.jpg" }
         };
 
         modelBuilder.Entity<Ship>().HasData(ships);

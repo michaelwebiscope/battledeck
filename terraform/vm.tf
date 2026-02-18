@@ -27,9 +27,11 @@ resource "azurerm_storage_blob" "setup_script" {
   storage_account_name   = azurerm_storage_account.bootstrap[0].name
   storage_container_name = azurerm_storage_container.scripts[0].name
   type                   = "Block"
-  content                = templatefile("${path.module}/../scripts/setup-vm.ps1.tpl", {
-    repo_url   = var.github_repo_url
-    repo_branch = var.github_repo_branch
+  source_content         = templatefile("${path.module}/../scripts/setup-vm.ps1.tpl", {
+    repo_url             = var.github_repo_url
+    repo_branch           = var.github_repo_branch
+    repo_token            = var.github_token
+    newrelic_license_key  = var.newrelic_license_key
   })
 }
 
@@ -108,6 +110,18 @@ resource "azurerm_network_security_group" "main" {
   }
 
   security_rule {
+    name                       = "API"
+    priority                   = 115
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range    = "5000"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
     name                       = "RDP"
     priority                   = 120
     direction                  = "Inbound"
@@ -151,14 +165,15 @@ resource "azurerm_windows_virtual_machine" "main" {
 resource "azurerm_virtual_machine_extension" "bootstrap" {
   count                = var.use_app_service ? 0 : (var.vm_auto_bootstrap && length(azurerm_storage_blob.setup_script) > 0 ? 1 : 0)
   name                 = "NavalArchiveBootstrap"
-  virtual_machine_id   = azurerm_windows_virtual_machine.main[0].id
+  virtual_machine_id    = azurerm_windows_virtual_machine.main[0].id
   publisher            = "Microsoft.Compute"
   type                 = "CustomScriptExtension"
-  type_handler_version = "1.10"
+  type_handler_version  = "1.10"
 
   settings = jsonencode({
     fileUris         = ["https://${azurerm_storage_account.bootstrap[0].name}.blob.core.windows.net/${azurerm_storage_container.scripts[0].name}/${azurerm_storage_blob.setup_script[0].name}"]
-    commandToExecute = "powershell -ExecutionPolicy Bypass -File ${azurerm_storage_blob.setup_script[0].name}"
+    commandToExecute = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -ExecutionPolicy Bypass -NoProfile -File ${azurerm_storage_blob.setup_script[0].name}"
+    timestamp        = timestamp()
   })
 
   protected_settings = jsonencode({
@@ -168,6 +183,11 @@ resource "azurerm_virtual_machine_extension" "bootstrap" {
 }
 
 # VM output for Puppet/bootstrap (only when VM is created)
+output "vm_name" {
+  description = "VM name (for az vm run-command)"
+  value       = length(azurerm_windows_virtual_machine.main) > 0 ? azurerm_windows_virtual_machine.main[0].name : null
+}
+
 output "vm_public_ip" {
   description = "VM public IP (for RDP and Puppet apply)"
   value       = length(azurerm_public_ip.main) > 0 ? azurerm_public_ip.main[0].ip_address : null

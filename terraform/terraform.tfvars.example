@@ -14,3 +14,6 @@ use_app_service = false
 vm_admin_username = "azureadmin"
 vm_admin_password = "YourSecurePassword123!"
 vm_size           = "Standard_B2s"
+
+# Optional: New Relic license key for Node.js APM (leave empty or omit to skip)
+# newrelic_license_key = "your-newrelic-license-key"

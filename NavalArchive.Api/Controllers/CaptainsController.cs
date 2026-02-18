@@ -25,6 +25,7 @@ public class CaptainsController : ControllerBase
                 c.Name,
                 c.Rank,
                 c.ServiceYears,
+                c.ImageUrl,
                 ShipCount = c.Ships.Count
             })
             .OrderBy(c => c.Name)
@@ -46,6 +47,7 @@ public class CaptainsController : ControllerBase
             captain.Name,
             captain.Rank,
             captain.ServiceYears,
+            captain.ImageUrl,
             Ships = captain.Ships.Select(s => new { s.Id, s.Name, s.YearCommissioned })
         });
     }

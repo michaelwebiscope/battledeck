@@ -77,7 +77,7 @@ public class ShipsController : ControllerBase
             ship.ImageUrl,
             ship.YearCommissioned,
             Class = shipClass != null ? new { shipClass.Id, shipClass.Name, shipClass.Type, shipClass.Country } : null,
-            Captain = captain != null ? new { captain.Id, captain.Name, captain.Rank, captain.ServiceYears } : null
+            Captain = captain != null ? new { captain.Id, captain.Name, captain.Rank, captain.ServiceYears, captain.ImageUrl } : null
         });
     }
 
@@ -98,7 +98,7 @@ public class ShipsController : ControllerBase
             ship.ImageUrl,
             ship.YearCommissioned,
             Class = shipClass != null ? new { shipClass.Id, shipClass.Name, shipClass.Type, shipClass.Country } : null,
-            Captain = captain != null ? new { captain.Id, captain.Name, captain.Rank, captain.ServiceYears } : null
+            Captain = captain != null ? new { captain.Id, captain.Name, captain.Rank, captain.ServiceYears, captain.ImageUrl } : null
         });
     }
 

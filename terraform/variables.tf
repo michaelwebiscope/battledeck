@@ -67,3 +67,17 @@ variable "github_repo_branch" {
   type        = string
   default     = "main"
 }
+
+variable "github_token" {
+  description = "GitHub personal access token (required for private repos). Create at https://github.com/settings/tokens"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "newrelic_license_key" {
+  description = "New Relic license key for Node.js APM (leave empty to skip New Relic)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}

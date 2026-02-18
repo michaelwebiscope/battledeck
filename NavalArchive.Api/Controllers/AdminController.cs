@@ -24,14 +24,15 @@ public class AdminController : ControllerBase
     }
 
     /// <summary>
-    /// Trigger refresh of ship data, Wikipedia logs, and genuine war diaries from midway1942.com.
+    /// Trigger refresh of ship data, captain images, Wikipedia logs, and genuine war diaries.
+    /// Add ?force=true to bypass cache and fetch fresh data from Wikipedia.
     /// </summary>
     [HttpPost("sync")]
-    public async Task<IActionResult> SyncFromWikipedia()
+    public async Task<IActionResult> SyncFromWikipedia([FromQuery] bool force = false)
     {
         try
         {
-            await _sync.SyncFromWikipediaAsync(_db);
+            await _sync.SyncFromWikipediaAsync(_db, forceRefresh: force);
             await _logsData.RefreshFromWikipediaAsync();
             await _genuineLogs.FetchAndSaveAsync(_logsDb);
             return Ok(new { message = "Sync completed. Ships, Wikipedia logs, and genuine war diaries updated." });

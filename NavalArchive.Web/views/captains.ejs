@@ -16,6 +16,13 @@
           <% captains.forEach(function(c) { %>
             <div class="col-md-6 col-lg-4">
               <div class="card h-100">
+                <% if (c.imageUrl && c.imageUrl.startsWith('http')) { %>
+                  <img src="<%= c.imageUrl %>" class="card-img-top" alt="<%= c.name %>" style="height: 200px; object-fit: cover;">
+                <% } else { %>
+                  <div class="card-img-top bg-secondary d-flex align-items-center justify-content-center" style="height: 200px;">
+                    <span class="text-white-50"><%= c.name %></span>
+                  </div>
+                <% } %>
                 <div class="card-body">
                   <h5 class="card-title"><%= c.name %></h5>
                   <p class="card-text text-muted mb-1"><%= c.rank %></p>
