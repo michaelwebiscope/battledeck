@@ -60,6 +60,12 @@ Starts all services: Payment (5001), Card (5002), Cart (5003), API (5000), Web (
 
 For members, cart, checkout, and cards you need the full stack (Option A).
 
+### 4. Database (persistence)
+
+By default, data is saved to **SQLite** files (`cart.db`, `card.db`, `payment.db`, `navalarchive.db`) in each project directory. Data persists across restarts.
+
+For **SQL Server** or **MySQL**, set connection strings in `appsettings.json` and optionally `DatabaseProvider`. See [docs/DATABASE.md](docs/DATABASE.md).
+
 ---
 
 ## Pages

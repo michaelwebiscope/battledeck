@@ -4,10 +4,17 @@ using NavalArchive.CartService.Data;
 var builder = WebApplication.CreateBuilder(args);
 
 var conn = builder.Configuration.GetConnectionString("CartDb") ?? builder.Configuration["ConnectionStrings:CartDb"];
+var provider = builder.Configuration["DatabaseProvider"] ?? "";
+
 if (!string.IsNullOrEmpty(conn))
-    builder.Services.AddDbContext<CartDbContext>(o => o.UseMySql(conn, ServerVersion.AutoDetect(conn)));
+{
+    if (provider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase) || conn.Contains("Trusted_Connection", StringComparison.OrdinalIgnoreCase) || conn.Contains("TrustServerCertificate", StringComparison.OrdinalIgnoreCase))
+        builder.Services.AddDbContext<CartDbContext>(o => o.UseSqlServer(conn));
+    else
+        builder.Services.AddDbContext<CartDbContext>(o => o.UseMySql(conn, ServerVersion.AutoDetect(conn)));
+}
 else
-    builder.Services.AddDbContext<CartDbContext>(o => o.UseInMemoryDatabase("CartDb"));
+    builder.Services.AddDbContext<CartDbContext>(o => o.UseSqlite("Data Source=cart.db"));
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();

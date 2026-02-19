@@ -29,6 +29,9 @@ echo ""
 echo "Press Ctrl+C to stop all."
 echo ""
 
+# Use Development env so appsettings.Development.json loads (InMemory, no MySQL)
+export ASPNETCORE_ENVIRONMENT=Development
+
 # 1. Payment (5001)
 dotnet run --project NavalArchive.PaymentSimulation &
 PIDS+=($!)

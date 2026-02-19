@@ -4,10 +4,17 @@ using NavalArchive.CardService.Data;
 var builder = WebApplication.CreateBuilder(args);
 
 var conn = builder.Configuration.GetConnectionString("CardDb") ?? builder.Configuration["ConnectionStrings:CardDb"];
+var provider = builder.Configuration["DatabaseProvider"] ?? "";
+
 if (!string.IsNullOrEmpty(conn))
-    builder.Services.AddDbContext<CardDbContext>(o => o.UseMySql(conn, ServerVersion.AutoDetect(conn)));
+{
+    if (provider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase) || conn.Contains("Trusted_Connection", StringComparison.OrdinalIgnoreCase) || conn.Contains("TrustServerCertificate", StringComparison.OrdinalIgnoreCase))
+        builder.Services.AddDbContext<CardDbContext>(o => o.UseSqlServer(conn));
+    else
+        builder.Services.AddDbContext<CardDbContext>(o => o.UseMySql(conn, ServerVersion.AutoDetect(conn)));
+}
 else
-    builder.Services.AddDbContext<CardDbContext>(o => o.UseInMemoryDatabase("CardDb"));
+    builder.Services.AddDbContext<CardDbContext>(o => o.UseSqlite("Data Source=card.db"));
 
 builder.Services.AddControllers();
 builder.Services.AddHttpClient();

@@ -8,8 +8,16 @@ builder.Services.AddControllers();
 builder.Services.AddHttpClient();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-builder.Services.AddDbContext<NavalArchiveDbContext>(options =>
-    options.UseInMemoryDatabase("NavalArchiveDb"));
+
+var mainConn = builder.Configuration.GetConnectionString("NavalArchiveDb") ?? builder.Configuration["ConnectionStrings:NavalArchiveDb"];
+var provider = builder.Configuration["DatabaseProvider"] ?? "";
+if (!string.IsNullOrEmpty(mainConn) && (provider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase) || mainConn.Contains("Trusted_Connection", StringComparison.OrdinalIgnoreCase) || mainConn.Contains("TrustServerCertificate", StringComparison.OrdinalIgnoreCase)))
+    builder.Services.AddDbContext<NavalArchiveDbContext>(o => o.UseSqlServer(mainConn));
+else if (!string.IsNullOrEmpty(mainConn))
+    builder.Services.AddDbContext<NavalArchiveDbContext>(o => o.UseSqlite(mainConn));
+else
+    builder.Services.AddDbContext<NavalArchiveDbContext>(o => o.UseSqlite("Data Source=navalarchive.db"));
+
 builder.Services.AddDbContext<LogsDbContext>(options =>
     options.UseSqlite("Data Source=logs.db"));
 builder.Services.AddSingleton<DataSyncService>();

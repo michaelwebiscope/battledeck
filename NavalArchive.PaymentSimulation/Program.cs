@@ -4,10 +4,17 @@ using NavalArchive.PaymentSimulation.Data;
 var builder = WebApplication.CreateBuilder(args);
 
 var conn = builder.Configuration.GetConnectionString("PaymentDb") ?? builder.Configuration["ConnectionStrings:PaymentDb"];
+var provider = builder.Configuration["DatabaseProvider"] ?? "";
+
 if (!string.IsNullOrEmpty(conn))
-    builder.Services.AddDbContext<PaymentDbContext>(o => o.UseMySql(conn, ServerVersion.AutoDetect(conn)));
+{
+    if (provider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase) || conn.Contains("Trusted_Connection", StringComparison.OrdinalIgnoreCase) || conn.Contains("TrustServerCertificate", StringComparison.OrdinalIgnoreCase))
+        builder.Services.AddDbContext<PaymentDbContext>(o => o.UseSqlServer(conn));
+    else
+        builder.Services.AddDbContext<PaymentDbContext>(o => o.UseMySql(conn, ServerVersion.AutoDetect(conn)));
+}
 else
-    builder.Services.AddDbContext<PaymentDbContext>(o => o.UseInMemoryDatabase("PaymentDb"));
+    builder.Services.AddDbContext<PaymentDbContext>(o => o.UseSqlite("Data Source=payment.db"));
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
