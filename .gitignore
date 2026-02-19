@@ -1,11 +1,12 @@
 # Infra/deployment (not required to run app)
 docs/
 puppet/
-scripts/
 newrelic/
 
 # Database
 *.db
+*.db-shm
+*.db-wal
 
 # .NET
 bin/

@@ -19,31 +19,26 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' }
 });
 
-// Proxy /cards and /payments to local services (for local dev; on IIS these are rewritten)
-const CARD_URL = process.env.CARD_URL || 'http://localhost:5002';
-const PAYMENT_URL = process.env.PAYMENT_URL || 'http://localhost:5001';
-function proxyTo(baseUrl) {
-  return async (req, res) => {
-    try {
-      const url = `${baseUrl}${req.url}`;
-      const opts = {
-        method: req.method,
-        url,
-        headers: { 'Content-Type': 'application/json' },
-        responseType: 'json',
-        validateStatus: () => true
-      };
-      if (req.method !== 'GET' && req.method !== 'HEAD' && req.body) opts.data = req.body;
-      const r = await axios(opts);
-      res.status(r.status).json(r.data ?? {});
-    } catch (err) {
-      console.error('Proxy error:', err.message);
-      res.status(502).json({ error: 'Service unavailable' });
-    }
-  };
-}
-app.use('/cards', proxyTo(CARD_URL));
-app.use('/payments', proxyTo(PAYMENT_URL));
+// Chain: App -> API -> Cart -> Card -> Payment (all requests go through API)
+// Proxy /api/* to API for client-side fetches (local dev; on IIS, /api/* is rewritten to API)
+app.use('/api', async (req, res) => {
+  try {
+    const url = `${API_BASE}/api${req.url}`;
+    const opts = {
+      method: req.method,
+      url,
+      headers: { 'Content-Type': 'application/json' },
+      responseType: 'json',
+      validateStatus: () => true
+    };
+    if (req.method !== 'GET' && req.method !== 'HEAD' && req.body && Object.keys(req.body).length) opts.data = req.body;
+    const r = await axios(opts);
+    res.status(r.status).json(r.data ?? {});
+  } catch (err) {
+    console.error('API proxy error:', err.message);
+    res.status(502).json({ error: 'API unavailable' });
+  }
+});
 
 // --- Routes ---
 
@@ -359,6 +354,10 @@ app.get('/donate', (req, res) => {
 
 app.get('/membership', (req, res) => {
   res.render('membership', { title: 'Membership' });
+});
+
+app.get('/checkout', (req, res) => {
+  res.render('checkout', { title: 'Checkout' });
 });
 
 app.get('/simulation', (req, res) => {

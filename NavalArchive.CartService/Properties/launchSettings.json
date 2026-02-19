@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "default": {
+      "commandName": "Project",
+      "applicationUrl": "http://localhost:5003"
+    }
+  }
+}

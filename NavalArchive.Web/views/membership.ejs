@@ -60,7 +60,7 @@
       resultEl.style.display = 'block';
       resultEl.innerHTML = '<span class="text-muted">Issuing...</span>';
       try {
-        const res = await fetch('/cards/api/card/issue', {
+        const res = await fetch('/api/cards/issue', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name, tier })
@@ -69,7 +69,7 @@
         resultEl.innerHTML = '<div class="alert alert-success">✓ ' + data.message + '<br><strong>Card ID:</strong> ' + data.cardId + '</div>';
         document.querySelector('[name="cardId"]').value = data.cardId;
       } catch (err) {
-        resultEl.innerHTML = '<div class="alert alert-danger">Card service unavailable (port 5002).</div>';
+        resultEl.innerHTML = '<div class="alert alert-danger">Card service unavailable. Ensure API and chain (API→Cart→Card) are running.</div>';
       }
     });
     document.getElementById('validateForm').addEventListener('submit', async (e) => {
@@ -79,13 +79,13 @@
       resultEl.style.display = 'block';
       resultEl.innerHTML = '<span class="text-muted">Validating...</span>';
       try {
-        const res = await fetch('/cards/api/card/validate/' + encodeURIComponent(cardId));
+        const res = await fetch('/api/cards/validate/' + encodeURIComponent(cardId));
         const data = await res.json();
         resultEl.innerHTML = data.valid
           ? '<div class="alert alert-success">✓ ' + data.message + ' — ' + data.name + ' (' + data.tier + ')</div>'
           : '<div class="alert alert-warning">' + data.message + '</div>';
       } catch (err) {
-        resultEl.innerHTML = '<div class="alert alert-danger">Card service unavailable (port 5002).</div>';
+        resultEl.innerHTML = '<div class="alert alert-danger">Card service unavailable. Ensure API and chain (API→Cart→Card) are running.</div>';
       }
     });
   </script>
