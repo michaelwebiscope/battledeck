@@ -131,17 +131,20 @@ if ($apiCsproj) {
     Pop-Location
 }
 
-# Stop services before publishing so DLLs are not locked
+# Stop and remove Payment service first (it holds SQLite DLL), then stop others
 $prevErr = $ErrorActionPreference
 $ErrorActionPreference = "SilentlyContinue"
-foreach ($svc in @("NavalArchivePayment", "NavalArchiveCard", "NavalArchiveCart", "NavalArchiveWeb")) {
+& "$nssmDir\nssm.exe" stop NavalArchivePayment 2>$null
+& "$nssmDir\nssm.exe" remove NavalArchivePayment confirm 2>$null
+sc.exe stop NavalArchivePayment 2>$null
+sc.exe delete NavalArchivePayment 2>$null
+Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like "*navalarchive-payment*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+foreach ($svc in @("NavalArchiveCard", "NavalArchiveCart", "NavalArchiveWeb")) {
     & "$nssmDir\nssm.exe" stop $svc 2>$null
     sc.exe stop $svc 2>$null
-    $s = Get-Service -Name $svc -ErrorAction SilentlyContinue
-    if ($s) { Stop-Service -Name $svc -Force -ErrorAction SilentlyContinue }
 }
 $ErrorActionPreference = $prevErr
-Start-Sleep -Seconds 15
+Start-Sleep -Seconds 20
 
 $paymentCsproj = Get-ChildItem -Path $clonePath -Filter "NavalArchive.PaymentSimulation.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($paymentCsproj) {
