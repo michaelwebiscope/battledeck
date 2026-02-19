@@ -63,4 +63,62 @@ app.UseSwaggerUI();
 app.UseCors();
 app.MapControllers();
 
+// Minimal API for checkout (bypasses controller routing that 404s on POST under IIS)
+app.MapPost("api/checkout/pay", async (HttpContext ctx, IHttpClientFactory http, IConfiguration config) =>
+{
+    var req = await ctx.Request.ReadFromJsonAsync<CheckoutPayload>();
+    if (string.IsNullOrWhiteSpace(req?.CardId) || string.IsNullOrWhiteSpace(req?.Name))
+        return Results.BadRequest(new { error = "CardId and Name required" });
+
+    var cardUrl = config["CardService:Url"] ?? "http://localhost:5002";
+    var cartUrl = config["CartService:Url"] ?? "http://localhost:5003";
+    var paymentUrl = config["PaymentService:Url"] ?? "http://localhost:5001";
+    var client = http.CreateClient();
+
+    var validateRes = await client.PostAsJsonAsync($"{cardUrl}/api/card/validate-with-name", new { cardId = req.CardId, name = req.Name });
+    if (!validateRes.IsSuccessStatusCode)
+        return Results.Json(new { error = await validateRes.Content.ReadAsStringAsync() }, statusCode: (int)validateRes.StatusCode);
+
+    var validateData = await validateRes.Content.ReadFromJsonAsync<ValidatePayload>();
+    if (validateData?.Valid != true)
+        return Results.Ok(new { approved = false, message = validateData?.Message ?? "Card validation failed" });
+
+    decimal amount = req.Amount ?? 0;
+    if (amount <= 0)
+    {
+        var totalRes = await client.GetAsync($"{cartUrl}/api/cart/total/{req.CardId}?isMember=true");
+        if (totalRes.IsSuccessStatusCode)
+        {
+            var totalData = await totalRes.Content.ReadFromJsonAsync<CartTotalPayload>();
+            amount = totalData?.Total ?? 0;
+        }
+    }
+    if (amount <= 0)
+        return Results.BadRequest(new { error = "No cart total and no amount provided" });
+
+    var payRes = await client.PostAsJsonAsync($"{paymentUrl}/api/payment/simulate", new
+    {
+        amount,
+        currency = req.Currency ?? "USD",
+        description = req.Description ?? "Museum checkout",
+        cardId = req.CardId
+    });
+    if (!payRes.IsSuccessStatusCode)
+        return Results.Json(new { error = "Payment service unavailable" }, statusCode: 502);
+
+    var payData = await payRes.Content.ReadFromJsonAsync<PaymentPayload>();
+    return Results.Ok(new
+    {
+        approved = payData?.Approved ?? false,
+        transactionId = payData?.TransactionId,
+        amount,
+        message = payData?.Approved == true ? "Payment approved" : "Payment declined"
+    });
+});
+
 app.Run();
+
+record CheckoutPayload(string? CardId, string? Name, decimal? Amount, string? Currency, string? Description);
+record ValidatePayload(bool Valid, string? Message);
+record CartTotalPayload(decimal Total);
+record PaymentPayload(bool Approved, string? TransactionId);
