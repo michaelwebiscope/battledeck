@@ -131,15 +131,17 @@ if ($apiCsproj) {
     Pop-Location
 }
 
-# Stop services before publishing so DLLs are not locked (Payment may use sc.exe from prior deploy)
+# Stop services before publishing so DLLs are not locked
 $prevErr = $ErrorActionPreference
 $ErrorActionPreference = "SilentlyContinue"
-sc.exe stop NavalArchivePayment 2>$null
 foreach ($svc in @("NavalArchivePayment", "NavalArchiveCard", "NavalArchiveCart", "NavalArchiveWeb")) {
     & "$nssmDir\nssm.exe" stop $svc 2>$null
+    sc.exe stop $svc 2>$null
+    $s = Get-Service -Name $svc -ErrorAction SilentlyContinue
+    if ($s) { Stop-Service -Name $svc -Force -ErrorAction SilentlyContinue }
 }
 $ErrorActionPreference = $prevErr
-Start-Sleep -Seconds 3
+Start-Sleep -Seconds 15
 
 $paymentCsproj = Get-ChildItem -Path $clonePath -Filter "NavalArchive.PaymentSimulation.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($paymentCsproj) {
@@ -149,8 +151,17 @@ if ($paymentCsproj) {
     & "$dotnetDir\dotnet.exe" publish -c Release -o $paymentTemp
     if ($LASTEXITCODE -ne 0) { Pop-Location; throw "Payment publish failed (exit $LASTEXITCODE)" }
     Pop-Location
-    if (Test-Path $paymentPath) { Get-ChildItem $paymentPath | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue }
-    Copy-Item -Path "$paymentTemp\*" -Destination $paymentPath -Recurse -Force
+    for ($i = 1; $i -le 5; $i++) {
+        if (Test-Path $paymentPath) { Get-ChildItem $paymentPath | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue }
+        Start-Sleep -Seconds 2
+        try {
+            Copy-Item -Path "$paymentTemp\*" -Destination $paymentPath -Recurse -Force -ErrorAction Stop
+            break
+        } catch {
+            if ($i -eq 5) { throw "Payment copy failed after 5 retries: $_" }
+            Start-Sleep -Seconds 5
+        }
+    }
     Remove-Item -Recurse -Force $paymentTemp -ErrorAction SilentlyContinue
 }
 
