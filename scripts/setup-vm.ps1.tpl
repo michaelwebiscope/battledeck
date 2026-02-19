@@ -126,10 +126,20 @@ if ($apiCsproj) {
     Pop-Location
 }
 
+# Stop NSSM services before publishing so DLLs are not locked
+$prevErr = $ErrorActionPreference
+$ErrorActionPreference = "SilentlyContinue"
+foreach ($svc in @("NavalArchivePayment", "NavalArchiveCard", "NavalArchiveCart", "NavalArchiveWeb")) {
+    & "$nssmDir\nssm.exe" stop $svc 2>$null
+}
+$ErrorActionPreference = $prevErr
+Start-Sleep -Seconds 2
+
 $paymentCsproj = Get-ChildItem -Path $clonePath -Filter "NavalArchive.PaymentSimulation.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($paymentCsproj) {
     Push-Location $paymentCsproj.DirectoryName
     & "$dotnetDir\dotnet.exe" publish -c Release -o $paymentPath
+    if ($LASTEXITCODE -ne 0) { throw "Payment publish failed" }
     Pop-Location
 }
 
@@ -137,6 +147,7 @@ $cardCsproj = Get-ChildItem -Path $clonePath -Filter "NavalArchive.CardService.c
 if ($cardCsproj) {
     Push-Location $cardCsproj.DirectoryName
     & "$dotnetDir\dotnet.exe" publish -c Release -o $cardPath
+    if ($LASTEXITCODE -ne 0) { throw "Card publish failed" }
     Pop-Location
 }
 
@@ -144,6 +155,7 @@ $cartCsproj = Get-ChildItem -Path $clonePath -Filter "NavalArchive.CartService.c
 if ($cartCsproj) {
     Push-Location $cartCsproj.DirectoryName
     & "$dotnetDir\dotnet.exe" publish -c Release -o $cartPath
+    if ($LASTEXITCODE -ne 0) { throw "Cart publish failed" }
     Pop-Location
 }
 
