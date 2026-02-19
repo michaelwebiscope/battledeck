@@ -44,9 +44,21 @@ The site will be available at **http://localhost:3000**.
 
 ### 3. Run Both
 
+**Option A: Full stack (recommended)**
+
+```bash
+./scripts/run-local.sh
+```
+
+Starts all services: Payment (5001), Card (5002), Cart (5003), API (5000), Web (3000). Press Ctrl+C to stop.
+
+**Option B: Manual (API + Web only)**
+
 1. Start the backend first: `cd NavalArchive.Api && dotnet run`
 2. In another terminal, start the frontend: `cd NavalArchive.Web && npm start`
 3. Open **http://localhost:3000** in your browser
+
+For members, cart, checkout, and cards you need the full stack (Option A).
 
 ---
 
