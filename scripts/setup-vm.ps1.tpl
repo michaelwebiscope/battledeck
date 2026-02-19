@@ -131,10 +131,9 @@ if ($apiCsproj) {
     Pop-Location
 }
 
-# Stop services before publishing so DLLs are not locked (Payment uses sc.exe, others use NSSM)
+# Stop NSSM services before publishing so DLLs are not locked
 $prevErr = $ErrorActionPreference
 $ErrorActionPreference = "SilentlyContinue"
-sc.exe stop NavalArchivePayment 2>$null
 foreach ($svc in @("NavalArchivePayment", "NavalArchiveCard", "NavalArchiveCart", "NavalArchiveWeb")) {
     & "$nssmDir\nssm.exe" stop $svc 2>$null
 }
@@ -241,7 +240,7 @@ if (Test-Path "$webPath\server.js") {
     cmd /c "`"$nssmDir\nssm.exe`" start NavalArchiveWeb"
 }
 
-# Payment Simulation service (runs via sc.exe)
+# Payment Simulation service (runs outside IIS on port 5001)
 if (Test-Path "$paymentPath\NavalArchive.PaymentSimulation.dll") {
     $prevErr = $ErrorActionPreference
     $ErrorActionPreference = "SilentlyContinue"
@@ -251,16 +250,10 @@ if (Test-Path "$paymentPath\NavalArchive.PaymentSimulation.dll") {
     sc.exe delete NavalArchivePayment 2>$null
     Start-Sleep -Seconds 2
     $ErrorActionPreference = $prevErr
-
-    @"
-@echo off
-set ASPNETCORE_URLS=http://localhost:5001
-cd /d $paymentPath
-"$dotnetExe" NavalArchive.PaymentSimulation.dll
-"@ | Set-Content -Path "$paymentPath\run-payment.cmd" -Encoding ASCII
-
-    sc.exe create NavalArchivePayment binPath= "`"C:\Windows\System32\cmd.exe`" /c `"$paymentPath\run-payment.cmd`"" start= auto
-    sc.exe start NavalArchivePayment
+    cmd /c "`"$nssmDir\nssm.exe`" install NavalArchivePayment `"$dotnetExe`" `"$paymentPath\NavalArchive.PaymentSimulation.dll`""
+    cmd /c "`"$nssmDir\nssm.exe`" set NavalArchivePayment AppDirectory $paymentPath"
+    cmd /c "`"$nssmDir\nssm.exe`" set NavalArchivePayment AppEnvironmentExtra `"ASPNETCORE_URLS=http://localhost:5001`""
+    cmd /c "`"$nssmDir\nssm.exe`" start NavalArchivePayment"
 }
 
 # Card service (runs outside IIS on port 5002)
