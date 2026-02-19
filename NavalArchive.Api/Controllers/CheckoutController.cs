@@ -15,7 +15,7 @@ public class CheckoutController : ControllerBase
         _config = config;
     }
 
-    [HttpPost("")]
+    [HttpPost("pay")]
     public async Task<IActionResult> Checkout([FromBody] CheckoutRequest request)
     {
         if (string.IsNullOrWhiteSpace(request?.CardId) || string.IsNullOrWhiteSpace(request?.Name))

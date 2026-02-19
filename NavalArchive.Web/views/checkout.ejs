@@ -51,7 +51,7 @@
       resultEl.style.display = 'block';
       resultEl.innerHTML = '<span class="text-muted">Processing (App→API→Card→Cart→Payment)...</span>';
       try {
-        const res = await fetch('/api/checkout', {
+        const res = await fetch('/api/checkout/pay', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ cardId, name, amount: amount > 0 ? amount : null, currency: 'USD' })

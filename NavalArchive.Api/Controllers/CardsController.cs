@@ -18,9 +18,9 @@ public class CardsController : ControllerBase
     [HttpPost("issue")]
     public async Task<IActionResult> Issue([FromBody] IssueRequest request)
     {
-        var cartUrl = _config["CartService:Url"] ?? "http://localhost:5003";
+        var cardUrl = _config["CardService:Url"] ?? "http://localhost:5002";
         var client = _httpClientFactory.CreateClient();
-        var response = await client.PostAsJsonAsync($"{cartUrl}/api/cart/issue-card", new { name = request.Name, tier = request.Tier });
+        var response = await client.PostAsJsonAsync($"{cardUrl}/api/card/issue", new { name = request.Name, tier = request.Tier });
         if (!response.IsSuccessStatusCode)
         {
             var err = await response.Content.ReadAsStringAsync();
@@ -33,9 +33,9 @@ public class CardsController : ControllerBase
     [HttpGet("validate/{cardId}")]
     public async Task<IActionResult> Validate(string? cardId)
     {
-        var cartUrl = _config["CartService:Url"] ?? "http://localhost:5003";
+        var cardUrl = _config["CardService:Url"] ?? "http://localhost:5002";
         var client = _httpClientFactory.CreateClient();
-        var response = await client.GetAsync($"{cartUrl}/api/cart/validate/{cardId}");
+        var response = await client.GetAsync($"{cardUrl}/api/card/validate/{cardId}");
         if (!response.IsSuccessStatusCode)
             return StatusCode((int)response.StatusCode, new { error = await response.Content.ReadAsStringAsync() });
         var result = await response.Content.ReadFromJsonAsync<object>();
