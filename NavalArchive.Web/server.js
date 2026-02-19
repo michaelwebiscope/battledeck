@@ -327,6 +327,10 @@ app.post('/logs/search', async (req, res) => {
   }
 });
 
+app.get('/donate', (req, res) => {
+  res.render('donate', { title: 'Donate' });
+});
+
 app.get('/simulation', (req, res) => {
   res.render('simulation', {
     title: 'Live Battle'
