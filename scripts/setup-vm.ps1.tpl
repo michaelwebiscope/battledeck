@@ -131,9 +131,10 @@ if ($apiCsproj) {
     Pop-Location
 }
 
-# Stop NSSM services before publishing so DLLs are not locked
+# Stop services before publishing so DLLs are not locked (Payment uses sc.exe, others use NSSM)
 $prevErr = $ErrorActionPreference
 $ErrorActionPreference = "SilentlyContinue"
+sc.exe stop NavalArchivePayment 2>$null
 foreach ($svc in @("NavalArchivePayment", "NavalArchiveCard", "NavalArchiveCart", "NavalArchiveWeb")) {
     & "$nssmDir\nssm.exe" stop $svc 2>$null
 }
