@@ -46,7 +46,7 @@
             <div class="card-header">Total</div>
             <div class="card-body">
               <p id="totalDisplay" class="mb-0">Enter card ID and add items.</p>
-              <a href="/checkout" class="btn btn-dark mt-3 w-100">Checkout</a>
+              <a href="/checkout" id="checkoutLink" class="btn btn-dark mt-3 w-100">Checkout</a>
             </div>
           </div>
         </div>
@@ -79,6 +79,14 @@
       }
     }
 
+    function updateCheckoutLink() {
+      const cardId = cardIdEl.value;
+      const link = document.getElementById('checkoutLink');
+      link.href = cardId ? '/checkout?cardId=' + encodeURIComponent(cardId) : '/checkout';
+    }
+
+    cardIdEl.addEventListener('input', updateCheckoutLink);
+
     document.getElementById('addForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const cardId = document.querySelector('[name="cardId"]').value;
@@ -92,12 +100,14 @@
           body: JSON.stringify({ cardId, productId, quantity, isMember })
         });
         refreshCart();
+        updateCheckoutLink();
       } catch (err) {
         alert('Failed to add.');
       }
     });
 
     if (cardIdEl.value) refreshCart();
+    updateCheckoutLink();
   </script>
 </body>
 </html>

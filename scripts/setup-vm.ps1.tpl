@@ -240,17 +240,26 @@ if (Test-Path "$webPath\server.js") {
     cmd /c "`"$nssmDir\nssm.exe`" start NavalArchiveWeb"
 }
 
-# Payment Simulation service (runs outside IIS on port 5001)
+# Payment Simulation service (runs via sc.exe)
 if (Test-Path "$paymentPath\NavalArchive.PaymentSimulation.dll") {
     $prevErr = $ErrorActionPreference
     $ErrorActionPreference = "SilentlyContinue"
     cmd /c "`"$nssmDir\nssm.exe`" stop NavalArchivePayment >nul 2>&1"
     cmd /c "`"$nssmDir\nssm.exe`" remove NavalArchivePayment confirm >nul 2>&1"
+    sc.exe stop NavalArchivePayment 2>$null
+    sc.exe delete NavalArchivePayment 2>$null
+    Start-Sleep -Seconds 2
     $ErrorActionPreference = $prevErr
-    cmd /c "`"$nssmDir\nssm.exe`" install NavalArchivePayment `"$dotnetExe`" `"$paymentPath\NavalArchive.PaymentSimulation.dll`""
-    cmd /c "`"$nssmDir\nssm.exe`" set NavalArchivePayment AppDirectory $paymentPath"
-    cmd /c "`"$nssmDir\nssm.exe`" set NavalArchivePayment AppEnvironmentExtra `"ASPNETCORE_URLS=http://localhost:5001`""
-    cmd /c "`"$nssmDir\nssm.exe`" start NavalArchivePayment"
+
+    @"
+@echo off
+set ASPNETCORE_URLS=http://localhost:5001
+cd /d $paymentPath
+"$dotnetExe" NavalArchive.PaymentSimulation.dll
+"@ | Set-Content -Path "$paymentPath\run-payment.cmd" -Encoding ASCII
+
+    sc.exe create NavalArchivePayment binPath= "`"C:\Windows\System32\cmd.exe`" /c `"$paymentPath\run-payment.cmd`"" start= auto
+    sc.exe start NavalArchivePayment
 }
 
 # Card service (runs outside IIS on port 5002)
