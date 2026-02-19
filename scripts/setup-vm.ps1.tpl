@@ -118,6 +118,11 @@ if ($appcmd) {
     Start-Sleep -Seconds 3
 }
 
+# Clear API output dir to avoid stale files
+if (Test-Path $apiPath) {
+    Get-ChildItem $apiPath -Exclude logs | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 $apiCsproj = Get-ChildItem -Path $clonePath -Filter "NavalArchive.Api.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($apiCsproj) {
     Push-Location $apiCsproj.DirectoryName

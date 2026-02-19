@@ -15,6 +15,9 @@ public class CheckoutController : ControllerBase
         _config = config;
     }
 
+    [HttpGet]
+    public IActionResult Get() => Ok(new { status = "CheckoutController OK" });
+
     [HttpPost]
     public async Task<IActionResult> Checkout([FromBody] CheckoutRequest request)
     {
