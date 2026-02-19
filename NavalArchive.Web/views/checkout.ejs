@@ -48,6 +48,9 @@
     const urlCardId = urlParams.get('cardId');
     if (urlCardId) cardIdInput.value = urlCardId.trim();
 
+    // Idempotency key: prevents same transaction from being charged twice (double-click, back button)
+    const idempotencyKey = crypto.randomUUID ? crypto.randomUUID() : 'ck-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+
     async function loadCartSummary() {
       const cardId = (cardIdInput.value || '').trim();
       if (!cardId) return;
@@ -88,7 +91,7 @@
         const res = await fetch('/api/checkout/pay', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cardId, name, amount: amount > 0 ? amount : null, currency: 'USD' })
+          body: JSON.stringify({ cardId, name, amount: amount > 0 ? amount : null, currency: 'USD', idempotencyKey })
         });
         const data = await res.json();
         if (res.ok && data.approved) {

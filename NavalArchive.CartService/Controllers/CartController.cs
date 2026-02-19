@@ -112,6 +112,18 @@ public class CartController : ControllerBase
         return Ok(result);
     }
 
+    [HttpPost("clear/{cardId}")]
+    public async Task<IActionResult> Clear(string cardId)
+    {
+        if (string.IsNullOrWhiteSpace(cardId))
+            return BadRequest(new { error = "CardId required" });
+
+        var items = await _db.CartItems.Where(x => x.CardId == cardId).ToListAsync();
+        _db.CartItems.RemoveRange(items);
+        await _db.SaveChangesAsync();
+        return Ok(new { message = "Cart cleared", removedCount = items.Count });
+    }
+
     [HttpGet("health")]
     public IActionResult Health() => Ok(new { status = "ok", service = "CartService" });
 }
