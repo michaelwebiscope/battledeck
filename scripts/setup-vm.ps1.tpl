@@ -139,6 +139,7 @@ $ErrorActionPreference = "SilentlyContinue"
 sc.exe stop NavalArchivePayment 2>$null
 sc.exe delete NavalArchivePayment 2>$null
 Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like "*navalarchive-payment*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+taskkill /F /IM dotnet.exe 2>$null
 foreach ($svc in @("NavalArchiveCard", "NavalArchiveCart", "NavalArchiveWeb")) {
     & "$nssmDir\nssm.exe" stop $svc 2>$null
     sc.exe stop $svc 2>$null
@@ -154,17 +155,16 @@ if ($paymentCsproj) {
     & "$dotnetDir\dotnet.exe" publish -c Release -o $paymentTemp
     if ($LASTEXITCODE -ne 0) { Pop-Location; throw "Payment publish failed (exit $LASTEXITCODE)" }
     Pop-Location
-    for ($i = 1; $i -le 5; $i++) {
-        if (Test-Path $paymentPath) { Get-ChildItem $paymentPath | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue }
+    # Rename old dir (avoids deleting locked files), copy fresh, remove old
+    if (Test-Path $paymentPath) {
+        $paymentOld = "$paymentPath.old"
+        if (Test-Path $paymentOld) { Remove-Item -Recurse -Force $paymentOld -ErrorAction SilentlyContinue }
+        Rename-Item -Path $paymentPath -NewName "navalarchive-payment.old" -Force -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 2
-        try {
-            Copy-Item -Path "$paymentTemp\*" -Destination $paymentPath -Recurse -Force -ErrorAction Stop
-            break
-        } catch {
-            if ($i -eq 5) { throw "Payment copy failed after 5 retries: $_" }
-            Start-Sleep -Seconds 5
-        }
     }
+    New-Item -ItemType Directory -Force -Path $paymentPath | Out-Null
+    Copy-Item -Path "$paymentTemp\*" -Destination $paymentPath -Recurse -Force
+    if (Test-Path "$paymentPath.old") { Remove-Item -Recurse -Force "$paymentPath.old" -ErrorAction SilentlyContinue }
     Remove-Item -Recurse -Force $paymentTemp -ErrorAction SilentlyContinue
 }
 
