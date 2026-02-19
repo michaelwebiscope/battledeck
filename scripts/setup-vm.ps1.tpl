@@ -238,18 +238,17 @@ if (Test-Path "$cardPath\NavalArchive.CardService.dll") {
     cmd /c "`"$nssmDir\nssm.exe`" start NavalArchiveCard"
 }
 
-# Cart service (runs via sc.exe - Windows Service Control, port 5003)
+# Cart service (runs outside IIS on port 5003)
 if (Test-Path "$cartPath\NavalArchive.CartService.dll") {
     $prevErr = $ErrorActionPreference
     $ErrorActionPreference = "SilentlyContinue"
-    sc.exe stop NavalArchiveCart 2>$null
-    sc.exe delete NavalArchiveCart 2>$null
-    Start-Sleep -Seconds 2
+    cmd /c "`"$nssmDir\nssm.exe`" stop NavalArchiveCart >nul 2>&1"
+    cmd /c "`"$nssmDir\nssm.exe`" remove NavalArchiveCart confirm >nul 2>&1"
     $ErrorActionPreference = $prevErr
-    $binPath = "`"$dotnetExe`" `"$cartPath\NavalArchive.CartService.dll`""
-    sc.exe create NavalArchiveCart binPath= $binPath start= auto
-    Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\NavalArchiveCart" -Name "Environment" -Value @("ASPNETCORE_URLS=http://localhost:5003") -Type MultiString -ErrorAction SilentlyContinue
-    sc.exe start NavalArchiveCart
+    cmd /c "`"$nssmDir\nssm.exe`" install NavalArchiveCart `"$dotnetExe`" `"$cartPath\NavalArchive.CartService.dll`""
+    cmd /c "`"$nssmDir\nssm.exe`" set NavalArchiveCart AppDirectory $cartPath"
+    cmd /c "`"$nssmDir\nssm.exe`" set NavalArchiveCart AppEnvironmentExtra `"ASPNETCORE_URLS=http://localhost:5003`""
+    cmd /c "`"$nssmDir\nssm.exe`" start NavalArchiveCart"
 }
 
 # ========== 3. PORTS 80 & 443 ==========
