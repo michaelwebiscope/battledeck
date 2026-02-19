@@ -1,4 +1,13 @@
+using Microsoft.EntityFrameworkCore;
+using NavalArchive.CardService.Data;
+
 var builder = WebApplication.CreateBuilder(args);
+
+var conn = builder.Configuration.GetConnectionString("CardDb") ?? builder.Configuration["ConnectionStrings:CardDb"];
+if (!string.IsNullOrEmpty(conn))
+    builder.Services.AddDbContext<CardDbContext>(o => o.UseMySql(conn, ServerVersion.AutoDetect(conn)));
+else
+    builder.Services.AddDbContext<CardDbContext>(o => o.UseInMemoryDatabase("CardDb"));
 
 builder.Services.AddControllers();
 builder.Services.AddHttpClient();
@@ -13,6 +22,9 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+    scope.ServiceProvider.GetRequiredService<CardDbContext>().Database.EnsureCreated();
 
 app.UseSwagger();
 app.UseSwaggerUI();

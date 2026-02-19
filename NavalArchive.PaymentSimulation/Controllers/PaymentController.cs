@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using NavalArchive.PaymentSimulation.Data;
 
 namespace NavalArchive.PaymentSimulation.Controllers;
 
@@ -7,16 +9,31 @@ namespace NavalArchive.PaymentSimulation.Controllers;
 public class PaymentController : ControllerBase
 {
     private static readonly Random _rng = new();
+    private readonly PaymentDbContext _db;
+
+    public PaymentController(PaymentDbContext db)
+    {
+        _db = db;
+    }
 
     [HttpPost("simulate")]
-    public IActionResult Simulate([FromBody] PaymentRequest request)
+    public async Task<IActionResult> Simulate([FromBody] PaymentRequest request)
     {
         if (request?.Amount <= 0)
             return BadRequest(new { error = "Invalid amount" });
 
-        // Simulate ~95% success rate for demo
         var approved = _rng.Next(100) < 95;
         var transactionId = Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
+
+        _db.Transactions.Add(new PaymentTransaction
+        {
+            TransactionId = transactionId,
+            CardId = request?.CardId,
+            Amount = request?.Amount ?? 0,
+            Currency = request?.Currency ?? "USD",
+            Approved = approved
+        });
+        await _db.SaveChangesAsync();
 
         return Ok(new
         {
@@ -37,4 +54,5 @@ public class PaymentRequest
     public decimal Amount { get; set; }
     public string? Currency { get; set; }
     public string? Description { get; set; }
+    public string? CardId { get; set; }
 }

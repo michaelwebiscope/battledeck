@@ -356,8 +356,20 @@ app.get('/membership', (req, res) => {
   res.render('membership', { title: 'Membership' });
 });
 
+app.get('/members', (req, res) => {
+  res.render('members', { title: 'Add Member' });
+});
+
+app.get('/cart', (req, res) => {
+  res.render('cart', { title: 'Cart', cardId: req.query.cardId || '' });
+});
+
 app.get('/checkout', (req, res) => {
   res.render('checkout', { title: 'Checkout' });
+});
+
+app.get('/verify-member', (req, res) => {
+  res.render('verify-member', { title: 'Verify Member ID' });
 });
 
 app.get('/simulation', (req, res) => {

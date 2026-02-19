@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('partials/head') %>
+</head>
+<body>
+  <%- include('partials/header') %>
+  <main>
+    <div class="container py-4">
+      <h1 class="mb-4">Cart</h1>
+      <p class="lead text-muted mb-4">Add items with member prices. Chain: App → API → Cart</p>
+      <div class="row">
+        <div class="col-lg-8">
+          <div class="card mb-4">
+            <div class="card-header">Add to Cart</div>
+            <div class="card-body">
+              <form id="addForm">
+                <div class="mb-3">
+                  <label class="form-label">Card ID</label>
+                  <input type="text" name="cardId" class="form-control" placeholder="NAV-XXXXXXXX" value="<%= typeof cardId !== 'undefined' ? cardId : '' %>" required>
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">Product</label>
+                  <select name="productId" class="form-select">
+                    <option value="1">Museum Admission — $15 ($10 member)</option>
+                    <option value="2">Annual Membership — $50 ($35 member)</option>
+                    <option value="3">Donation — $25 ($20 member)</option>
+                  </select>
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">Quantity</label>
+                  <input type="number" name="quantity" class="form-control" value="1" min="1">
+                </div>
+                <div class="mb-3 form-check">
+                  <input type="checkbox" name="isMember" class="form-check-input" id="isMember" checked>
+                  <label class="form-check-label" for="isMember">Member price</label>
+                </div>
+                <button type="submit" class="btn btn-dark">Add to Cart</button>
+              </form>
+            </div>
+          </div>
+          <div id="cartItems" class="card"></div>
+        </div>
+        <div class="col-lg-4">
+          <div class="card">
+            <div class="card-header">Total</div>
+            <div class="card-body">
+              <p id="totalDisplay" class="mb-0">Enter card ID and add items.</p>
+              <a href="/checkout" class="btn btn-dark mt-3 w-100">Checkout</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+  <%- include('partials/footer') %>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    const cardIdEl = document.querySelector('[name="cardId"]');
+    const urlParams = new URLSearchParams(location.search);
+    if (urlParams.get('cardId')) cardIdEl.value = urlParams.get('cardId');
+
+    async function refreshCart() {
+      const cardId = cardIdEl.value;
+      if (!cardId) return;
+      try {
+        const [itemsRes, totalRes] = await Promise.all([
+          fetch('/api/cart/items/' + encodeURIComponent(cardId)),
+          fetch('/api/cart/total/' + encodeURIComponent(cardId) + '?isMember=true')
+        ]);
+        const items = await itemsRes.json();
+        const total = await totalRes.json();
+        document.getElementById('cartItems').innerHTML = Array.isArray(items) && items.length
+          ? '<div class="card-body"><table class="table"><tbody>' + items.map(i => '<tr><td>' + i.name + '</td><td>x' + i.quantity + '</td><td>$' + i.lineTotal + '</td></tr>').join('') + '</tbody></table></div>'
+          : '<div class="card-body text-muted">No items. Add products above.</div>';
+        document.getElementById('totalDisplay').textContent = total.total != null ? 'Total: $' + total.total : 'Enter card ID.';
+      } catch (e) {
+        document.getElementById('totalDisplay').textContent = 'Error loading cart.';
+      }
+    }
+
+    document.getElementById('addForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const cardId = document.querySelector('[name="cardId"]').value;
+      const productId = parseInt(document.querySelector('[name="productId"]').value);
+      const quantity = parseInt(document.querySelector('[name="quantity"]').value) || 1;
+      const isMember = document.getElementById('isMember').checked;
+      try {
+        await fetch('/api/cart/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cardId, productId, quantity, isMember })
+        });
+        refreshCart();
+      } catch (err) {
+        alert('Failed to add.');
+      }
+    });
+
+    if (cardIdEl.value) refreshCart();
+  </script>
+</body>
+</html>

@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('partials/head') %>
+</head>
+<body>
+  <%- include('partials/header') %>
+  <main>
+    <div class="container py-4">
+      <h1 class="mb-4">Verify Member ID</h1>
+      <p class="lead text-muted mb-4">Verify your card ID matches your name. Chain: App → API → Card</p>
+      <div class="row">
+        <div class="col-lg-6">
+          <div class="card">
+            <div class="card-body">
+              <form id="verifyForm">
+                <div class="mb-3">
+                  <label class="form-label">Card ID</label>
+                  <input type="text" name="cardId" class="form-control" placeholder="NAV-XXXXXXXX" required>
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">Your Name</label>
+                  <input type="text" name="name" class="form-control" placeholder="Full name" required>
+                </div>
+                <button type="submit" class="btn btn-dark">Verify</button>
+              </form>
+              <div id="result" class="mt-3" style="display:none;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+  <%- include('partials/footer') %>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    document.getElementById('verifyForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const cardId = document.querySelector('[name="cardId"]').value;
+      const name = document.querySelector('[name="name"]').value;
+      const resultEl = document.getElementById('result');
+      resultEl.style.display = 'block';
+      resultEl.innerHTML = '<span class="text-muted">Verifying...</span>';
+      try {
+        const res = await fetch('/api/members/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cardId, name })
+        });
+        const data = await res.json();
+        if (res.ok && data.valid) {
+          resultEl.innerHTML = '<div class="alert alert-success">✓ Real ID verified — ' + data.name + ' (' + data.tier + ')</div>';
+        } else {
+          resultEl.innerHTML = '<div class="alert alert-warning">' + (data.message || 'Verification failed') + '</div>';
+        }
+      } catch (err) {
+        resultEl.innerHTML = '<div class="alert alert-danger">API unavailable.</div>';
+      }
+    });
+  </script>
+</body>
+</html>
