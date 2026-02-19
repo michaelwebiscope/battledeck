@@ -15,10 +15,7 @@ public class CheckoutController : ControllerBase
         _config = config;
     }
 
-    [HttpGet]
-    public IActionResult Get() => Ok(new { status = "CheckoutController OK" });
-
-    [HttpPost]
+    [HttpPost("")]
     public async Task<IActionResult> Checkout([FromBody] CheckoutRequest request)
     {
         if (string.IsNullOrWhiteSpace(request?.CardId) || string.IsNullOrWhiteSpace(request?.Name))
