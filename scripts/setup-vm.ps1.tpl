@@ -108,10 +108,21 @@ New-Item -ItemType Directory -Force -Path $cardPath | Out-Null
 New-Item -ItemType Directory -Force -Path $cartPath | Out-Null
 New-Item -ItemType Directory -Force -Path "$apiPath\logs" | Out-Null
 
+# Stop API site/app pool before publishing so DLLs are not locked
+if ($appcmd) {
+    $prevErr = $ErrorActionPreference
+    $ErrorActionPreference = "SilentlyContinue"
+    & $appcmd stop site NavalArchive-API 2>$null
+    & $appcmd stop apppool NavalArchive-API 2>$null
+    $ErrorActionPreference = $prevErr
+    Start-Sleep -Seconds 3
+}
+
 $apiCsproj = Get-ChildItem -Path $clonePath -Filter "NavalArchive.Api.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($apiCsproj) {
     Push-Location $apiCsproj.DirectoryName
     & "$dotnetDir\dotnet.exe" publish -c Release -o $apiPath
+    if ($LASTEXITCODE -ne 0) { throw "API publish failed" }
     Pop-Location
 }
 
