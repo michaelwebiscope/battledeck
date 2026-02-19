@@ -19,6 +19,32 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' }
 });
 
+// Proxy /cards and /payments to local services (for local dev; on IIS these are rewritten)
+const CARD_URL = process.env.CARD_URL || 'http://localhost:5002';
+const PAYMENT_URL = process.env.PAYMENT_URL || 'http://localhost:5001';
+function proxyTo(baseUrl) {
+  return async (req, res) => {
+    try {
+      const url = `${baseUrl}${req.url}`;
+      const opts = {
+        method: req.method,
+        url,
+        headers: { 'Content-Type': 'application/json' },
+        responseType: 'json',
+        validateStatus: () => true
+      };
+      if (req.method !== 'GET' && req.method !== 'HEAD' && req.body) opts.data = req.body;
+      const r = await axios(opts);
+      res.status(r.status).json(r.data ?? {});
+    } catch (err) {
+      console.error('Proxy error:', err.message);
+      res.status(502).json({ error: 'Service unavailable' });
+    }
+  };
+}
+app.use('/cards', proxyTo(CARD_URL));
+app.use('/payments', proxyTo(PAYMENT_URL));
+
 // --- Routes ---
 
 app.get('/', (req, res) => {

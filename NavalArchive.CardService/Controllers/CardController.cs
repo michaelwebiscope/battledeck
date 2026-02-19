@@ -32,9 +32,9 @@ public class CardController : ControllerBase
     }
 
     [HttpGet("validate/{cardId}")]
-    public IActionResult Validate(string cardId)
+    public IActionResult Validate(string? cardId)
     {
-        if (!_cards.TryGetValue(cardId, out var card))
+        if (string.IsNullOrWhiteSpace(cardId) || !_cards.TryGetValue(cardId, out var card))
             return NotFound(new { valid = false, message = "Card not found" });
 
         var valid = card.ExpiresAt > DateTime.UtcNow;
