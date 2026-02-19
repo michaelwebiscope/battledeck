@@ -143,10 +143,15 @@ Start-Sleep -Seconds 3
 
 $paymentCsproj = Get-ChildItem -Path $clonePath -Filter "NavalArchive.PaymentSimulation.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($paymentCsproj) {
+    $paymentTemp = "$env:TEMP\navalarchive-payment-publish"
+    if (Test-Path $paymentTemp) { Remove-Item -Recurse -Force $paymentTemp }
     Push-Location $paymentCsproj.DirectoryName
-    & "$dotnetDir\dotnet.exe" publish -c Release -o $paymentPath
-    if ($LASTEXITCODE -ne 0) { throw "Payment publish failed" }
+    & "$dotnetDir\dotnet.exe" publish -c Release -o $paymentTemp
+    if ($LASTEXITCODE -ne 0) { Pop-Location; throw "Payment publish failed (exit $LASTEXITCODE)" }
     Pop-Location
+    if (Test-Path $paymentPath) { Get-ChildItem $paymentPath | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue }
+    Copy-Item -Path "$paymentTemp\*" -Destination $paymentPath -Recurse -Force
+    Remove-Item -Recurse -Force $paymentTemp -ErrorAction SilentlyContinue
 }
 
 $cardCsproj = Get-ChildItem -Path $clonePath -Filter "NavalArchive.CardService.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
