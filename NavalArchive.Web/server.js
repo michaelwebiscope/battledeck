@@ -331,6 +331,10 @@ app.get('/donate', (req, res) => {
   res.render('donate', { title: 'Donate' });
 });
 
+app.get('/membership', (req, res) => {
+  res.render('membership', { title: 'Membership' });
+});
+
 app.get('/simulation', (req, res) => {
   res.render('simulation', {
     title: 'Live Battle'
