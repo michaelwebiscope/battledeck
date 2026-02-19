@@ -131,14 +131,15 @@ if ($apiCsproj) {
     Pop-Location
 }
 
-# Stop NSSM services before publishing so DLLs are not locked
+# Stop services before publishing so DLLs are not locked (Payment may use sc.exe from prior deploy)
 $prevErr = $ErrorActionPreference
 $ErrorActionPreference = "SilentlyContinue"
+sc.exe stop NavalArchivePayment 2>$null
 foreach ($svc in @("NavalArchivePayment", "NavalArchiveCard", "NavalArchiveCart", "NavalArchiveWeb")) {
     & "$nssmDir\nssm.exe" stop $svc 2>$null
 }
 $ErrorActionPreference = $prevErr
-Start-Sleep -Seconds 2
+Start-Sleep -Seconds 3
 
 $paymentCsproj = Get-ChildItem -Path $clonePath -Filter "NavalArchive.PaymentSimulation.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($paymentCsproj) {
