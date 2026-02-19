@@ -45,10 +45,11 @@
   <script>
     const urlParams = new URLSearchParams(location.search);
     const cardIdInput = document.querySelector('[name="cardId"]');
-    if (urlParams.get('cardId')) cardIdInput.value = urlParams.get('cardId');
+    const urlCardId = urlParams.get('cardId');
+    if (urlCardId) cardIdInput.value = urlCardId.trim();
 
     async function loadCartSummary() {
-      const cardId = cardIdInput.value;
+      const cardId = (cardIdInput.value || '').trim();
       if (!cardId) return;
       try {
         const [itemsRes, totalRes] = await Promise.all([
@@ -77,8 +78,8 @@
 
     document.getElementById('checkoutForm').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const name = document.querySelector('[name="name"]').value;
-      const cardId = document.querySelector('[name="cardId"]').value;
+      const name = (document.querySelector('[name="name"]').value || '').trim();
+      const cardId = (document.querySelector('[name="cardId"]').value || '').trim();
       const amount = parseFloat(document.querySelector('[name="amount"]').value) || 0;
       const resultEl = document.getElementById('result');
       resultEl.style.display = 'block';

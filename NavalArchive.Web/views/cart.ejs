@@ -61,7 +61,7 @@
     if (urlParams.get('cardId')) cardIdEl.value = urlParams.get('cardId');
 
     async function refreshCart() {
-      const cardId = cardIdEl.value;
+      const cardId = (cardIdEl.value || '').trim();
       if (!cardId) return;
       try {
         const [itemsRes, totalRes] = await Promise.all([
@@ -80,7 +80,7 @@
     }
 
     function updateCheckoutLink() {
-      const cardId = cardIdEl.value;
+      const cardId = (cardIdEl.value || '').trim();
       const link = document.getElementById('checkoutLink');
       link.href = cardId ? '/checkout?cardId=' + encodeURIComponent(cardId) : '/checkout';
     }
@@ -89,7 +89,7 @@
 
     document.getElementById('addForm').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const cardId = document.querySelector('[name="cardId"]').value;
+      const cardId = (document.querySelector('[name="cardId"]').value || '').trim();
       const productId = parseInt(document.querySelector('[name="productId"]').value);
       const quantity = parseInt(document.querySelector('[name="quantity"]').value) || 1;
       const isMember = document.getElementById('isMember').checked;
