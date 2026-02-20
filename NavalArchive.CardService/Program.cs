@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using NavalArchive.CardService.Data;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseWindowsService();
 
 var conn = builder.Configuration.GetConnectionString("CardDb") ?? builder.Configuration["ConnectionStrings:CardDb"];
 var provider = builder.Configuration["DatabaseProvider"] ?? "";

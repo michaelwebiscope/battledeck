@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using NavalArchive.PaymentSimulation.Data;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseWindowsService();
 
 var conn = builder.Configuration.GetConnectionString("PaymentDb") ?? builder.Configuration["ConnectionStrings:PaymentDb"];
 var provider = builder.Configuration["DatabaseProvider"] ?? "";

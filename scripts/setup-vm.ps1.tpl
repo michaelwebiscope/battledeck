@@ -228,38 +228,38 @@ $dotnetExe = "C:\Program Files\dotnet\dotnet.exe"
 </configuration>
 "@ | Set-Content -Path "$webPath\web.config" -Encoding UTF8
 
-# NavalArchiveWeb (Node) - sc.exe, no NSSM. Node.exe runs server.js directly.
+# NavalArchiveWeb (Node) - sc.exe with batch launcher (sets cwd + env)
 if (Test-Path "$webPath\server.js") {
+    @"
+@echo off
+cd /d $webPath
+set API_URL=http://localhost:5000
+set PORT=3000
+node server.js
+"@ | Set-Content -Path "$webPath\start-web.cmd" -Encoding ASCII
     $prevErr = $ErrorActionPreference
     $ErrorActionPreference = "SilentlyContinue"
     sc.exe stop NavalArchiveWeb 2>$null
     sc.exe delete NavalArchiveWeb 2>$null
     Start-Sleep -Seconds 2
     $ErrorActionPreference = $prevErr
-    # binPath needs inner quotes for paths with spaces (Program Files)
-    sc.exe create NavalArchiveWeb binPath= "`"$nodeDir\node.exe`" `"$webPath\server.js`"" start= auto
-    sc.exe config NavalArchiveWeb obj= "LocalSystem"
+    sc.exe create NavalArchiveWeb binPath= "cmd.exe /c $webPath\start-web.cmd" start= auto
     sc.exe start NavalArchiveWeb
 }
 
-# Payment, Card, Cart - sc.exe with self-contained .exe (no NSSM, no dotnet.exe)
-# Deployed as executables registered directly with SCM per customer requirements.
-
+# Payment, Card, Cart - sc.exe with self-contained .exe + UseWindowsService (reports to SCM)
 if (Test-Path "$paymentPath\NavalArchive.PaymentSimulation.exe") {
     sc.exe create NavalArchivePayment binPath= "$paymentPath\NavalArchive.PaymentSimulation.exe --urls=http://localhost:5001" start= auto
-    sc.exe config NavalArchivePayment obj= "LocalSystem"
     sc.exe start NavalArchivePayment
 }
 
 if (Test-Path "$cardPath\NavalArchive.CardService.exe") {
     sc.exe create NavalArchiveCard binPath= "$cardPath\NavalArchive.CardService.exe --urls=http://localhost:5002" start= auto
-    sc.exe config NavalArchiveCard obj= "LocalSystem"
     sc.exe start NavalArchiveCard
 }
 
 if (Test-Path "$cartPath\NavalArchive.CartService.exe") {
     sc.exe create NavalArchiveCart binPath= "$cartPath\NavalArchive.CartService.exe --urls=http://localhost:5003" start= auto
-    sc.exe config NavalArchiveCart obj= "LocalSystem"
     sc.exe start NavalArchiveCart
 }
 

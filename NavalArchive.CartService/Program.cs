@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using NavalArchive.CartService.Data;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseWindowsService();
 
 var conn = builder.Configuration.GetConnectionString("CartDb") ?? builder.Configuration["ConnectionStrings:CartDb"];
 var provider = builder.Configuration["DatabaseProvider"] ?? "";
