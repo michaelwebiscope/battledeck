@@ -12,7 +12,6 @@ $cardPath = "C:\inetpub\navalarchive-card"
 $cartPath = "C:\inetpub\navalarchive-cart"
 $dotnetDir = "C:\Program Files\dotnet"
 $nodeDir = "C:\Program Files\nodejs"
-$nssmDir = "C:\Program Files\nssm"
 
 $RepoUrl = "${repo_url}"
 $RepoBranch = "${repo_branch}"
@@ -92,15 +91,6 @@ if (!$hostingInstalled) {
 Invoke-WebRequest -Uri "https://download.microsoft.com/download/e/9/8/e9849d6a-020e-47e4-9fd0-a023e99b54eb/requestRouter_amd64.msi" -OutFile "$env:TEMP\arr.msi" -UseBasicParsing
 Start-Process msiexec -ArgumentList "/i", "$env:TEMP\arr.msi", "/quiet" -Wait
 
-if (!(Test-Path "$nssmDir\nssm.exe")) {
-    Invoke-WebRequest -Uri "https://nssm.cc/release/nssm-2.24.zip" -OutFile "$env:TEMP\nssm.zip" -UseBasicParsing
-    Expand-Archive -Path "$env:TEMP\nssm.zip" -DestinationPath $env:TEMP -Force
-    New-Item -ItemType Directory -Force -Path $nssmDir | Out-Null
-    Copy-Item "$env:TEMP\nssm-2.24\win64\nssm.exe" $nssmDir -Force
-}
-$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-if (Test-Path "$nssmDir\nssm.exe") { $env:Path = "$nssmDir;$env:Path" }
-
 New-Item -ItemType Directory -Force -Path $apiPath | Out-Null
 New-Item -ItemType Directory -Force -Path $webPath | Out-Null
 New-Item -ItemType Directory -Force -Path $paymentPath | Out-Null
@@ -131,28 +121,27 @@ if ($apiCsproj) {
     Pop-Location
 }
 
-# Stop and remove Payment service first (it holds SQLite DLL), then stop others
+# Stop and remove services (sc.exe - no NSSM)
 $prevErr = $ErrorActionPreference
 $ErrorActionPreference = "SilentlyContinue"
-& "$nssmDir\nssm.exe" stop NavalArchivePayment 2>$null
-& "$nssmDir\nssm.exe" remove NavalArchivePayment confirm 2>$null
-sc.exe stop NavalArchivePayment 2>$null
-sc.exe delete NavalArchivePayment 2>$null
-Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like "*navalarchive-payment*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-taskkill /F /IM dotnet.exe 2>$null
-foreach ($svc in @("NavalArchiveCard", "NavalArchiveCart", "NavalArchiveWeb")) {
-    & "$nssmDir\nssm.exe" stop $svc 2>$null
+foreach ($svc in @("NavalArchivePayment", "NavalArchiveCard", "NavalArchiveCart", "NavalArchiveWeb")) {
     sc.exe stop $svc 2>$null
+    sc.exe delete $svc 2>$null
 }
+Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like "*navalarchive-payment*" -or $_.CommandLine -like "*navalarchive-card*" -or $_.CommandLine -like "*navalarchive-cart*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+taskkill /F /IM dotnet.exe 2>$null
+taskkill /F /IM NavalArchive.PaymentSimulation.exe 2>$null
+taskkill /F /IM NavalArchive.CardService.exe 2>$null
+taskkill /F /IM NavalArchive.CartService.exe 2>$null
 $ErrorActionPreference = $prevErr
-Start-Sleep -Seconds 20
+Start-Sleep -Seconds 10
 
 $paymentCsproj = Get-ChildItem -Path $clonePath -Filter "NavalArchive.PaymentSimulation.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($paymentCsproj) {
     $paymentTemp = "$env:TEMP\navalarchive-payment-publish"
     if (Test-Path $paymentTemp) { Remove-Item -Recurse -Force $paymentTemp }
     Push-Location $paymentCsproj.DirectoryName
-    & "$dotnetDir\dotnet.exe" publish -c Release -o $paymentTemp
+    & "$dotnetDir\dotnet.exe" publish -c Release -r win-x64 --self-contained true -o $paymentTemp
     if ($LASTEXITCODE -ne 0) { Pop-Location; throw "Payment publish failed (exit $LASTEXITCODE)" }
     Pop-Location
     # Rename old dir (avoids deleting locked files), copy fresh, remove old
@@ -171,7 +160,7 @@ if ($paymentCsproj) {
 $cardCsproj = Get-ChildItem -Path $clonePath -Filter "NavalArchive.CardService.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($cardCsproj) {
     Push-Location $cardCsproj.DirectoryName
-    & "$dotnetDir\dotnet.exe" publish -c Release -o $cardPath
+    & "$dotnetDir\dotnet.exe" publish -c Release -r win-x64 --self-contained true -o $cardPath
     if ($LASTEXITCODE -ne 0) { throw "Card publish failed" }
     Pop-Location
 }
@@ -179,7 +168,7 @@ if ($cardCsproj) {
 $cartCsproj = Get-ChildItem -Path $clonePath -Filter "NavalArchive.CartService.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($cartCsproj) {
     Push-Location $cartCsproj.DirectoryName
-    & "$dotnetDir\dotnet.exe" publish -c Release -o $cartPath
+    & "$dotnetDir\dotnet.exe" publish -c Release -r win-x64 --self-contained true -o $cartPath
     if ($LASTEXITCODE -ne 0) { throw "Cart publish failed" }
     Pop-Location
 }
@@ -239,67 +228,39 @@ $dotnetExe = "C:\Program Files\dotnet\dotnet.exe"
 </configuration>
 "@ | Set-Content -Path "$webPath\web.config" -Encoding UTF8
 
+# NavalArchiveWeb (Node) - sc.exe, no NSSM. Node.exe runs server.js directly.
 if (Test-Path "$webPath\server.js") {
     $prevErr = $ErrorActionPreference
     $ErrorActionPreference = "SilentlyContinue"
-    cmd /c "`"$nssmDir\nssm.exe`" stop NavalArchiveWeb >nul 2>&1"
-    cmd /c "`"$nssmDir\nssm.exe`" remove NavalArchiveWeb confirm >nul 2>&1"
-    $ErrorActionPreference = $prevErr
-    if ($NewRelicLicenseKey) {
-        cmd /c "`"$nssmDir\nssm.exe`" install NavalArchiveWeb `"$nodeDir\node.exe`" `"-r newrelic server.js`""
-    } else {
-        cmd /c "`"$nssmDir\nssm.exe`" install NavalArchiveWeb `"$nodeDir\node.exe`" `"server.js`""
-    }
-    cmd /c "`"$nssmDir\nssm.exe`" set NavalArchiveWeb AppDirectory $webPath"
-    $envVars = "API_URL=http://localhost:5000", "PORT=3000"
-    if ($NewRelicLicenseKey) {
-        $envVars += "NEW_RELIC_AI_MONITORING_ENABLED=true", "NEW_RELIC_CUSTOM_INSIGHTS_EVENTS_MAX_SAMPLES_STORED=100k", "NEW_RELIC_SPAN_EVENTS_MAX_SAMPLES_STORED=10k", "NEW_RELIC_APP_NAME=Navalarchive", "NEW_RELIC_LICENSE_KEY=$NewRelicLicenseKey"
-    }
-    $envArgs = ($envVars | ForEach-Object { "`"$_`"" }) -join " "
-    cmd /c "`"$nssmDir\nssm.exe`" set NavalArchiveWeb AppEnvironmentExtra $envArgs"
-    cmd /c "`"$nssmDir\nssm.exe`" start NavalArchiveWeb"
-}
-
-# Payment Simulation service (runs outside IIS on port 5001)
-if (Test-Path "$paymentPath\NavalArchive.PaymentSimulation.dll") {
-    $prevErr = $ErrorActionPreference
-    $ErrorActionPreference = "SilentlyContinue"
-    cmd /c "`"$nssmDir\nssm.exe`" stop NavalArchivePayment >nul 2>&1"
-    cmd /c "`"$nssmDir\nssm.exe`" remove NavalArchivePayment confirm >nul 2>&1"
-    sc.exe stop NavalArchivePayment 2>$null
-    sc.exe delete NavalArchivePayment 2>$null
+    sc.exe stop NavalArchiveWeb 2>$null
+    sc.exe delete NavalArchiveWeb 2>$null
     Start-Sleep -Seconds 2
     $ErrorActionPreference = $prevErr
-    cmd /c "`"$nssmDir\nssm.exe`" install NavalArchivePayment `"$dotnetExe`" `"$paymentPath\NavalArchive.PaymentSimulation.dll`""
-    cmd /c "`"$nssmDir\nssm.exe`" set NavalArchivePayment AppDirectory $paymentPath"
-    cmd /c "`"$nssmDir\nssm.exe`" set NavalArchivePayment AppEnvironmentExtra `"ASPNETCORE_URLS=http://localhost:5001`""
-    cmd /c "`"$nssmDir\nssm.exe`" start NavalArchivePayment"
+    # binPath needs inner quotes for paths with spaces (Program Files)
+    sc.exe create NavalArchiveWeb binPath= "`"$nodeDir\node.exe`" `"$webPath\server.js`"" start= auto
+    sc.exe config NavalArchiveWeb obj= "LocalSystem"
+    sc.exe start NavalArchiveWeb
 }
 
-# Card service (runs outside IIS on port 5002)
-if (Test-Path "$cardPath\NavalArchive.CardService.dll") {
-    $prevErr = $ErrorActionPreference
-    $ErrorActionPreference = "SilentlyContinue"
-    cmd /c "`"$nssmDir\nssm.exe`" stop NavalArchiveCard >nul 2>&1"
-    cmd /c "`"$nssmDir\nssm.exe`" remove NavalArchiveCard confirm >nul 2>&1"
-    $ErrorActionPreference = $prevErr
-    cmd /c "`"$nssmDir\nssm.exe`" install NavalArchiveCard `"$dotnetExe`" `"$cardPath\NavalArchive.CardService.dll`""
-    cmd /c "`"$nssmDir\nssm.exe`" set NavalArchiveCard AppDirectory $cardPath"
-    cmd /c "`"$nssmDir\nssm.exe`" set NavalArchiveCard AppEnvironmentExtra `"ASPNETCORE_URLS=http://localhost:5002`""
-    cmd /c "`"$nssmDir\nssm.exe`" start NavalArchiveCard"
+# Payment, Card, Cart - sc.exe with self-contained .exe (no NSSM, no dotnet.exe)
+# Deployed as executables registered directly with SCM per customer requirements.
+
+if (Test-Path "$paymentPath\NavalArchive.PaymentSimulation.exe") {
+    sc.exe create NavalArchivePayment binPath= "$paymentPath\NavalArchive.PaymentSimulation.exe --urls=http://localhost:5001" start= auto
+    sc.exe config NavalArchivePayment obj= "LocalSystem"
+    sc.exe start NavalArchivePayment
 }
 
-# Cart service (runs outside IIS on port 5003)
-if (Test-Path "$cartPath\NavalArchive.CartService.dll") {
-    $prevErr = $ErrorActionPreference
-    $ErrorActionPreference = "SilentlyContinue"
-    cmd /c "`"$nssmDir\nssm.exe`" stop NavalArchiveCart >nul 2>&1"
-    cmd /c "`"$nssmDir\nssm.exe`" remove NavalArchiveCart confirm >nul 2>&1"
-    $ErrorActionPreference = $prevErr
-    cmd /c "`"$nssmDir\nssm.exe`" install NavalArchiveCart `"$dotnetExe`" `"$cartPath\NavalArchive.CartService.dll`""
-    cmd /c "`"$nssmDir\nssm.exe`" set NavalArchiveCart AppDirectory $cartPath"
-    cmd /c "`"$nssmDir\nssm.exe`" set NavalArchiveCart AppEnvironmentExtra `"ASPNETCORE_URLS=http://localhost:5003`""
-    cmd /c "`"$nssmDir\nssm.exe`" start NavalArchiveCart"
+if (Test-Path "$cardPath\NavalArchive.CardService.exe") {
+    sc.exe create NavalArchiveCard binPath= "$cardPath\NavalArchive.CardService.exe --urls=http://localhost:5002" start= auto
+    sc.exe config NavalArchiveCard obj= "LocalSystem"
+    sc.exe start NavalArchiveCard
+}
+
+if (Test-Path "$cartPath\NavalArchive.CartService.exe") {
+    sc.exe create NavalArchiveCart binPath= "$cartPath\NavalArchive.CartService.exe --urls=http://localhost:5003" start= auto
+    sc.exe config NavalArchiveCart obj= "LocalSystem"
+    sc.exe start NavalArchiveCart
 }
 
 # ========== 3. PORTS 80 & 443 ==========
