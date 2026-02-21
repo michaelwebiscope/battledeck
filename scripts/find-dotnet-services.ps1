@@ -1,12 +1,19 @@
 # Find .NET Windows Services
-# Enumerates all services and identifies which use .NET (dotnet.exe or .NET assembly)
-# Run as Administrator for best results (some paths may need elevation to read)
-# Usage: .\find-dotnet-services.ps1
-#        .\find-dotnet-services.ps1 -ExportCsv dotnet-services.csv
+# Uses Dynatrace-style detection: tasklist /m (loaded CLR modules) + PE CLR header + dotnet host
+# Success = finds all Naval .NET services (Gateway, Auth, Payment, etc.)
+# Run as Administrator for best results
 
 param([string]$ExportCsv)
 
 $ErrorActionPreference = "Continue"
+
+# Naval .NET services (excludes NavalArchiveWeb which is Node)
+$navalDotNetServices = @(
+    "NavalArchivePayment", "NavalArchiveCard", "NavalArchiveCart",
+    "NavalArchiveGateway", "NavalArchiveAuth", "NavalArchiveUser", "NavalArchiveCatalog",
+    "NavalArchiveInventory", "NavalArchiveBasket", "NavalArchiveOrder",
+    "NavalArchivePaymentChain", "NavalArchiveShipping", "NavalArchiveNotification"
+)
 
 function Get-ServiceExePath {
     param([string]$PathName)
@@ -54,7 +61,21 @@ function Test-IsDotNetExe {
     }
 }
 
+# Dynatrace-style: get PIDs of processes with CLR loaded (tasklist /m)
+$dotnetPids = @{}
+foreach ($dll in @("clr.dll", "coreclr.dll", "mscorlib.dll")) {
+    try {
+        $out = tasklist /m $dll /fo csv /nh 2>$null
+        foreach ($line in $out) {
+            if ($line -match '"([^"]+)","(\d+)"') {
+                $dotnetPids[$matches[2]] = $true
+            }
+        }
+    } catch {}
+}
+
 Write-Host "`n=== .NET Windows Services ===`n" -ForegroundColor Cyan
+Write-Host "Running .NET processes (via tasklist /m): $($dotnetPids.Count) PID(s)" -ForegroundColor Gray
 
 $svcs = Get-CimInstance Win32_Service -ErrorAction SilentlyContinue
 $dotnet = @()
@@ -65,22 +86,29 @@ foreach ($s in $svcs) {
     $isDotNet = $false
     $reason = ""
 
-    # 1. Path contains dotnet.exe
-    if ($path -like "*dotnet*") {
+    # 1. Dynatrace-style: service is running and its ProcessId has CLR loaded
+    if ($s.State -eq "Running" -and $s.ProcessId -and $dotnetPids.ContainsKey([string]$s.ProcessId)) {
         $isDotNet = $true
-        $reason = "dotnet.exe host"
+        $reason = "tasklist/CLR"
     }
-    # 2. Check exe/dll for CLR header
-    elseif ($exePath) {
-        $resolved = $exePath
-        if (![System.IO.Path]::IsPathRooted($exePath)) {
-            $resolved = $null
+    # 2. Path contains dotnet.exe
+    elseif ($path -like "*dotnet*") {
+        $isDotNet = $true
+        $reason = "dotnet host"
+    }
+    # 3. PE CLR header
+    elseif ($exePath -and [System.IO.Path]::IsPathRooted($exePath) -and (Test-Path $exePath -PathType Leaf)) {
+        if (Test-IsDotNetExe $exePath) {
+            $isDotNet = $true
+            $reason = "PE/CLR"
         }
-        if ($resolved -and (Test-Path $resolved -PathType Leaf)) {
-            if (Test-IsDotNetExe $resolved) {
+        # 4. Fallback: ReflectionOnlyLoadFrom (catches some PE-parser edge cases)
+        elseif (!$isDotNet -and ([System.IO.Path]::GetExtension($exePath) -eq ".exe" -or [System.IO.Path]::GetExtension($exePath) -eq ".dll")) {
+            try {
+                [void][System.Reflection.Assembly]::ReflectionOnlyLoadFrom($exePath)
                 $isDotNet = $true
-                $reason = "CLR assembly"
-            }
+                $reason = "Reflection"
+            } catch {}
         }
     }
 
@@ -97,6 +125,19 @@ foreach ($s in $svcs) {
 
 $dotnet | Format-Table -AutoSize Name, DisplayName, State, Reason
 Write-Host "`nTotal: $($dotnet.Count) .NET service(s) of $($svcs.Count) total`n" -ForegroundColor Yellow
+
+# Success: all installed Naval .NET services must be identified as .NET
+$installedNaval = @($svcs | Where-Object { $_.Name -in $navalDotNetServices } | Select-Object -ExpandProperty Name)
+$foundNaval = @($dotnet | Where-Object { $_.Name -in $navalDotNetServices } | Select-Object -ExpandProperty Name)
+$missingNaval = @($installedNaval | Where-Object { $_ -notin $foundNaval })
+
+if ($missingNaval.Count -eq 0) {
+    Write-Host "SUCCESS: All $($installedNaval.Count) installed Naval .NET services identified.`n" -ForegroundColor Green
+} else {
+    Write-Host "FAIL: Script did not identify these Naval .NET services as .NET:" -ForegroundColor Red
+    $missingNaval | ForEach-Object { Write-Host "  - $_" -ForegroundColor Red }
+    Write-Host ""
+}
 
 if ($ExportCsv) {
     $dotnet | Export-Csv -Path $ExportCsv -NoTypeInformation
