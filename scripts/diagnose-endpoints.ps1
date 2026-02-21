@@ -94,4 +94,6 @@ if (Test-Path $logDir) {
     } else { Write-Host "  No stdout logs found" }
 } else { Write-Host "  Log dir not found" }
 
+Write-Host "`n--- To start all services manually ---" -ForegroundColor Yellow
+Write-Host "  & C:\inetpub\start-all-services.ps1" -ForegroundColor Gray
 Write-Host "`n=== Done ===" -ForegroundColor Cyan

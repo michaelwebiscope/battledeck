@@ -278,22 +278,26 @@ node server.js
     Start-Sleep -Seconds 2
     $ErrorActionPreference = $prevErr
     sc.exe create NavalArchiveWeb binPath= "cmd.exe /c $webPath\start-web.cmd" start= auto
+    sc.exe failure NavalArchiveWeb reset= 86400 actions= restart/60000/restart/60000/restart/60000
     sc.exe start NavalArchiveWeb
 }
 
 # Payment, Card, Cart - sc.exe with self-contained .exe + UseWindowsService (reports to SCM)
 if (Test-Path "$paymentPath\NavalArchive.PaymentSimulation.exe") {
     sc.exe create NavalArchivePayment binPath= "$paymentPath\NavalArchive.PaymentSimulation.exe --urls=http://localhost:5001" start= auto
+    sc.exe failure NavalArchivePayment reset= 86400 actions= restart/60000/restart/60000/restart/60000
     sc.exe start NavalArchivePayment
 }
 
 if (Test-Path "$cardPath\NavalArchive.CardService.exe") {
     sc.exe create NavalArchiveCard binPath= "$cardPath\NavalArchive.CardService.exe --urls=http://localhost:5002" start= auto
+    sc.exe failure NavalArchiveCard reset= 86400 actions= restart/60000/restart/60000/restart/60000
     sc.exe start NavalArchiveCard
 }
 
 if (Test-Path "$cartPath\NavalArchive.CartService.exe") {
     sc.exe create NavalArchiveCart binPath= "$cartPath\NavalArchive.CartService.exe --urls=http://localhost:5003" start= auto
+    sc.exe failure NavalArchiveCart reset= 86400 actions= restart/60000/restart/60000/restart/60000
     sc.exe start NavalArchiveCart
 }
 
@@ -318,6 +322,7 @@ foreach ($spec in $chainSpecs) {
         & "$dotnetDir\dotnet.exe" publish -c Release -r win-x64 --self-contained true -o $outPath
         if ($LASTEXITCODE -eq 0 -and (Test-Path "$outPath\$($spec.Exe)")) {
             sc.exe create $spec.Svc binPath= "$outPath\$($spec.Exe) --urls=http://localhost:$($spec.Port)" start= auto
+            sc.exe failure $spec.Svc reset= 86400 actions= restart/60000/restart/60000/restart/60000
             sc.exe start $spec.Svc
         }
         Pop-Location
@@ -378,12 +383,21 @@ $iisreset = if (Test-Path "$env:windir\SysNative\inetsrv\iisreset.exe") { "$env:
 if (Test-Path $iisreset) { Start-Process -FilePath $iisreset -ArgumentList "/noforce" -Wait -NoNewWindow }
 if ($appcmd) { & $appcmd stop site "Default Web Site" 2>$null }
 
-# Copy diagnostic script for on-VM troubleshooting
+# Copy scripts for on-VM troubleshooting and startup
 $diagScript = Get-ChildItem -Path $clonePath -Filter "diagnose-endpoints.ps1" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-if ($diagScript) {
-    Copy-Item $diagScript.FullName -Destination "C:\inetpub\diagnose-endpoints.ps1" -Force
-    Write-Host "Diagnostic script: C:\inetpub\diagnose-endpoints.ps1" -ForegroundColor Gray
-}
+if ($diagScript) { Copy-Item $diagScript.FullName -Destination "C:\inetpub\diagnose-endpoints.ps1" -Force }
+$startScript = Get-ChildItem -Path $clonePath -Filter "start-all-services.ps1" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($startScript) { Copy-Item $startScript.FullName -Destination "C:\inetpub\start-all-services.ps1" -Force }
+
+# Scheduled task: start all services 2 min after boot (fixes services not starting on restart)
+$taskName = "NavalArchive-StartServices"
+$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File C:\inetpub\start-all-services.ps1"
+$trigger = New-ScheduledTaskTrigger -AtStartup -RandomDelay (New-TimeSpan -Minutes 2)
+$principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+Write-Host "Scheduled task: $taskName (runs 2 min after boot)" -ForegroundColor Gray
 
 Remove-Item -Recurse -Force $clonePath -ErrorAction SilentlyContinue
 Remove-Item -Force $zipPath -ErrorAction SilentlyContinue
