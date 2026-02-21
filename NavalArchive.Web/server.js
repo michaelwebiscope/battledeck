@@ -54,6 +54,10 @@ app.use('/api', async (req, res) => {
 
 // --- Routes ---
 
+app.get('/trace', (req, res) => {
+  res.render('trace', { title: 'Distributed Trace' });
+});
+
 app.get('/', (req, res) => {
   res.render('home', {
     title: 'Home',
@@ -382,10 +386,6 @@ app.get('/checkout', (req, res) => {
 
 app.get('/verify-member', (req, res) => {
   res.render('verify-member', { title: 'Verify Member ID' });
-});
-
-app.get('/trace', (req, res) => {
-  res.render('trace', { title: 'Distributed Trace' });
 });
 
 app.get('/simulation', (req, res) => {
