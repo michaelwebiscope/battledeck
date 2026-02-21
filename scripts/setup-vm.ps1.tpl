@@ -200,6 +200,11 @@ if ($cartCsproj) {
 $webServerJs = Get-ChildItem -Path $clonePath -Filter "server.js" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.DirectoryName -like "*NavalArchive.Web*" } | Select-Object -First 1
 if ($webServerJs) {
     $webSrcDir = $webServerJs.DirectoryName
+    # Clear web path to avoid stale files (like API)
+    if (Test-Path $webPath) {
+        Get-ChildItem $webPath | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    New-Item -ItemType Directory -Force -Path $webPath | Out-Null
     Get-ChildItem -Path $webSrcDir -Exclude node_modules | Copy-Item -Destination $webPath -Recurse -Force
     Push-Location $webPath
     $prevErr = $ErrorActionPreference
