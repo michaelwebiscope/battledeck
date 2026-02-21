@@ -378,6 +378,13 @@ $iisreset = if (Test-Path "$env:windir\SysNative\inetsrv\iisreset.exe") { "$env:
 if (Test-Path $iisreset) { Start-Process -FilePath $iisreset -ArgumentList "/noforce" -Wait -NoNewWindow }
 if ($appcmd) { & $appcmd stop site "Default Web Site" 2>$null }
 
+# Copy diagnostic script for on-VM troubleshooting
+$diagScript = Get-ChildItem -Path $clonePath -Filter "diagnose-endpoints.ps1" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($diagScript) {
+    Copy-Item $diagScript.FullName -Destination "C:\inetpub\diagnose-endpoints.ps1" -Force
+    Write-Host "Diagnostic script: C:\inetpub\diagnose-endpoints.ps1" -ForegroundColor Gray
+}
+
 Remove-Item -Recurse -Force $clonePath -ErrorAction SilentlyContinue
 Remove-Item -Force $zipPath -ErrorAction SilentlyContinue
 
