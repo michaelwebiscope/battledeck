@@ -376,5 +376,33 @@ if ($appcmd) { & $appcmd stop site "Default Web Site" 2>$null }
 Remove-Item -Recurse -Force $clonePath -ErrorAction SilentlyContinue
 Remove-Item -Force $zipPath -ErrorAction SilentlyContinue
 
-Write-Host "=== Done. https://<vm-ip> | API: :5000 | Chain trace: :5010/trace (Gateway->...->Notification) ===" -ForegroundColor Green
+# ========== 4. VERIFY & RESTART IF NEEDED ==========
+Write-Host "=== 4. Verifying services ===" -ForegroundColor Cyan
+Start-Sleep -Seconds 20
+$apiOk = $false
+$webOk = $false
+for ($i = 1; $i -le 3; $i++) {
+    try {
+        $r = Invoke-WebRequest -Uri "http://localhost:5000/trace" -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+        if ($r.StatusCode -eq 200) { $apiOk = $true; break }
+    } catch {}
+    Write-Host "API not ready, restarting app pool (attempt $i/3)..." -ForegroundColor Yellow
+    if ($appcmd) { & $appcmd recycle apppool /apppool.name:NavalArchive-API 2>$null }
+    Start-Sleep -Seconds 15
+}
+for ($i = 1; $i -le 3; $i++) {
+    try {
+        $r = Invoke-WebRequest -Uri "http://localhost:3000/" -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+        if ($r.StatusCode -eq 200) { $webOk = $true; break }
+    } catch {}
+    Write-Host "Node not ready, restarting NavalArchiveWeb (attempt $i/3)..." -ForegroundColor Yellow
+    sc.exe stop NavalArchiveWeb 2>$null
+    Start-Sleep -Seconds 3
+    sc.exe start NavalArchiveWeb 2>$null
+    Start-Sleep -Seconds 15
+}
+if ($apiOk) { Write-Host "API OK (localhost:5000)" -ForegroundColor Green } else { Write-Host "API may need manual check" -ForegroundColor Yellow }
+if ($webOk) { Write-Host "Node OK (localhost:3000)" -ForegroundColor Green } else { Write-Host "Node may need manual check" -ForegroundColor Yellow }
+
+Write-Host "=== Done. https://<vm-ip> | /trace | API: :5000 | Chain: :5010/trace ===" -ForegroundColor Green
 exit 0
