@@ -1,10 +1,16 @@
 # Find .NET Windows Services
 # Uses Dynatrace-style detection: tasklist /m (loaded CLR modules) + PE CLR header + dotnet host
+# By default excludes Windows/system services (blacklist). Use -IncludeSystem to show all.
 # Run as Administrator for best results
 
-param([string]$ExportCsv)
+param([string]$ExportCsv, [switch]$IncludeSystem)
 
 $ErrorActionPreference = "Continue"
+
+# Blacklist: Windows/system .NET services to exclude (show only user-added by default)
+$blacklist = @(
+    "RdAgent", "WindowsAzureGuestAgent", "NetTcpPortSharing", "aspnet_state"
+)
 
 function Get-ServiceExePath {
     param([string]$PathName)
@@ -67,6 +73,7 @@ foreach ($dll in @("clr.dll", "coreclr.dll", "mscorlib.dll")) {
 
 Write-Host "`n=== .NET Windows Services ===`n" -ForegroundColor Cyan
 Write-Host "Running .NET processes (via tasklist /m): $($dotnetPids.Count) PID(s)" -ForegroundColor Gray
+if (!$IncludeSystem) { Write-Host "(Windows/system services excluded; use -IncludeSystem to show all)" -ForegroundColor DarkGray }
 
 $svcs = Get-CimInstance Win32_Service -ErrorAction SilentlyContinue
 $dotnet = @()
@@ -104,12 +111,14 @@ foreach ($s in $svcs) {
     }
 
     if ($isDotNet) {
-        $dotnet += [PSCustomObject]@{
-            Name   = $s.Name
-            DisplayName = $s.DisplayName
-            State  = $s.State
-            Path  = $path
-            Reason = $reason
+        if ($IncludeSystem -or $s.Name -notin $blacklist) {
+            $dotnet += [PSCustomObject]@{
+                Name   = $s.Name
+                DisplayName = $s.DisplayName
+                State  = $s.State
+                Path  = $path
+                Reason = $reason
+            }
         }
     }
 }
