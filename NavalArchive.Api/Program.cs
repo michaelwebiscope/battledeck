@@ -71,13 +71,24 @@ app.UseSwaggerUI();
 app.UseCors();
 app.MapControllers();
 
-// Trace page fallback (when hitting API directly at /trace)
+// Trace page (served when /trace goes through API)
 app.MapGet("trace", () => Results.Content(
-    "<!DOCTYPE html><html><head><title>Distributed Trace</title></head><body>" +
-    "<h1>Distributed Trace</h1><p>10-service chain: Gateway → Auth → User → Catalog → Inventory → Basket → Order → Payment → Shipping → Notification</p>" +
-    "<button id=\"run\">Run Trace</button><pre id=\"out\"></pre>" +
-    "<script>document.getElementById(\"run\").onclick=function(){fetch(\"/api/trace\").then(function(r){return r.json()}).then(function(d){document.getElementById(\"out\").textContent=JSON.stringify(d,null,2)}).catch(function(e){document.getElementById(\"out\").textContent=e.message})};</script>" +
-    "</body></html>", "text/html"));
+    "<!DOCTYPE html><html><head><title>Distributed Trace</title><link href=\"https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css\" rel=\"stylesheet\"></head><body class=\"p-4\">" +
+    "<h1>Distributed Trace</h1><p class=\"text-muted\">10-service chain: Gateway → Auth → User → Catalog → Inventory → Basket → Order → Payment → Shipping → Notification</p>" +
+    "<button id=\"run\" class=\"btn btn-primary mb-3\">Run Trace</button>" +
+    "<div id=\"status\" class=\"mb-3\"></div>" +
+    "<pre id=\"out\" class=\"bg-dark text-light p-3 rounded\" style=\"max-height:400px;overflow:auto\"></pre>" +
+    "<script>" +
+    "function flattenChain(obj,list){if(!obj)return list||[];list=list||[];list.push(obj.service||'?');" +
+    "if(obj.next){try{var n=typeof obj.next==='string'?JSON.parse(obj.next):obj.next;return flattenChain(n,list);}catch(_){}}return list;}" +
+    "document.getElementById('run').onclick=function(){var s=document.getElementById('status'),o=document.getElementById('out');" +
+    "s.innerHTML='<span class=\"text-muted\">Running trace...</span>';o.textContent='';" +
+    "fetch('/api/trace').then(function(r){if(!r.ok)return r.json().then(function(d){throw new Error(d.error||'Request failed')});return r.json();})" +
+    ".then(function(d){if(d.error){s.innerHTML='<span class=\"text-danger\">'+d.error+'</span>';o.textContent=JSON.stringify(d,null,2);return;}" +
+    "var c=flattenChain(d);s.innerHTML='<span class=\"text-success\">Trace complete: '+c.length+' services</span>';" +
+    "o.textContent=c.join(' → ')+'\\n\\n'+JSON.stringify(d,null,2);})" +
+    ".catch(function(e){s.innerHTML='<span class=\"text-danger\">Error: '+(e.message||'Request failed')+'</span>';o.textContent=e.message||'Request failed';});};" +
+    "</script></body></html>", "text/html"));
 
 // Trace chain proxy: API -> Gateway (5010) -> Auth -> User -> ... -> Notification
 app.MapGet("api/trace", async (IHttpClientFactory http, IConfiguration config) =>
