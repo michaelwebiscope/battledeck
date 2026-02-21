@@ -243,6 +243,10 @@ $dotnetExe = "C:\Program Files\dotnet\dotnet.exe"
         <match url="^api/(.*)" />
         <action type="Rewrite" url="http://localhost:5000/api/{R:1}" />
       </rule>
+      <rule name="Trace" stopProcessing="true">
+        <match url="^trace$" />
+        <action type="Rewrite" url="http://localhost:5000/trace" />
+      </rule>
       <rule name="Node" stopProcessing="true">
         <match url="(.*)" />
         <action type="Rewrite" url="http://localhost:3000/{R:1}" />
