@@ -71,6 +71,18 @@ app.UseSwaggerUI();
 app.UseCors();
 app.MapControllers();
 
+// Trace chain proxy: API -> Gateway (5010) -> Auth -> User -> ... -> Notification
+app.MapGet("api/trace", async (IHttpClientFactory http, IConfiguration config) =>
+{
+    var gatewayUrl = config["Gateway:Url"] ?? "http://localhost:5010";
+    var client = http.CreateClient();
+    var res = await client.GetAsync($"{gatewayUrl}/trace");
+    var body = await res.Content.ReadAsStringAsync();
+    if (!res.IsSuccessStatusCode)
+        return Results.Json(new { error = "Trace chain unavailable" }, statusCode: 502);
+    return Results.Content(body, "application/json");
+});
+
 // Idempotency: prevent same transaction from being paid multiple times
 var idempotencyCache = new System.Collections.Concurrent.ConcurrentDictionary<string, (object Result, DateTime Expires)>();
 const int IdempotencyWindowMinutes = 10;

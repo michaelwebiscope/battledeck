@@ -10,6 +10,18 @@ $webPath = "C:\inetpub\navalarchive-web"
 $paymentPath = "C:\inetpub\navalarchive-payment"
 $cardPath = "C:\inetpub\navalarchive-card"
 $cartPath = "C:\inetpub\navalarchive-cart"
+$chainPaths = @{
+    Gateway = "C:\inetpub\navalarchive-gateway"
+    Auth = "C:\inetpub\navalarchive-auth"
+    User = "C:\inetpub\navalarchive-user"
+    Catalog = "C:\inetpub\navalarchive-catalog"
+    Inventory = "C:\inetpub\navalarchive-inventory"
+    Basket = "C:\inetpub\navalarchive-basket"
+    Order = "C:\inetpub\navalarchive-order"
+    Payment = "C:\inetpub\navalarchive-payment-chain"
+    Shipping = "C:\inetpub\navalarchive-shipping"
+    Notification = "C:\inetpub\navalarchive-notification"
+}
 $dotnetDir = "C:\Program Files\dotnet"
 $nodeDir = "C:\Program Files\nodejs"
 
@@ -96,6 +108,7 @@ New-Item -ItemType Directory -Force -Path $webPath | Out-Null
 New-Item -ItemType Directory -Force -Path $paymentPath | Out-Null
 New-Item -ItemType Directory -Force -Path $cardPath | Out-Null
 New-Item -ItemType Directory -Force -Path $cartPath | Out-Null
+foreach ($p in $chainPaths.Values) { New-Item -ItemType Directory -Force -Path $p | Out-Null }
 New-Item -ItemType Directory -Force -Path "$apiPath\logs" | Out-Null
 
 # Stop API site/app pool before publishing so DLLs are not locked
@@ -122,17 +135,28 @@ if ($apiCsproj) {
 }
 
 # Stop and remove services (sc.exe - no NSSM)
+$chainSvcs = @("NavalArchiveGateway","NavalArchiveAuth","NavalArchiveUser","NavalArchiveCatalog","NavalArchiveInventory","NavalArchiveBasket","NavalArchiveOrder","NavalArchivePaymentChain","NavalArchiveShipping","NavalArchiveNotification")
 $prevErr = $ErrorActionPreference
 $ErrorActionPreference = "SilentlyContinue"
-foreach ($svc in @("NavalArchivePayment", "NavalArchiveCard", "NavalArchiveCart", "NavalArchiveWeb")) {
+foreach ($svc in @("NavalArchivePayment", "NavalArchiveCard", "NavalArchiveCart", "NavalArchiveWeb") + $chainSvcs) {
     sc.exe stop $svc 2>$null
     sc.exe delete $svc 2>$null
 }
-Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like "*navalarchive-payment*" -or $_.CommandLine -like "*navalarchive-card*" -or $_.CommandLine -like "*navalarchive-cart*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like "*navalarchive*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 taskkill /F /IM dotnet.exe 2>$null
 taskkill /F /IM NavalArchive.PaymentSimulation.exe 2>$null
 taskkill /F /IM NavalArchive.CardService.exe 2>$null
 taskkill /F /IM NavalArchive.CartService.exe 2>$null
+taskkill /F /IM NavalArchive.Gateway.exe 2>$null
+taskkill /F /IM NavalArchive.Auth.exe 2>$null
+taskkill /F /IM NavalArchive.UserService.exe 2>$null
+taskkill /F /IM NavalArchive.Catalog.exe 2>$null
+taskkill /F /IM NavalArchive.Inventory.exe 2>$null
+taskkill /F /IM NavalArchive.Basket.exe 2>$null
+taskkill /F /IM NavalArchive.Order.exe 2>$null
+taskkill /F /IM NavalArchive.Payment.exe 2>$null
+taskkill /F /IM NavalArchive.Shipping.exe 2>$null
+taskkill /F /IM NavalArchive.Notification.exe 2>$null
 $ErrorActionPreference = $prevErr
 Start-Sleep -Seconds 10
 
@@ -234,6 +258,7 @@ if (Test-Path "$webPath\server.js") {
 @echo off
 cd /d $webPath
 set API_URL=http://localhost:5000
+set GATEWAY_URL=http://localhost:5010
 set PORT=3000
 node server.js
 "@ | Set-Content -Path "$webPath\start-web.cmd" -Encoding ASCII
@@ -263,6 +288,33 @@ if (Test-Path "$cartPath\NavalArchive.CartService.exe") {
     sc.exe start NavalArchiveCart
 }
 
+# Chain microservices (10 services, distributed trace: Gateway->Auth->User->Catalog->Inventory->Basket->Order->Payment->Shipping->Notification)
+$chainSpecs = @(
+    @{ Name="Gateway"; Csproj="NavalArchive.Gateway.csproj"; Exe="NavalArchive.Gateway.exe"; Port=5010; Svc="NavalArchiveGateway"; PathKey="Gateway" },
+    @{ Name="Auth"; Csproj="NavalArchive.Auth.csproj"; Exe="NavalArchive.Auth.exe"; Port=5011; Svc="NavalArchiveAuth"; PathKey="Auth" },
+    @{ Name="User"; Csproj="NavalArchive.UserService.csproj"; Exe="NavalArchive.UserService.exe"; Port=5012; Svc="NavalArchiveUser"; PathKey="User" },
+    @{ Name="Catalog"; Csproj="NavalArchive.Catalog.csproj"; Exe="NavalArchive.Catalog.exe"; Port=5013; Svc="NavalArchiveCatalog"; PathKey="Catalog" },
+    @{ Name="Inventory"; Csproj="NavalArchive.Inventory.csproj"; Exe="NavalArchive.Inventory.exe"; Port=5014; Svc="NavalArchiveInventory"; PathKey="Inventory" },
+    @{ Name="Basket"; Csproj="NavalArchive.Basket.csproj"; Exe="NavalArchive.Basket.exe"; Port=5015; Svc="NavalArchiveBasket"; PathKey="Basket" },
+    @{ Name="Order"; Csproj="NavalArchive.Order.csproj"; Exe="NavalArchive.Order.exe"; Port=5016; Svc="NavalArchiveOrder"; PathKey="Order" },
+    @{ Name="Payment"; Csproj="NavalArchive.Payment.csproj"; Exe="NavalArchive.Payment.exe"; Port=5017; Svc="NavalArchivePaymentChain"; PathKey="Payment" },
+    @{ Name="Shipping"; Csproj="NavalArchive.Shipping.csproj"; Exe="NavalArchive.Shipping.exe"; Port=5018; Svc="NavalArchiveShipping"; PathKey="Shipping" },
+    @{ Name="Notification"; Csproj="NavalArchive.Notification.csproj"; Exe="NavalArchive.Notification.exe"; Port=5019; Svc="NavalArchiveNotification"; PathKey="Notification" }
+)
+foreach ($spec in $chainSpecs) {
+    $csproj = Get-ChildItem -Path $clonePath -Filter $spec.Csproj -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($csproj) {
+        $outPath = $chainPaths[$spec.PathKey]
+        Push-Location $csproj.DirectoryName
+        & "$dotnetDir\dotnet.exe" publish -c Release -r win-x64 --self-contained true -o $outPath
+        if ($LASTEXITCODE -eq 0 -and (Test-Path "$outPath\$($spec.Exe)")) {
+            sc.exe create $spec.Svc binPath= "$outPath\$($spec.Exe) --urls=http://localhost:$($spec.Port)" start= auto
+            sc.exe start $spec.Svc
+        }
+        Pop-Location
+    }
+}
+
 # ========== 3. PORTS 80 & 443 ==========
 Write-Host "=== 3. Configuring ports 80 and 443 ===" -ForegroundColor Cyan
 
@@ -272,6 +324,7 @@ netsh advfirewall firewall add rule name="API" dir=in action=allow protocol=TCP 
 netsh advfirewall firewall add rule name="Payment" dir=in action=allow protocol=TCP localport=5001 2>$null
 netsh advfirewall firewall add rule name="Card" dir=in action=allow protocol=TCP localport=5002 2>$null
 netsh advfirewall firewall add rule name="Cart" dir=in action=allow protocol=TCP localport=5003 2>$null
+5010..5019 | ForEach-Object { netsh advfirewall firewall add rule name="Chain$_" dir=in action=allow protocol=TCP localport=$_ 2>$null }
 
 Import-Module WebAdministration -ErrorAction SilentlyContinue
 Set-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST' -filter "system.webServer/proxy" -name "enabled" -value "True" -ErrorAction SilentlyContinue
@@ -319,5 +372,5 @@ if ($appcmd) { & $appcmd stop site "Default Web Site" 2>$null }
 Remove-Item -Recurse -Force $clonePath -ErrorAction SilentlyContinue
 Remove-Item -Force $zipPath -ErrorAction SilentlyContinue
 
-Write-Host "=== Done. https://<vm-ip> | API: :5000 | Payment: :5001 | Card: :5002 | Cart: :5003 ===" -ForegroundColor Green
+Write-Host "=== Done. https://<vm-ip> | API: :5000 | Chain trace: :5010/trace (Gateway->...->Notification) ===" -ForegroundColor Green
 exit 0

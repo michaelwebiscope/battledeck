@@ -5,6 +5,7 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const API_BASE = process.env.API_URL || 'http://localhost:5000';
+const GATEWAY_URL = process.env.GATEWAY_URL || 'http://localhost:5010';
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
@@ -17,6 +18,17 @@ const api = axios.create({
   baseURL: API_BASE,
   timeout: 30000,
   headers: { 'Content-Type': 'application/json' }
+});
+
+// Trace chain: Web -> Gateway (5010) -> Auth -> User -> ... -> Notification
+app.get('/api/trace', async (req, res) => {
+  try {
+    const r = await axios.get(`${GATEWAY_URL}/trace`, { timeout: 15000, validateStatus: () => true });
+    res.json(r.data ?? { error: 'No response' });
+  } catch (err) {
+    console.error('Trace error:', err.message);
+    res.status(502).json({ error: 'Trace chain unavailable. Ensure Gateway (port 5010) is running.' });
+  }
 });
 
 // Chain: App -> API -> Cart -> Card -> Payment (all requests go through API)
@@ -370,6 +382,10 @@ app.get('/checkout', (req, res) => {
 
 app.get('/verify-member', (req, res) => {
   res.render('verify-member', { title: 'Verify Member ID' });
+});
+
+app.get('/trace', (req, res) => {
+  res.render('trace', { title: 'Distributed Trace' });
 });
 
 app.get('/simulation', (req, res) => {

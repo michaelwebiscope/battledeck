@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('partials/head') %>
+</head>
+<body>
+  <%- include('partials/header') %>
+  <main>
+    <div class="container py-4">
+      <h1 class="mb-4">Distributed Trace</h1>
+      <p class="text-muted mb-4">10-service trace chain: Gateway → Auth → User → Catalog → Inventory → Basket → Order → Payment → Shipping → Notification</p>
+      <div class="card">
+        <div class="card-body">
+          <button id="runBtn" class="btn btn-primary mb-3">Run Trace</button>
+          <div id="status" class="mb-3"></div>
+          <pre id="output" class="bg-dark text-light p-3 rounded" style="max-height: 400px; overflow: auto; font-size: 0.9rem;"></pre>
+        </div>
+      </div>
+    </div>
+  </main>
+  <%- include('partials/footer') %>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    function flattenChain(obj, list) {
+      if (!obj) return list;
+      list = list || [];
+      list.push(obj.service || '?');
+      if (obj.next) {
+        try {
+          var next = typeof obj.next === 'string' ? JSON.parse(obj.next) : obj.next;
+          return flattenChain(next, list);
+        } catch (_) {
+          return list;
+        }
+      }
+      return list;
+    }
+
+    document.getElementById('runBtn').addEventListener('click', function() {
+      var status = document.getElementById('status');
+      var output = document.getElementById('output');
+      status.innerHTML = '<span class="text-muted">Running trace...</span>';
+      output.textContent = '';
+      fetch('/api/trace')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (data.error) {
+            status.innerHTML = '<span class="text-danger">' + data.error + '</span>';
+            output.textContent = JSON.stringify(data, null, 2);
+            return;
+          }
+          var chain = flattenChain(data);
+          status.innerHTML = '<span class="text-success">Trace complete: ' + chain.length + ' services</span>';
+          output.textContent = chain.join(' → ') + '\n\n' + JSON.stringify(data, null, 2);
+        })
+        .catch(function(err) {
+          status.innerHTML = '<span class="text-danger">Error: ' + (err.message || 'Request failed') + '</span>';
+          output.textContent = err.message || 'Request failed';
+        });
+    });
+  </script>
+</body>
+</html>
