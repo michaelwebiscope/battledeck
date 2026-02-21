@@ -72,12 +72,12 @@ app.UseCors();
 app.MapControllers();
 
 // Trace page fallback (when hitting API directly at /trace)
-app.MapGet("trace", () => Results.Content("""
-<!DOCTYPE html><html><head><title>Distributed Trace</title></head><body>
-<h1>Distributed Trace</h1><p>10-service chain: Gateway → Auth → User → Catalog → Inventory → Basket → Order → Payment → Shipping → Notification</p>
-<button id="run">Run Trace</button><pre id="out"></pre>
-<script>document.getElementById("run").onclick=()=>{fetch("/api/trace").then(r=>r.json()).then(d=>{document.getElementById("out").textContent=JSON.stringify(d,null,2)}).catch(e=>document.getElementById("out").textContent=e.message)};</script>
-</body></html>""", "text/html"));
+app.MapGet("trace", () => Results.Content(
+    "<!DOCTYPE html><html><head><title>Distributed Trace</title></head><body>" +
+    "<h1>Distributed Trace</h1><p>10-service chain: Gateway → Auth → User → Catalog → Inventory → Basket → Order → Payment → Shipping → Notification</p>" +
+    "<button id=\"run\">Run Trace</button><pre id=\"out\"></pre>" +
+    "<script>document.getElementById(\"run\").onclick=function(){fetch(\"/api/trace\").then(function(r){return r.json()}).then(function(d){document.getElementById(\"out\").textContent=JSON.stringify(d,null,2)}).catch(function(e){document.getElementById(\"out\").textContent=e.message})};</script>" +
+    "</body></html>", "text/html"));
 
 // Trace chain proxy: API -> Gateway (5010) -> Auth -> User -> ... -> Notification
 app.MapGet("api/trace", async (IHttpClientFactory http, IConfiguration config) =>
