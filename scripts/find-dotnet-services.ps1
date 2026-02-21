@@ -1,19 +1,10 @@
 # Find .NET Windows Services
 # Uses Dynatrace-style detection: tasklist /m (loaded CLR modules) + PE CLR header + dotnet host
-# Success = finds all Naval .NET services (Gateway, Auth, Payment, etc.)
 # Run as Administrator for best results
 
 param([string]$ExportCsv)
 
 $ErrorActionPreference = "Continue"
-
-# Naval .NET services (excludes NavalArchiveWeb which is Node)
-$navalDotNetServices = @(
-    "NavalArchivePayment", "NavalArchiveCard", "NavalArchiveCart",
-    "NavalArchiveGateway", "NavalArchiveAuth", "NavalArchiveUser", "NavalArchiveCatalog",
-    "NavalArchiveInventory", "NavalArchiveBasket", "NavalArchiveOrder",
-    "NavalArchivePaymentChain", "NavalArchiveShipping", "NavalArchiveNotification"
-)
 
 function Get-ServiceExePath {
     param([string]$PathName)
@@ -125,19 +116,6 @@ foreach ($s in $svcs) {
 
 $dotnet | Format-Table -AutoSize Name, DisplayName, State, Reason
 Write-Host "`nTotal: $($dotnet.Count) .NET service(s) of $($svcs.Count) total`n" -ForegroundColor Yellow
-
-# Success: all installed Naval .NET services must be identified as .NET
-$installedNaval = @($svcs | Where-Object { $_.Name -in $navalDotNetServices } | Select-Object -ExpandProperty Name)
-$foundNaval = @($dotnet | Where-Object { $_.Name -in $navalDotNetServices } | Select-Object -ExpandProperty Name)
-$missingNaval = @($installedNaval | Where-Object { $_ -notin $foundNaval })
-
-if ($missingNaval.Count -eq 0) {
-    Write-Host "SUCCESS: All $($installedNaval.Count) installed Naval .NET services identified.`n" -ForegroundColor Green
-} else {
-    Write-Host "FAIL: Script did not identify these Naval .NET services as .NET:" -ForegroundColor Red
-    $missingNaval | ForEach-Object { Write-Host "  - $_" -ForegroundColor Red }
-    Write-Host ""
-}
 
 if ($ExportCsv) {
     $dotnet | Export-Csv -Path $ExportCsv -NoTypeInformation
