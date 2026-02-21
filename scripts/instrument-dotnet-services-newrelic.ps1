@@ -1,11 +1,10 @@
 # Instrument .NET Windows Services with New Relic
 # 1. Finds .NET services (Dynatrace-style detection, blacklist excludes Windows/system)
-# 2. Sets registry Environment: NEW_RELIC_APP_NAME, NEW_RELIC_LICENSE_KEY
+# 2. Sets registry Environment: NEW_RELIC_APP_NAME
 # 3. Restarts services so env vars take effect
 # Run as Administrator
 
 param(
-    [string]$LicenseKey = $env:NEW_RELIC_LICENSE_KEY,
     [switch]$DryRun,
     [switch]$NoRestart
 )
@@ -88,7 +87,6 @@ foreach ($s in $svcs) {
 
 Write-Host "`n=== Instrument .NET Services with New Relic ===`n" -ForegroundColor Cyan
 Write-Host "Found $($dotnet.Count) .NET service(s) (excluding Windows/system)" -ForegroundColor Gray
-if ($LicenseKey) { Write-Host "LicenseKey: $($LicenseKey.Substring(0, [Math]::Min(8, $LicenseKey.Length)))..." -ForegroundColor Gray }
 Write-Host ""
 
 foreach ($svc in $dotnet) {
@@ -101,7 +99,6 @@ foreach ($svc in $dotnet) {
     }
 
     $newEnvVars = @("NEW_RELIC_APP_NAME=$name")
-    if ($LicenseKey) { $newEnvVars += "NEW_RELIC_LICENSE_KEY=$LicenseKey" }
 
     if ($DryRun) {
         Write-Host "  [DRY-RUN] $name -> $($newEnvVars -join '; ')" -ForegroundColor DarkGray
