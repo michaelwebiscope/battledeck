@@ -6,12 +6,39 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const API_BASE = process.env.API_URL || 'http://localhost:5000';
 const GATEWAY_URL = process.env.GATEWAY_URL || 'http://localhost:5010';
+const VIDEO_SERVICE_URL = process.env.VIDEO_SERVICE_URL || 'http://localhost:5020';
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Dynamic nav menu (add/remove items here)
+const navItems = [
+  { href: '/', label: 'Home' },
+  { href: '/fleet', label: 'Fleet Roster' },
+  { href: '/compare', label: 'Compare' },
+  { href: '/classes', label: 'Ship Classes' },
+  { href: '/captains', label: 'Captains' },
+  { href: '/timeline', label: 'Timeline' },
+  { href: '/stats', label: 'Statistics' },
+  { href: '/gallery', label: 'Photo Gallery' },
+  { href: '/logs', label: 'Daily Logs' },
+  { href: '/simulation', label: 'Live Battle' },
+  { href: '/donate', label: 'Donate' },
+  { href: '/membership', label: 'Membership' },
+  { href: '/members', label: 'Add Member' },
+  { href: '/cart', label: 'Cart' },
+  { href: '/checkout', label: 'Checkout' },
+  { href: '/verify-member', label: 'Verify Member' },
+  { href: '/trace', label: 'Distributed Trace' }
+];
+app.use((req, res, next) => {
+  res.locals.navItems = navItems;
+  res.locals.currentPath = req.path;
+  next();
+});
 
 // Axios instance for API calls
 const api = axios.create({
@@ -28,6 +55,30 @@ app.get('/api/trace', async (req, res) => {
   } catch (err) {
     console.error('Trace error:', err.message);
     res.status(502).json({ error: 'Trace chain unavailable. Ensure Gateway (port 5010) is running.' });
+  }
+});
+
+// Video streaming: proxy to Java service (port 5020) with stream response
+app.get('/api/videos/:shipId', async (req, res) => {
+  try {
+    const headers = {};
+    if (req.headers.range) headers.Range = req.headers.range;
+    const r = await axios({
+      method: 'GET',
+      url: `${VIDEO_SERVICE_URL}/api/videos/${req.params.shipId}`,
+      headers,
+      responseType: 'stream',
+      validateStatus: () => true
+    });
+    res.status(r.status);
+    if (r.headers['content-type']) res.set('Content-Type', r.headers['content-type']);
+    if (r.headers['content-length']) res.set('Content-Length', r.headers['content-length']);
+    if (r.headers['accept-ranges']) res.set('Accept-Ranges', r.headers['accept-ranges']);
+    if (r.headers['content-range']) res.set('Content-Range', r.headers['content-range']);
+    r.data.pipe(res);
+  } catch (err) {
+    console.error('Video proxy error:', err.message);
+    res.status(502).send('Video unavailable');
   }
 });
 

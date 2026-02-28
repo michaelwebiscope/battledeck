@@ -8,57 +8,11 @@
     </button>
     <div class="collapse navbar-collapse" id="navMain">
       <ul class="navbar-nav ms-auto">
+        <% (navItems || []).forEach(function(item) { %>
         <li class="nav-item">
-          <a class="nav-link" href="/">Home</a>
+          <a class="nav-link<%= (currentPath === item.href || (item.href !== '/' && currentPath.startsWith(item.href))) ? ' active' : '' %>" href="<%= item.href %>"><%= item.label %></a>
         </li>
-        <li class="nav-item">
-          <a class="nav-link" href="/fleet">Fleet Roster</a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link" href="/compare">Compare</a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link" href="/classes">Ship Classes</a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link" href="/captains">Captains</a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link" href="/timeline">Timeline</a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link" href="/stats">Statistics</a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link" href="/gallery">Photo Gallery</a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link" href="/logs">Daily Logs</a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link" href="/simulation">Live Battle</a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link" href="/donate">Donate</a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link" href="/membership">Membership</a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link" href="/members">Add Member</a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link" href="/cart">Cart</a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link" href="/checkout">Checkout</a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link" href="/verify-member">Verify Member</a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link" href="/trace">Distributed Trace</a>
-        </li>
+        <% }); %>
       </ul>
     </div>
   </div>

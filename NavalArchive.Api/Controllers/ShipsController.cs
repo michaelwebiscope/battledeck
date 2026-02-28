@@ -10,10 +10,26 @@ namespace NavalArchive.Api.Controllers;
 public class ShipsController : ControllerBase
 {
     private readonly NavalArchiveDbContext _db;
+    private readonly IHttpClientFactory _http;
+    private readonly IConfiguration _config;
 
-    public ShipsController(NavalArchiveDbContext db)
+    public ShipsController(NavalArchiveDbContext db, IHttpClientFactory http, IConfiguration config)
     {
         _db = db;
+        _http = http;
+        _config = config;
+    }
+
+    private async Task<bool> VideoExistsAsync(int shipId)
+    {
+        var url = _config["VideoService:Url"] ?? "http://localhost:5020";
+        try
+        {
+            var client = _http.CreateClient();
+            var res = await client.SendAsync(new HttpRequestMessage(HttpMethod.Head, $"{url.TrimEnd('/')}/api/videos/{shipId}"));
+            return res.IsSuccessStatusCode;
+        }
+        catch { return false; }
     }
 
     /// <summary>
@@ -37,14 +53,14 @@ public class ShipsController : ControllerBase
             if (yearMax.HasValue) shipsQuery = shipsQuery.Where(s => s.YearCommissioned <= yearMax.Value);
         }
         var ships = await shipsQuery.ToListAsync();
+        var videoChecks = await Task.WhenAll(ships.Select(s => VideoExistsAsync(s.Id)));
+        var hasVideo = ships.Zip(videoChecks).ToDictionary(x => x.First.Id, x => x.Second);
 
         var result = new List<object>();
         foreach (var ship in ships)
         {
-            // CRITICAL: Manual load inside loop - N+1 query pattern
             var shipClass = await _db.ShipClasses.FindAsync(ship.ClassId);
             var captain = await _db.Captains.FindAsync(ship.CaptainId);
-
             result.Add(new
             {
                 ship.Id,
@@ -52,6 +68,7 @@ public class ShipsController : ControllerBase
                 ship.Description,
                 ship.ImageUrl,
                 ship.YearCommissioned,
+                VideoUrl = hasVideo.GetValueOrDefault(ship.Id) ? $"/api/videos/{ship.Id}" : (string?)null,
                 Class = shipClass != null ? new { shipClass.Name, shipClass.Type, shipClass.Country } : null,
                 Captain = captain != null ? new { captain.Name, captain.Rank, captain.ServiceYears } : null
             });
@@ -76,6 +93,7 @@ public class ShipsController : ControllerBase
             ship.Description,
             ship.ImageUrl,
             ship.YearCommissioned,
+            VideoUrl = await VideoExistsAsync(ship.Id) ? $"/api/videos/{ship.Id}" : (string?)null,
             Class = shipClass != null ? new { shipClass.Id, shipClass.Name, shipClass.Type, shipClass.Country } : null,
             Captain = captain != null ? new { captain.Id, captain.Name, captain.Rank, captain.ServiceYears, captain.ImageUrl } : null
         });
@@ -97,6 +115,7 @@ public class ShipsController : ControllerBase
             ship.Description,
             ship.ImageUrl,
             ship.YearCommissioned,
+            VideoUrl = await VideoExistsAsync(ship.Id) ? $"/api/videos/{ship.Id}" : (string?)null,
             Class = shipClass != null ? new { shipClass.Id, shipClass.Name, shipClass.Type, shipClass.Country } : null,
             Captain = captain != null ? new { captain.Id, captain.Name, captain.Rank, captain.ServiceYears, captain.ImageUrl } : null
         });
@@ -112,6 +131,9 @@ public class ShipsController : ControllerBase
             .Where(s => s.Name.Contains(q) || s.Description.Contains(q))
             .ToListAsync();
 
+        var videoChecks = await Task.WhenAll(ships.Select(s => VideoExistsAsync(s.Id)));
+        var hasVideo = ships.Zip(videoChecks).ToDictionary(x => x.First.Id, x => x.Second);
+
         var result = new List<object>();
         foreach (var ship in ships)
         {
@@ -124,6 +146,7 @@ public class ShipsController : ControllerBase
                 ship.Description,
                 ship.ImageUrl,
                 ship.YearCommissioned,
+                VideoUrl = hasVideo.GetValueOrDefault(ship.Id) ? $"/api/videos/{ship.Id}" : (string?)null,
                 Class = shipClass != null ? new { shipClass.Name, shipClass.Type, shipClass.Country } : null,
                 Captain = captain != null ? new { captain.Name, captain.Rank } : null
             });

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run all Naval Archive services locally for development.
-# Services: Payment (5001), Card (5002), Cart (5003), API (5000), Web (3000)
+# Services: Payment (5001), Card (5002), Cart (5003), API (5000), Video (5020), Web (3000)
 
 set -e
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -24,6 +24,7 @@ echo "  Payment:  http://localhost:5001"
 echo "  Card:     http://localhost:5002"
 echo "  Cart:     http://localhost:5003"
 echo "  API:      http://localhost:5000"
+echo "  Video:    http://localhost:5020"
 echo "  Web:      http://localhost:3000"
 echo ""
 echo "Press Ctrl+C to stop all."
@@ -52,7 +53,12 @@ dotnet run --project NavalArchive.Api &
 PIDS+=($!)
 sleep 2
 
-# 5. Web (3000)
+# 5. Video (5020) - Node fallback when Maven not installed
+(cd "$ROOT/NavalArchive.VideoService" && node video-server.js) &
+PIDS+=($!)
+sleep 1
+
+# 6. Web (3000)
 (cd "$ROOT/NavalArchive.Web" && node server.js) &
 PIDS+=($!)
 

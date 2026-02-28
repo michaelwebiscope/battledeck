@@ -20,6 +20,10 @@ obj/
 .vs/
 packages/
 
+# Video files (place ship-{id}.mp4 manually)
+NavalArchive.VideoService/videos/*.mp4
+NavalArchive.VideoService/videos/*.webm
+
 # Node
 node_modules/
 npm-debug.log*

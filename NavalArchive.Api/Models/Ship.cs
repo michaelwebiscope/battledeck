@@ -8,6 +8,7 @@ public class Ship
     public int CaptainId { get; set; }
     public string Description { get; set; } = string.Empty;
     public string ImageUrl { get; set; } = string.Empty;
+    public string? VideoUrl { get; set; }
     public int YearCommissioned { get; set; }
 
     public ShipClass? Class { get; set; }

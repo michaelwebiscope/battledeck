@@ -42,6 +42,11 @@ using (var scope = app.Services.CreateScope())
     var logsDb = scope.ServiceProvider.GetRequiredService<LogsDbContext>();
     db.Database.EnsureCreated();
     logsDb.Database.EnsureCreated();
+    // Add VideoUrl column if missing (existing SQLite DBs)
+    if (db.Database.IsSqlite())
+    {
+        try { db.Database.ExecuteSqlRaw("ALTER TABLE Ships ADD COLUMN VideoUrl TEXT"); } catch { /* column exists */ }
+    }
 }
 
 // Fetch data from Wikipedia and genuine war diaries (runs in background)
