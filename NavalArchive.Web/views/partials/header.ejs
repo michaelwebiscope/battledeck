@@ -1,17 +1,28 @@
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-  <div class="container">
+<nav class="navbar navbar-dark bg-dark">
+  <div class="container-fluid">
     <a class="navbar-brand fw-bold" href="/">
       <span class="text-uppercase" style="letter-spacing: 0.15em;">⚓ Naval Archive</span>
     </a>
-    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMain" aria-controls="navMain" aria-expanded="false" aria-label="Toggle navigation">
+    <button class="navbar-toggler border-0 px-3 py-2" type="button" data-bs-toggle="collapse" data-bs-target="#navMain" aria-controls="navMain" aria-expanded="false" aria-label="Toggle navigation">
       <span class="navbar-toggler-icon"></span>
     </button>
     <div class="collapse navbar-collapse" id="navMain">
-      <ul class="navbar-nav ms-auto">
+      <ul class="navbar-nav flex-column w-100 py-3">
         <% (navItems || []).forEach(function(item) { %>
+        <% if (item.items) { %>
+        <li class="nav-item">
+          <span class="nav-link text-muted small text-uppercase px-3 py-1"><%= item.label %></span>
+          <ul class="list-unstyled ps-3 pb-2">
+            <% item.items.forEach(function(sub) { %>
+            <li><a class="nav-link<%= (currentPath === sub.href || (sub.href !== '/' && currentPath.startsWith(sub.href))) ? ' active' : '' %>" href="<%= sub.href %>"><%= sub.label %></a></li>
+            <% }); %>
+          </ul>
+        </li>
+        <% } else { %>
         <li class="nav-item">
           <a class="nav-link<%= (currentPath === item.href || (item.href !== '/' && currentPath.startsWith(item.href))) ? ' active' : '' %>" href="<%= item.href %>"><%= item.label %></a>
         </li>
+        <% } %>
         <% }); %>
       </ul>
     </div>
