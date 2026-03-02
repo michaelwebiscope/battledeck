@@ -125,6 +125,14 @@ if ($apiCsproj -and (Test-Path "$dotnetDir\dotnet.exe")) {
     if (Test-Path $appcmd) { & $appcmd start apppool /apppool.name:NavalArchive-API 2>$null }
 }
 
+# Copy populate assets while extract is still valid (before cleanup)
+$populateDir = "C:\Windows\Temp\navalarchive-populate"
+if (-not (Test-Path $populateDir)) { New-Item -ItemType Directory -Path $populateDir -Force | Out-Null }
+$populateJar = Get-ChildItem -Path $extractPath -Filter "image-populator-*.jar" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($populateJar) { Copy-Item $populateJar.FullName -Destination $populateDir -Force -ErrorAction SilentlyContinue }
+$populateScriptSrc = Join-Path $srcDir "scripts\populate-images.js"
+if (Test-Path $populateScriptSrc -ErrorAction SilentlyContinue) { Copy-Item $populateScriptSrc -Destination $populateDir -Force -ErrorAction SilentlyContinue }
+
 # Ensure IIS serves NavalArchive-Web on 80/443 (not Default Web Site)
 $appcmd = "$env:windir\System32\inetsrv\appcmd.exe"
 if (Test-Path $appcmd) {
@@ -160,13 +168,10 @@ if (-not $javaDir) {
 $javaExe = if ($javaDir) { "$javaDir\bin\java.exe" } else { "java" }
 
 # Populate ship images from Wikipedia -> API (foreground, visible progress and exit code)
-$populateDir = "C:\Windows\Temp\navalarchive-populate"
-if (-not (Test-Path $populateDir)) { New-Item -ItemType Directory -Path $populateDir -Force | Out-Null }
 $apiUrl = "http://localhost:5000"
-$populateJar = Get-ChildItem -Path $srcDir -Filter "image-populator-*.jar" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-if ($populateJar -and (Test-Path $javaExe)) {
-    Copy-Item $populateJar.FullName -Destination $populateDir -Force
-    $jarName = Split-Path $populateJar.FullName -Leaf
+$jarInPopulate = Get-ChildItem -Path $populateDir -Filter "image-populator-*.jar" -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($jarInPopulate -and (Test-Path $javaExe)) {
+    $jarName = $jarInPopulate.Name
     Write-Host ""
     Write-Host "=== Image Population (Java ImagePopulator) ===" -ForegroundColor Cyan
     Write-Host "Connecting to Java app. API: $apiUrl" -ForegroundColor Gray
@@ -176,9 +181,8 @@ if ($populateJar -and (Test-Path $javaExe)) {
     Pop-Location
     Write-Host "ImagePopulator exit code: $popExit" -ForegroundColor $(if ($popExit -eq 0) { "Green" } else { "Yellow" })
 } else {
-    $populateScript = Join-Path $srcDir "scripts\populate-images.js"
+    $populateScript = Join-Path $populateDir "populate-images.js"
     if ((Test-Path $populateScript) -and (Test-Path "$nodeDir\node.exe")) {
-        Copy-Item $populateScript -Destination $populateDir -Force
         Write-Host ""
         Write-Host "=== Image Population (Node fallback) ===" -ForegroundColor Cyan
         Write-Host "Connecting to Node script. API: $apiUrl" -ForegroundColor Gray
