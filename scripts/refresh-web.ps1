@@ -125,9 +125,6 @@ if ($apiCsproj -and (Test-Path "$dotnetDir\dotnet.exe")) {
     if (Test-Path $appcmd) { & $appcmd start apppool /apppool.name:NavalArchive-API 2>$null }
 }
 
-Remove-Item -Force $zipPath -ErrorAction SilentlyContinue
-Remove-Item -Recurse -Force $extractPath -ErrorAction SilentlyContinue
-
 # Ensure IIS serves NavalArchive-Web on 80/443 (not Default Web Site)
 $appcmd = "$env:windir\System32\inetsrv\appcmd.exe"
 if (Test-Path $appcmd) {
@@ -193,6 +190,7 @@ if ($populateJar -and (Test-Path $javaExe)) {
     }
 }
 
+# Cleanup (after populate - it needs $srcDir)
 Remove-Item -Force $zipPath -ErrorAction SilentlyContinue
 Remove-Item -Recurse -Force $extractPath -ErrorAction SilentlyContinue
 
