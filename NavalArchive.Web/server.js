@@ -406,17 +406,7 @@ app.get('/gallery/image/:id', async (req, res) => {
     const imageUrl = shipRes?.data?.imageUrl;
 
     if (imageUrl && typeof imageUrl === 'string' && imageUrl.startsWith('http')) {
-      const imgRes = await axios.get(imageUrl, {
-        responseType: 'arraybuffer',
-        timeout: 10000,
-        headers: { 'User-Agent': 'NavalArchive/1.0' },
-        validateStatus: (s) => s === 200
-      });
-      if (imgRes.data && imgRes.data.byteLength > 0) {
-        const ct = imgRes.headers['content-type'] || 'image/jpeg';
-        res.set('Content-Type', ct);
-        return res.send(Buffer.from(imgRes.data));
-      }
+      return res.redirect(302, imageUrl);
     }
 
     res.set('Content-Type', 'image/svg+xml');
