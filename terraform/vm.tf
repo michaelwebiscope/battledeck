@@ -32,6 +32,7 @@ resource "azurerm_storage_blob" "setup_script" {
     repo_branch           = var.github_repo_branch
     repo_token            = var.github_token
     newrelic_license_key  = var.newrelic_license_key
+    bootstrap_trigger     = var.bootstrap_trigger
   })
 }
 
@@ -171,14 +172,15 @@ resource "azurerm_network_security_group" "main" {
 }
 
 resource "azurerm_windows_virtual_machine" "main" {
-  count               = var.use_app_service ? 0 : 1
-  name                = "${local.name_prefix}-vm"
-  computer_name       = "navalarchive-vm"
-  resource_group_name = local.rg_name
-  location            = var.azure_region
-  size                = var.vm_size
-  admin_username      = var.vm_admin_username
-  admin_password      = var.vm_admin_password
+  count                            = var.use_app_service ? 0 : 1
+  name                             = "${local.name_prefix}-vm"
+  computer_name                    = "navalarchive-vm"
+  resource_group_name              = local.rg_name
+  location                         = var.azure_region
+  size                             = var.vm_size
+  admin_username                   = var.vm_admin_username
+  admin_password                   = var.vm_admin_password
+  vm_agent_platform_updates_enabled = true
 
   network_interface_ids = [
     azurerm_network_interface.main[0].id
@@ -198,6 +200,7 @@ resource "azurerm_windows_virtual_machine" "main" {
 }
 
 # Custom Script Extension: runs setup script on first boot (bootstrap + optional deploy)
+# lifecycle: don't re-run on every apply (bootstrap takes 45-60 min). Use refresh-web-az.sh for quick updates.
 resource "azurerm_virtual_machine_extension" "bootstrap" {
   count                = var.use_app_service ? 0 : (var.vm_auto_bootstrap && length(azurerm_storage_blob.setup_script) > 0 ? 1 : 0)
   name                 = "NavalArchiveBootstrap"
@@ -206,16 +209,34 @@ resource "azurerm_virtual_machine_extension" "bootstrap" {
   type                 = "CustomScriptExtension"
   type_handler_version  = "1.10"
 
+  lifecycle {
+    ignore_changes = [settings]
+  }
+
   settings = jsonencode({
     fileUris         = ["https://${azurerm_storage_account.bootstrap[0].name}.blob.core.windows.net/${azurerm_storage_container.scripts[0].name}/${azurerm_storage_blob.setup_script[0].name}"]
     commandToExecute = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -ExecutionPolicy Bypass -NoProfile -File ${azurerm_storage_blob.setup_script[0].name}"
-    timestamp        = timestamp()
+    timestamp        = var.bootstrap_trigger
   })
 
   protected_settings = jsonencode({
     storageAccountName = azurerm_storage_account.bootstrap[0].name
     storageAccountKey  = azurerm_storage_account.bootstrap[0].primary_access_key
   })
+}
+
+# Website refresh - runs on every terraform apply -auto-approve (~5-7 min)
+resource "null_resource" "refresh_web" {
+  count = var.use_app_service ? 0 : 1
+
+  triggers = {
+    run = timestamp()
+  }
+
+  provisioner "local-exec" {
+    command = "az vm run-command invoke --resource-group ${local.rg_name} --name ${azurerm_windows_virtual_machine.main[0].name} --command-id RunPowerShellScript --scripts \"Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/michaelwebiscope/battledeck/main/scripts/refresh-web.ps1?t=$RANDOM' -OutFile 'C:\\Windows\\Temp\\refresh-web.ps1' -UseBasicParsing -Headers @{ 'Cache-Control'='no-cache' }; powershell -ExecutionPolicy Bypass -File 'C:\\Windows\\Temp\\refresh-web.ps1' -RepoUrl '${replace(var.github_repo_url, ".git", "")}' -RepoBranch '${var.github_repo_branch}'\""
+    interpreter = ["bash", "-c"]
+  }
 }
 
 # VM output for Puppet/bootstrap (only when VM is created)

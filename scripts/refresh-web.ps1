@@ -14,12 +14,17 @@ $repoUrlClean = $RepoUrl -replace '\.git$', '' -replace '/$', ''
 $parts = $repoUrlClean -split '/'
 $owner = $parts[-2]
 $repo = $parts[-1]
-$zipUrl = "https://github.com/$owner/$repo/archive/refs/heads/$RepoBranch.zip"
+# Cache-bust so we always get the latest (GitHub ignores query params)
+$zipUrl = "https://github.com/$owner/$repo/archive/refs/heads/$RepoBranch.zip?t=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
 $zipPath = "$env:TEMP\navalarchive-refresh.zip"
 
 Write-Host "Downloading from GitHub ($RepoBranch)..." -ForegroundColor Cyan
 try {
-    Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing -Headers @{ "User-Agent" = "Azure-Refresh/1.0" } -TimeoutSec 120
+    Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing -Headers @{
+        "User-Agent" = "Azure-Refresh/1.0"
+        "Cache-Control" = "no-cache, no-store"
+        "Pragma" = "no-cache"
+    } -TimeoutSec 120
 } catch {
     Write-Host "Download failed: $_" -ForegroundColor Red
     exit 1
@@ -117,3 +122,4 @@ if (Test-Path $appcmd) {
 }
 
 Write-Host "Web refreshed and restarted." -ForegroundColor Green
+Write-Host "Tip: Push local changes to GitHub before refresh - the script pulls from the repo." -ForegroundColor DarkGray
