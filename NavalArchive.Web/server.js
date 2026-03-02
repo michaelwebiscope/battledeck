@@ -410,6 +410,28 @@ app.get('/gallery/image/:id', async (req, res) => {
       return res.send(Buffer.from(imgRes.data));
     }
 
+    const shipRes = await api.get(`/api/ships/${id}`).catch(() => null);
+    const imageUrl = shipRes?.data?.imageUrl;
+    if (imageUrl && typeof imageUrl === 'string' && imageUrl.startsWith('http')) {
+      try {
+        const proxyRes = await axios.get(imageUrl, {
+          responseType: 'arraybuffer',
+          timeout: 10000,
+          maxContentLength: 10 * 1024 * 1024,
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NavalArchive/1.0)', 'Accept': 'image/*' },
+          validateStatus: (s) => s === 200
+        });
+        if (proxyRes?.data && proxyRes.data.byteLength > 50) {
+          const ct = proxyRes.headers['content-type'] || 'image/jpeg';
+          res.set('Content-Type', ct);
+          res.set('Cache-Control', 'public, max-age=86400');
+          return res.send(Buffer.from(proxyRes.data));
+        }
+      } catch (proxyErr) {
+        console.error('Image proxy failed:', proxyErr.message);
+      }
+    }
+
     res.set('Content-Type', 'image/svg+xml');
     res.send(PLACEHOLDER_SVG);
   } catch (err) {
