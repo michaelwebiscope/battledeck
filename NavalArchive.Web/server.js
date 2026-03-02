@@ -433,7 +433,12 @@ app.get('/gallery/image/:id', async (req, res) => {
       } catch (proxyErr) {
         console.error('Image proxy failed:', proxyErr.message);
       }
-      // Proxy failed - serve HTML with img pointing to source URL (IIS may rewrite Location header)
+      // Proxy failed: if Accept prefers image (e.g. img src), return SVG; else HTML page with img
+      const prefersImage = /image\//.test(req.get('Accept') || '');
+      if (prefersImage) {
+        res.set('Content-Type', 'image/svg+xml');
+        return res.send(PLACEHOLDER_SVG);
+      }
       res.set('Content-Type', 'text/html; charset=utf-8');
       const safeUrl = imageUrl.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const placeholderDataUri = 'data:image/svg+xml,' + encodeURIComponent(PLACEHOLDER_SVG);

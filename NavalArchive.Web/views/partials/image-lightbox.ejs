@@ -1,0 +1,28 @@
+<!-- Image lightbox modal - include and call showImageModal(url, title) -->
+<div class="modal fade" id="imageLightboxModal" tabindex="-1" aria-labelledby="imageLightboxLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-xl">
+    <div class="modal-content bg-dark border-0">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title text-white" id="imageLightboxLabel"></h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body p-0 text-center">
+        <img id="imageLightboxImg" src="" alt="" class="img-fluid" style="max-height: 85vh; width: auto; object-fit: contain;">
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+  function showImageModal(url, title) {
+    var modal = document.getElementById('imageLightboxModal');
+    var img = document.getElementById('imageLightboxImg');
+    var label = document.getElementById('imageLightboxLabel');
+    if (img && label) {
+      img.src = url;
+      img.alt = title || 'Ship image';
+      label.textContent = title || 'Archive Photo';
+    }
+    var bsModal = bootstrap.Modal.getOrCreateInstance(modal);
+    bsModal.show();
+  }
+</script>
