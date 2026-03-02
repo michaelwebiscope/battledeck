@@ -226,11 +226,17 @@ resource "azurerm_virtual_machine_extension" "bootstrap" {
 }
 
 # Website refresh - runs on every terraform apply -auto-approve (~5-7 min)
+# Pushes NavalArchive.Web to GitHub first so VM gets latest code
 resource "null_resource" "refresh_web" {
   count = var.use_app_service ? 0 : 1
 
   triggers = {
     run = timestamp()
+  }
+
+  provisioner "local-exec" {
+    command     = "cd ${path.module}/.. && git add NavalArchive.Web NavalArchive.Api scripts/refresh-web.ps1 scripts/populate-images.js && (git diff --staged --quiet || git commit -m 'deploy: sync web and API to VM') && git push"
+    interpreter = ["bash", "-c"]
   }
 
   provisioner "local-exec" {

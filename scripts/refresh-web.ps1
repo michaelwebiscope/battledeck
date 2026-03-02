@@ -135,5 +135,18 @@ if (Test-Path $appcmd) {
     & $appcmd start site "NavalArchive-Web" 2>$null
 }
 
+# Populate ship images from Wikipedia -> API (runs in background, non-blocking)
+$populateScript = Join-Path $srcDir "scripts\populate-images.js"
+if ((Test-Path $populateScript) -and (Test-Path "$nodeDir\node.exe")) {
+    $populateDir = "C:\Windows\Temp\navalarchive-populate"
+    if (-not (Test-Path $populateDir)) { New-Item -ItemType Directory -Path $populateDir -Force | Out-Null }
+    Copy-Item $populateScript -Destination $populateDir -Force
+    Write-Host "Populating ship images (background)..." -ForegroundColor Yellow
+    Start-Process -FilePath "$nodeDir\node.exe" -ArgumentList "populate-images.js", "http://localhost:5000" -WorkingDirectory $populateDir -WindowStyle Hidden
+}
+
+Remove-Item -Force $zipPath -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force $extractPath -ErrorAction SilentlyContinue
+
 Write-Host "Web refreshed and restarted." -ForegroundColor Green
 Write-Host "Tip: Push local changes to GitHub before refresh - the script pulls from the repo." -ForegroundColor DarkGray

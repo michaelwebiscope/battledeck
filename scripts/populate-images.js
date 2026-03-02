@@ -105,7 +105,7 @@ async function main() {
     } catch (err) {
       console.log(`  Fail: ${ship.name} - ${err.message}`);
     }
-    await new Promise((r) => setTimeout(r, 300)); // be nice to Wikipedia
+    await new Promise((r) => setTimeout(r, 2500)); // avoid Wikipedia rate limit (429)
   }
   console.log(`Done. Stored ${stored} images.`);
 }
