@@ -473,6 +473,43 @@ app.post('/admin/images/populate', async (req, res) => {
   }
 });
 
+// Verify which ship images actually load (no placeholder)
+app.get('/admin/images/verify', async (req, res) => {
+  try {
+    const shipsRes = await api.get('/api/ships');
+    const ships = shipsRes.data || [];
+    const baseUrl = `http://localhost:${PORT}`;
+    const missing = [];
+    for (const ship of ships) {
+      try {
+        const imgRes = await axios.get(`${baseUrl}/gallery/image/${ship.id}`, {
+          responseType: 'arraybuffer',
+          timeout: 8000,
+          headers: { Accept: 'image/*' },
+          validateStatus: () => true
+        });
+        const ct = (imgRes.headers['content-type'] || '').toLowerCase();
+        const len = imgRes.data?.byteLength ?? 0;
+        // Placeholder = SVG or tiny/empty response
+        if (ct.includes('svg') || len < 200) {
+          missing.push({ id: ship.id, name: ship.name });
+        }
+      } catch {
+        missing.push({ id: ship.id, name: ship.name });
+      }
+    }
+    res.json({
+      total: ships.length,
+      withImages: ships.length - missing.length,
+      missing,
+      missingCount: missing.length
+    });
+  } catch (err) {
+    console.error('Image verify error:', err.message);
+    res.status(500).json({ error: err.message, missing: [], total: 0, withImages: 0, missingCount: 0 });
+  }
+});
+
 app.get('/logs', (req, res) => {
   res.render('logs', {
     title: 'Daily Logs',

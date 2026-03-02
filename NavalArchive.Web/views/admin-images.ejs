@@ -77,6 +77,19 @@
           <button id="populateBtn" class="btn btn-modern">Populate All Images (fetch from URLs → store in DB)</button>
           <span id="populateStatus" class="ms-3"></span>
         </div>
+        <div class="mb-4">
+          <button id="verifyBtn" class="btn btn-outline-dark">Verify Images (check which fail to load)</button>
+          <span id="verifyStatus" class="ms-3"></span>
+        </div>
+        <div id="verifyResults" class="card mb-4" style="display: none;">
+          <div class="card-header">Verification Results</div>
+          <div class="card-body">
+            <p class="mb-1"><strong>Total ships:</strong> <span id="verifyTotal">0</span></p>
+            <p class="mb-1"><strong>With working images:</strong> <span id="verifyWithImages" class="text-success">0</span></p>
+            <p class="mb-2"><strong>Missing / broken images:</strong> <span id="verifyMissing" class="text-danger">0</span></p>
+            <ul id="verifyMissingList" class="small mb-0 list-unstyled"></ul>
+          </div>
+        </div>
       <% } else { %>
         <div class="alert alert-warning">No audit data. Ensure the API is running.</div>
       <% } %>
@@ -95,6 +108,33 @@
         .then(function(d) {
           status.textContent = 'Populated ' + (d.shipsStored || 0) + ' ships, ' + (d.captainsStored || 0) + ' captains.';
           location.reload();
+        })
+        .catch(function(e) {
+          status.textContent = 'Error: ' + e.message;
+          btn.disabled = false;
+        });
+    };
+    document.getElementById('verifyBtn').onclick = function() {
+      var btn = this, status = document.getElementById('verifyStatus'), results = document.getElementById('verifyResults');
+      btn.disabled = true;
+      status.textContent = 'Verifying... (this may take ~1 min)';
+      results.style.display = 'none';
+      fetch('/admin/images/verify')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          status.textContent = 'Done.';
+          btn.disabled = false;
+          document.getElementById('verifyTotal').textContent = d.total || 0;
+          document.getElementById('verifyWithImages').textContent = d.withImages || 0;
+          document.getElementById('verifyMissing').textContent = d.missingCount || 0;
+          var list = document.getElementById('verifyMissingList');
+          list.innerHTML = '';
+          (d.missing || []).forEach(function(m) {
+            var li = document.createElement('li');
+            li.innerHTML = '<a href="/ships/' + m.id + '">' + (m.name || 'Ship ' + m.id) + '</a> (id ' + m.id + ')';
+            list.appendChild(li);
+          });
+          results.style.display = 'block';
         })
         .catch(function(e) {
           status.textContent = 'Error: ' + e.message;
