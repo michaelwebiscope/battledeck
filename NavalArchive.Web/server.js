@@ -402,11 +402,12 @@ app.get('/gallery/image/:id', async (req, res) => {
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) return res.status(400).send('Invalid id');
 
-    const shipRes = await api.get(`/api/ships/${id}`).catch(() => null);
-    const imageUrl = shipRes?.data?.imageUrl;
-
-    if (imageUrl && typeof imageUrl === 'string' && imageUrl.startsWith('http')) {
-      return res.redirect(302, imageUrl);
+    const imgRes = await api.get(`/api/images/${id}`, { responseType: 'arraybuffer', validateStatus: (s) => s === 200 }).catch(() => null);
+    if (imgRes?.data && imgRes.data.byteLength > 50) {
+      const ct = imgRes.headers['content-type'] || 'image/jpeg';
+      res.set('Content-Type', ct);
+      res.set('Cache-Control', 'public, max-age=86400');
+      return res.send(Buffer.from(imgRes.data));
     }
 
     res.set('Content-Type', 'image/svg+xml');
@@ -415,6 +416,25 @@ app.get('/gallery/image/:id', async (req, res) => {
     console.error('Gallery image error:', err.message);
     res.set('Content-Type', 'image/svg+xml');
     res.send(PLACEHOLDER_SVG);
+  }
+});
+
+app.get('/admin/images', async (req, res) => {
+  try {
+    const response = await api.get('/api/images/audit');
+    res.render('admin-images', { title: 'Image Audit', audit: response.data });
+  } catch (err) {
+    console.error('Image audit error:', err.message);
+    res.render('admin-images', { title: 'Image Audit', audit: null, error: err.message });
+  }
+});
+
+app.post('/admin/images/populate', async (req, res) => {
+  try {
+    const response = await api.post('/api/images/populate');
+    res.json(response.data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

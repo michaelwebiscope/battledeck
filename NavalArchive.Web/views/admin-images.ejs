@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('partials/head') %>
+</head>
+<body>
+  <%- include('partials/header') %>
+  <main class="app-shell">
+    <div class="container py-4">
+      <h1 class="mb-4">Image Audit</h1>
+      <p class="text-muted mb-4">Index of ships and captains: which have ImageUrl, which have cached ImageData in the database, and which are missing.</p>
+
+      <% if (typeof error !== 'undefined' && error) { %>
+        <div class="alert alert-danger"><%= error %></div>
+      <% } %>
+
+      <% if (audit) { %>
+        <div class="row g-4 mb-4">
+          <div class="col-md-6">
+            <div class="card">
+              <div class="card-header">Ships</div>
+              <div class="card-body">
+                <p class="mb-1"><strong>Total:</strong> <%= audit.ships?.total ?? 0 %></p>
+                <p class="mb-1"><strong>With ImageUrl:</strong> <%= audit.ships?.withImageUrl ?? 0 %></p>
+                <p class="mb-1"><strong>With ImageData (cached):</strong> <%= audit.ships?.withImageData ?? 0 %></p>
+                <% if (audit.ships?.missingUrl && audit.ships.missingUrl.length > 0) { %>
+                  <p class="mb-1 text-warning"><strong>Missing ImageUrl:</strong> <%= audit.ships.missingUrl.length %></p>
+                  <ul class="small mb-0">
+                    <% audit.ships.missingUrl.slice(0, 10).forEach(function(m) { %>
+                      <li><%= m.name %> (id <%= m.id %>)</li>
+                    <% }); %>
+                    <% if (audit.ships.missingUrl.length > 10) { %><li>... and <%= audit.ships.missingUrl.length - 10 %> more</li><% } %>
+                  </ul>
+                <% } %>
+                <% if (audit.ships?.missingCachedData && audit.ships.missingCachedData.length > 0) { %>
+                  <p class="mb-1 text-info mt-2"><strong>Has URL but not cached:</strong> <%= audit.ships.missingCachedData.length %></p>
+                  <ul class="small mb-0">
+                    <% audit.ships.missingCachedData.slice(0, 10).forEach(function(m) { %>
+                      <li><%= m.name %> (id <%= m.id %>)</li>
+                    <% }); %>
+                    <% if (audit.ships.missingCachedData.length > 10) { %><li>... and <%= audit.ships.missingCachedData.length - 10 %> more</li><% } %>
+                  </ul>
+                <% } %>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="card">
+              <div class="card-header">Captains</div>
+              <div class="card-body">
+                <p class="mb-1"><strong>Total:</strong> <%= audit.captains?.total ?? 0 %></p>
+                <p class="mb-1"><strong>With ImageUrl:</strong> <%= audit.captains?.withImageUrl ?? 0 %></p>
+                <p class="mb-1"><strong>With ImageData (cached):</strong> <%= audit.captains?.withImageData ?? 0 %></p>
+                <% if (audit.captains?.missingUrl && audit.captains.missingUrl.length > 0) { %>
+                  <p class="mb-1 text-warning"><strong>Missing ImageUrl:</strong> <%= audit.captains.missingUrl.length %></p>
+                  <ul class="small mb-0">
+                    <% audit.captains.missingUrl.slice(0, 10).forEach(function(m) { %>
+                      <li><%= m.name %> (id <%= m.id %>)</li>
+                    <% }); %>
+                    <% if (audit.captains.missingUrl.length > 10) { %><li>... and <%= audit.captains.missingUrl.length - 10 %> more</li><% } %>
+                  </ul>
+                <% } %>
+                <% if (audit.captains?.missingCachedData && audit.captains.missingCachedData.length > 0) { %>
+                  <p class="mb-1 text-info mt-2"><strong>Has URL but not cached:</strong> <%= audit.captains.missingCachedData.length %></p>
+                  <ul class="small mb-0">
+                    <% audit.captains.missingCachedData.slice(0, 10).forEach(function(m) { %>
+                      <li><%= m.name %> (id <%= m.id %>)</li>
+                    <% }); %>
+                    <% if (audit.captains.missingCachedData.length > 10) { %><li>... and <%= audit.captains.missingCachedData.length - 10 %> more</li><% } %>
+                  </ul>
+                <% } %>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="mb-4">
+          <button id="populateBtn" class="btn btn-modern">Populate All Images (fetch from URLs → store in DB)</button>
+          <span id="populateStatus" class="ms-3"></span>
+        </div>
+      <% } else { %>
+        <div class="alert alert-warning">No audit data. Ensure the API is running.</div>
+      <% } %>
+    </div>
+  </main>
+  <%- include('partials/footer') %>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <% if (audit) { %>
+  <script>
+    document.getElementById('populateBtn').onclick = function() {
+      var btn = this, status = document.getElementById('populateStatus');
+      btn.disabled = true;
+      status.textContent = 'Populating...';
+      fetch('/admin/images/populate', { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          status.textContent = 'Populated ' + (d.shipsStored || 0) + ' ships, ' + (d.captainsStored || 0) + ' captains.';
+          location.reload();
+        })
+        .catch(function(e) {
+          status.textContent = 'Error: ' + e.message;
+          btn.disabled = false;
+        });
+    };
+  </script>
+  <% } %>
+</body>
+</html>

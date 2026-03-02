@@ -8,7 +8,9 @@ param(
 )
 
 $webPath = "C:\inetpub\navalarchive-web"
+$apiPath = "C:\inetpub\navalarchive-api"
 $nodeDir = "C:\Program Files\nodejs"
+$dotnetDir = "C:\Program Files\dotnet"
 
 $repoUrlClean = $RepoUrl -replace '\.git$', '' -replace '/$', ''
 $parts = $repoUrlClean -split '/'
@@ -109,6 +111,18 @@ if (-not $svcStarted) {
     $env:PORT = "3000"
     Start-Process -FilePath "$nodeDir\node.exe" -ArgumentList "server.js" -WorkingDirectory $webPath -WindowStyle Hidden
     Start-Sleep -Seconds 10
+}
+
+# Refresh API (serves images from DB)
+$apiCsproj = Get-ChildItem -Path $srcDir -Filter "NavalArchive.Api.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($apiCsproj -and (Test-Path "$dotnetDir\dotnet.exe")) {
+    Write-Host "Publishing NavalArchive.Api..." -ForegroundColor Yellow
+    $appcmd = "$env:windir\System32\inetsrv\appcmd.exe"
+    if (Test-Path $appcmd) { & $appcmd stop apppool /apppool.name:NavalArchive-API 2>$null }
+    Push-Location $apiCsproj.DirectoryName
+    & "$dotnetDir\dotnet.exe" publish -c Release -o $apiPath 2>&1
+    Pop-Location
+    if (Test-Path $appcmd) { & $appcmd start apppool /apppool.name:NavalArchive-API 2>$null }
 }
 
 Remove-Item -Force $zipPath -ErrorAction SilentlyContinue

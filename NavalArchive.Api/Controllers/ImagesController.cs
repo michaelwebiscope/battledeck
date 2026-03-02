@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using NavalArchive.Api.Data;
+using NavalArchive.Api.Services;
 
 namespace NavalArchive.Api.Controllers;
 
@@ -6,23 +8,91 @@ namespace NavalArchive.Api.Controllers;
 [Route("api/[controller]")]
 public class ImagesController : ControllerBase
 {
-    // CRITICAL: Static cache - never cleared, grows indefinitely until OOM
-    private static readonly Dictionary<int, byte[]> _imageCache = new();
+    private readonly NavalArchiveDbContext _db;
+    private readonly ImageStorageService _storage;
 
-    /// <summary>
-    /// MEMORY LEAK: Each unique ID adds 5MB to static cache. Never evicted.
-    /// </summary>
-    [HttpGet("{id:int}")]
-    public IActionResult GetImage(int id)
+    public ImagesController(NavalArchiveDbContext db, ImageStorageService storage)
     {
-        if (!_imageCache.ContainsKey(id))
+        _db = db;
+        _storage = storage;
+    }
+
+    /// <summary>Serve ship image from database. Id is ship id.</summary>
+    [HttpGet("ship/{id:int}")]
+    public async Task<IActionResult> GetShipImage(int id)
+    {
+        var ship = await _db.Ships.FindAsync(id);
+        if (ship == null) return NotFound();
+
+        if (ship.ImageData != null && ship.ImageData.Length > 0)
         {
-            // Simulate high-res photo: 5MB dummy byte array
-            var dummyImage = new byte[5 * 1024 * 1024];
-            new Random().NextBytes(dummyImage);
-            _imageCache[id] = dummyImage;
+            var ct = ship.ImageContentType ?? "image/jpeg";
+            return File(ship.ImageData, ct);
         }
 
-        return File(_imageCache[id], "image/jpeg");
+        return NotFound();
+    }
+
+    /// <summary>Serve captain image from database. Id is captain id.</summary>
+    [HttpGet("captain/{id:int}")]
+    public async Task<IActionResult> GetCaptainImage(int id)
+    {
+        var captain = await _db.Captains.FindAsync(id);
+        if (captain == null) return NotFound();
+
+        if (captain.ImageData != null && captain.ImageData.Length > 0)
+        {
+            var ct = captain.ImageContentType ?? "image/jpeg";
+            return File(captain.ImageData, ct);
+        }
+
+        return NotFound();
+    }
+
+    /// <summary>Legacy: ship image by id. Serves from DB when present.</summary>
+    [HttpGet("{id:int}")]
+    public async Task<IActionResult> GetImage(int id)
+    {
+        var ship = await _db.Ships.FindAsync(id);
+        if (ship == null) return NotFound();
+
+        if (ship.ImageData != null && ship.ImageData.Length > 0)
+        {
+            var ct = ship.ImageContentType ?? "image/jpeg";
+            return File(ship.ImageData, ct);
+        }
+
+        return NotFound();
+    }
+
+    /// <summary>Audit: which ships/captains have images, which are missing.</summary>
+    [HttpGet("audit")]
+    public async Task<ActionResult<ImageAuditResult>> GetAudit()
+    {
+        return await _storage.GetAuditAsync(_db);
+    }
+
+    /// <summary>Populate all images from ImageUrl into ImageData.</summary>
+    [HttpPost("populate")]
+    public async Task<ActionResult<PopulateResult>> PopulateAll()
+    {
+        var result = await _storage.PopulateAllAsync(_db);
+        return Ok(result);
+    }
+
+    /// <summary>Populate a single ship image.</summary>
+    [HttpPost("populate/ship/{id:int}")]
+    public async Task<IActionResult> PopulateShip(int id)
+    {
+        var ok = await _storage.PopulateShipImageAsync(_db, id);
+        return ok ? Ok() : NotFound();
+    }
+
+    /// <summary>Populate a single captain image.</summary>
+    [HttpPost("populate/captain/{id:int}")]
+    public async Task<IActionResult> PopulateCaptain(int id)
+    {
+        var ok = await _storage.PopulateCaptainImageAsync(_db, id);
+        return ok ? Ok() : NotFound();
     }
 }

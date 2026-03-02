@@ -23,6 +23,7 @@ builder.Services.AddDbContext<LogsDbContext>(options =>
 builder.Services.AddSingleton<DataSyncService>();
 builder.Services.AddSingleton<LogsDataService>();
 builder.Services.AddSingleton<GenuineLogsFetcher>();
+builder.Services.AddScoped<ImageStorageService>();
 
 builder.Services.AddCors(options =>
 {
@@ -46,6 +47,10 @@ using (var scope = app.Services.CreateScope())
     if (db.Database.IsSqlite())
     {
         try { db.Database.ExecuteSqlRaw("ALTER TABLE Ships ADD COLUMN VideoUrl TEXT"); } catch { /* column exists */ }
+        try { db.Database.ExecuteSqlRaw("ALTER TABLE Ships ADD COLUMN ImageData BLOB"); } catch { }
+        try { db.Database.ExecuteSqlRaw("ALTER TABLE Ships ADD COLUMN ImageContentType TEXT"); } catch { }
+        try { db.Database.ExecuteSqlRaw("ALTER TABLE Captains ADD COLUMN ImageData BLOB"); } catch { }
+        try { db.Database.ExecuteSqlRaw("ALTER TABLE Captains ADD COLUMN ImageContentType TEXT"); } catch { }
     }
 }
 
@@ -64,6 +69,8 @@ _ = Task.Run(async () =>
         await sync.SyncFromWikipediaAsync(db);
         await logsData.RefreshFromWikipediaAsync();
         await genuineLogs.FetchAndSaveAsync(logsDb);
+        var imageStorage = scope.ServiceProvider.GetRequiredService<ImageStorageService>();
+        await imageStorage.PopulateAllAsync(db);
     }
     catch (Exception ex)
     {
