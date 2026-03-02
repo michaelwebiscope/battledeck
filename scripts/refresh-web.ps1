@@ -54,6 +54,30 @@ Write-Host "Copying files..." -ForegroundColor Yellow
 Get-ChildItem $webPath -Exclude node_modules -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 Get-ChildItem -Path $webSrcDir -Exclude node_modules | Copy-Item -Destination $webPath -Recurse -Force
 
+# Restore web.config (IIS rewrite to localhost:3000) - refresh deletes it since repo has none
+@"
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <system.webServer>
+    <rewrite>
+      <rules>
+        <rule name="Redirect to HTTPS" stopProcessing="true">
+          <match url="(.*)" />
+          <conditions>
+            <add input="{HTTPS}" pattern="off" ignoreCase="true" />
+          </conditions>
+          <action type="Redirect" url="https://{HTTP_HOST}/{R:1}" redirectType="Permanent" />
+        </rule>
+        <rule name="Node" stopProcessing="true">
+          <match url="(.*)" />
+          <action type="Rewrite" url="http://localhost:3000/{R:1}" appendQueryString="true" />
+        </rule>
+      </rules>
+    </rewrite>
+  </system.webServer>
+</configuration>
+"@ | Set-Content -Path "$webPath\web.config" -Encoding UTF8
+
 Write-Host "Running npm install..." -ForegroundColor Yellow
 Push-Location $webPath
 cmd /c "`"$nodeDir\npm.cmd`" install --omit=dev --no-audit --no-fund"
