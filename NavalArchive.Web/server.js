@@ -126,6 +126,28 @@ app.get('/api/videos/:shipId', async (req, res) => {
   }
 });
 
+// Image upload: stream raw body to API (bypass JSON proxy)
+app.post('/api/images/ship/:id/upload', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const body = Buffer.concat(chunks);
+    const r = await axios({
+      method: 'POST',
+      url: `${API_BASE}/api/images/ship/${id}/upload`,
+      data: body,
+      headers: { 'Content-Type': req.headers['content-type'] || 'image/jpeg' },
+      maxBodyLength: 10 * 1024 * 1024,
+      validateStatus: () => true
+    });
+    res.status(r.status).json(r.data ?? {});
+  } catch (err) {
+    console.error('Image upload proxy error:', err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+
 // Chain: App -> API -> Cart -> Card -> Payment (all requests go through API)
 // Proxy /api/* to API for client-side fetches (local dev; on IIS, /api/* is rewritten to API)
 app.use('/api', async (req, res) => {

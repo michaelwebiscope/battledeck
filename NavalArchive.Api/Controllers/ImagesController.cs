@@ -95,4 +95,25 @@ public class ImagesController : ControllerBase
         var ok = await _storage.PopulateCaptainImageAsync(_db, id);
         return ok ? Ok() : NotFound();
     }
+
+    /// <summary>Upload ship image from external source (e.g. populate script running where Wikipedia is reachable).</summary>
+    [HttpPost("ship/{id:int}/upload")]
+    public async Task<IActionResult> UploadShipImage(int id)
+    {
+        var ship = await _db.Ships.FindAsync(id);
+        if (ship == null) return NotFound();
+
+        using var ms = new MemoryStream();
+        await Request.Body.CopyToAsync(ms);
+        var data = ms.ToArray();
+        if (data.Length < 100) return BadRequest(new { error = "Image too small" });
+
+        var ct = Request.ContentType ?? "image/jpeg";
+        if (ct.Contains(";")) ct = ct.Split(';')[0].Trim();
+
+        ship.ImageData = data;
+        ship.ImageContentType = ct;
+        await _db.SaveChangesAsync();
+        return Ok(new { stored = data.Length });
+    }
 }
