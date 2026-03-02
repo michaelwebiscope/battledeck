@@ -380,7 +380,10 @@ app.get('/timeline', async (req, res) => {
 app.get('/gallery', async (req, res) => {
   try {
     const response = await api.get('/api/ships');
-    const ships = (response.data || []).slice(0, 50);
+    const ships = (response.data || []).slice(0, 50).map(s => ({
+      ...s,
+      imageUrl: s.imageUrl ?? s.ImageUrl
+    }));
     res.render('gallery', {
       title: 'Photo Gallery',
       ships
@@ -411,7 +414,7 @@ app.get('/gallery/image/:id', async (req, res) => {
     }
 
     const shipRes = await api.get(`/api/ships/${id}`).catch(() => null);
-    const imageUrl = shipRes?.data?.imageUrl;
+    const imageUrl = shipRes?.data?.imageUrl ?? shipRes?.data?.ImageUrl;
     if (imageUrl && typeof imageUrl === 'string' && imageUrl.startsWith('http')) {
       try {
         const proxyRes = await axios.get(imageUrl, {
@@ -430,6 +433,9 @@ app.get('/gallery/image/:id', async (req, res) => {
       } catch (proxyErr) {
         console.error('Image proxy failed:', proxyErr.message);
       }
+      // Proxy failed (e.g. Wikipedia blocks server requests) - redirect so browser fetches directly
+      res.redirect(302, imageUrl);
+      return;
     }
 
     res.set('Content-Type', 'image/svg+xml');

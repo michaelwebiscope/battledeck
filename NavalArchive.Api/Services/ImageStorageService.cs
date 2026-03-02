@@ -101,12 +101,13 @@ public class ImageStorageService
         try
         {
             var client = _http.CreateClient();
-            client.Timeout = TimeSpan.FromSeconds(15);
-            client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (compatible; NavalArchive/1.0)");
-            client.DefaultRequestHeaders.Add("Accept", "image/*");
+            client.Timeout = TimeSpan.FromSeconds(30);
+            client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+            client.DefaultRequestHeaders.Add("Accept", "image/webp,image/apng,image/*,*/*;q=0.8");
             var res = await client.GetAsync(url, ct);
             if (!res.IsSuccessStatusCode) return (null, null);
             var data = await res.Content.ReadAsByteArrayAsync(ct);
+            if (data.Length < 100) return (null, null);
             var ctHeader = res.Content.Headers.ContentType?.ToString();
             return (data, ctHeader);
         }
