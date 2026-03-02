@@ -5,13 +5,16 @@
 </head>
 <body>
   <%- include('partials/header') %>
-  <main class="py-0">
+  <main class="py-0 app-shell">
     <!-- Hero Section -->
-    <section class="position-relative overflow-hidden" style="min-height: 420px;">
-      <div class="position-absolute top-0 start-0 w-100 h-100" style="background: linear-gradient(rgba(26,35,50,0.75), rgba(26,35,50,0.6)), url('https://upload.wikimedia.org/wikipedia/commons/thumb/2/2a/USS_Enterprise_%28CV-6%29_in_Puerto_Rico%2C_early_1941.jpg/1920px-USS_Enterprise_%28CV-6%29_in_Puerto_Rico%2C_early_1941.jpg') center/cover;"></div>
+    <section class="position-relative overflow-hidden rounded-bottom-4" style="min-height: 460px;">
+      <div class="position-absolute top-0 start-0 w-100 h-100" style="background: linear-gradient(120deg, rgba(10, 18, 34, 0.86), rgba(29, 40, 66, 0.72)), url('https://upload.wikimedia.org/wikipedia/commons/thumb/2/2a/USS_Enterprise_%28CV-6%29_in_Puerto_Rico%2C_early_1941.jpg/1920px-USS_Enterprise_%28CV-6%29_in_Puerto_Rico%2C_early_1941.jpg') center/cover;"></div>
       <div class="position-relative container py-5 text-white text-center">
-        <h1 class="display-3 fw-bold mb-3" style="text-shadow: 2px 2px 4px rgba(0,0,0,0.5);">WW2 Naval History Archive</h1>
-        <p class="lead fs-4 mb-0" style="max-width: 600px; margin: 0 auto;">Preserving the legacy of the greatest naval conflict in history</p>
+        <div class="glass-panel d-inline-block px-4 py-2 rounded-pill mb-4 small fw-semibold text-uppercase" style="letter-spacing: 0.12em;">Live Collection • Curated History</div>
+        <h1 class="display-2 fw-bold mb-3" style="text-shadow: 0 10px 24px rgba(0,0,0,0.45);">WW2 Naval History Archive</h1>
+        <p class="lead fs-4 mb-4 mx-auto" style="max-width: 700px;">A modern digital museum for fleet records, command timelines, and mission intelligence from the defining naval theater of the 20th century.</p>
+        <a href="/fleet" class="btn btn-modern btn-lg px-4 me-2">Explore the Fleet</a>
+        <a href="/simulation" class="btn btn-outline-light btn-lg px-4">Open Live Battle</a>
       </div>
     </section>
 
@@ -22,32 +25,32 @@
           <div class="col-6 col-md-3">
             <a href="/fleet" class="card text-decoration-none text-dark h-100">
               <div class="card-body text-center py-3">
-                <span class="fs-4 fw-bold">50</span>
-                <p class="small text-muted mb-0">Ships</p>
+                <span class="fs-3 fw-bold">50</span>
+                <p class="small text-secondary mb-0">Ships</p>
               </div>
             </a>
           </div>
           <div class="col-6 col-md-3">
             <a href="/classes" class="card text-decoration-none text-dark h-100">
               <div class="card-body text-center py-3">
-                <span class="fs-4 fw-bold">10</span>
-                <p class="small text-muted mb-0">Classes</p>
+                <span class="fs-3 fw-bold">10</span>
+                <p class="small text-secondary mb-0">Classes</p>
               </div>
             </a>
           </div>
           <div class="col-6 col-md-3">
             <a href="/captains" class="card text-decoration-none text-dark h-100">
               <div class="card-body text-center py-3">
-                <span class="fs-4 fw-bold">25</span>
-                <p class="small text-muted mb-0">Captains</p>
+                <span class="fs-3 fw-bold">25</span>
+                <p class="small text-secondary mb-0">Captains</p>
               </div>
             </a>
           </div>
           <div class="col-6 col-md-3">
             <a href="/timeline" class="card text-decoration-none text-dark h-100">
               <div class="card-body text-center py-3">
-                <span class="fs-4 fw-bold">12</span>
-                <p class="small text-muted mb-0">Key Events</p>
+                <span class="fs-3 fw-bold">12</span>
+                <p class="small text-secondary mb-0">Key Events</p>
               </div>
             </a>
           </div>
@@ -65,9 +68,9 @@
             <div class="col-md-8">
               <div class="card-body p-4">
                 <h3 class="card-title"><%= featuredShip.name %></h3>
-                <p class="text-muted mb-2">Commissioned <%= featuredShip.year %></p>
+                <p class="text-secondary mb-2">Commissioned <%= featuredShip.year %></p>
                 <p class="card-text"><%= featuredShip.description %></p>
-                <a href="/fleet" class="btn btn-outline-dark">Browse Full Fleet</a>
+                <a href="/fleet" class="btn btn-modern">Browse Full Fleet</a>
                 <a href="/discover" class="btn btn-outline-secondary btn-sm ms-2" title="Discover a random ship">🎲 Discover a Ship</a>
                 <button id="refreshData" class="btn btn-outline-secondary btn-sm ms-2" title="Fetch latest from Wikipedia">↻ Refresh from Wikipedia</button>
               </div>

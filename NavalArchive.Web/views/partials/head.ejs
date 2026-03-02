@@ -4,17 +4,90 @@
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  :root { --navy-dark: #1a2332; --navy-mid: #2c3e50; --cream: #f8f6f1; --parchment: #e8e4dc; --accent: #8b7355; }
-  body { font-family: 'Source Sans 3', sans-serif; background-color: var(--cream); color: #333; min-height: 100vh; display: flex; flex-direction: column; }
-  h1, h2, h3, .display-4, .display-5 { font-family: 'Cormorant Garamond', serif; color: var(--navy-dark); }
-  .navbar-brand { font-family: 'Cormorant Garamond', serif; }
-  .card { border: none; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
-  .card-header { background: var(--navy-dark); color: white; font-family: 'Cormorant Garamond', serif; font-weight: 600; }
+  :root {
+    --bg-start: #0c1222;
+    --bg-end: #171f34;
+    --surface: #f4f7fb;
+    --text: #1a2332;
+    --muted: #64748b;
+    --brand: #4f7cff;
+    --brand-2: #7b61ff;
+    --navy-dark: #121b2f;
+    --glass: rgba(255, 255, 255, 0.72);
+  }
+  body {
+    font-family: 'Source Sans 3', sans-serif;
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background:
+      radial-gradient(1200px 500px at 12% -10%, rgba(123, 97, 255, 0.20), transparent 65%),
+      radial-gradient(1000px 500px at 95% 0%, rgba(79, 124, 255, 0.20), transparent 65%),
+      linear-gradient(180deg, var(--bg-start), var(--bg-end));
+  }
+  h1, h2, h3, .display-4, .display-5 {
+    font-family: 'Cormorant Garamond', serif;
+    color: var(--text);
+    letter-spacing: 0.01em;
+  }
+  .navbar-brand {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 1.35rem;
+  }
+  .navbar {
+    background: rgba(9, 14, 25, 0.78) !important;
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .navbar-toggler {
+    color: rgba(255, 255, 255, 0.9);
+    border-radius: 12px;
+  }
+  .navbar-toggler:focus { box-shadow: 0 0 0 0.15rem rgba(123, 97, 255, 0.45); }
+  #navMain { background: transparent; }
+  #navMain .nav-link {
+    color: rgba(245, 248, 255, 0.9);
+    border-radius: 10px;
+    padding: 0.55rem 0.9rem;
+    transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+  }
+  #navMain .nav-link:hover, #navMain .nav-link.active {
+    color: #fff;
+    background: rgba(123, 97, 255, 0.24);
+    transform: translateX(2px);
+  }
   main { flex: 1; }
-  .navbar { background: var(--navy-dark) !important; }
-  .navbar-toggler { color: rgba(255,255,255,0.9); }
-  .navbar-toggler:focus { box-shadow: 0 0 0 0.15rem rgba(255,255,255,0.4); }
-  #navMain { background: var(--navy-dark); }
-  #navMain .nav-link { color: rgba(255,255,255,0.9); padding: 0.5rem 1rem; }
-  #navMain .nav-link:hover, #navMain .nav-link.active { color: #fff; background: rgba(255,255,255,0.1); }
+  .app-shell {
+    background: var(--surface);
+    border-radius: 20px 20px 0 0;
+    margin-top: 1rem;
+    box-shadow: 0 20px 55px rgba(0, 0, 0, 0.22);
+  }
+  .card {
+    border: 1px solid rgba(22, 34, 57, 0.08);
+    border-radius: 16px;
+    box-shadow: 0 12px 35px rgba(10, 18, 36, 0.08);
+  }
+  .card-header {
+    background: var(--navy-dark);
+    color: white;
+    font-family: 'Cormorant Garamond', serif;
+    font-weight: 600;
+  }
+  .glass-panel {
+    background: var(--glass);
+    border: 1px solid rgba(255, 255, 255, 0.65);
+    backdrop-filter: blur(10px);
+  }
+  .btn-modern {
+    border: 0;
+    color: #fff;
+    background: linear-gradient(135deg, var(--brand), var(--brand-2));
+    box-shadow: 0 10px 22px rgba(79, 124, 255, 0.35);
+  }
+  .btn-modern:hover {
+    color: #fff;
+    filter: brightness(1.06);
+  }
 </style>

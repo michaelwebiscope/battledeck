@@ -7,6 +7,62 @@ const PORT = process.env.PORT || 3000;
 const API_BASE = process.env.API_URL || 'http://localhost:5000';
 const GATEWAY_URL = process.env.GATEWAY_URL || 'http://localhost:5010';
 const VIDEO_SERVICE_URL = process.env.VIDEO_SERVICE_URL || 'http://localhost:5020';
+const MENU_URL = process.env.MENU_URL || 'https://raw.githubusercontent.com/michaelwebiscope/battledeck/main/NavalArchive.Web/public/menu.json';
+
+// Fallback menu: flat list or grouped { label, items: [{ href, label }] }
+const defaultNavItems = [
+  { href: '/', label: 'Home' },
+  { label: 'Explore', items: [
+    { href: '/fleet', label: 'Fleet Roster' },
+    { href: '/compare', label: 'Compare' },
+    { href: '/classes', label: 'Ship Classes' },
+    { href: '/captains', label: 'Captains' },
+    { href: '/timeline', label: 'Timeline' },
+    { href: '/stats', label: 'Statistics' },
+    { href: '/gallery', label: 'Photo Gallery' },
+    { href: '/logs', label: 'Daily Logs' }
+  ]},
+  { href: '/simulation', label: 'Live Battle' },
+  { label: 'Support', items: [
+    { href: '/donate', label: 'Donate' },
+    { href: '/membership', label: 'Membership' }
+  ]},
+  { label: 'Member', items: [
+    { href: '/members', label: 'Add Member' },
+    { href: '/verify-member', label: 'Verify Member' }
+  ]},
+  { label: 'Cart', items: [
+    { href: '/cart', label: 'View Cart' },
+    { href: '/checkout', label: 'Checkout' }
+  ]},
+  { href: '/trace', label: 'Trace' }
+];
+
+let cachedNavItems = null;
+let cacheExpiry = 0;
+const MENU_CACHE_MS = 5 * 60 * 1000; // 5 min
+
+function isValidNavItem(i) {
+  if (i.href && i.label) return true;
+  if (i.label && Array.isArray(i.items) && i.items.length > 0 && i.items.every((c) => c.href && c.label)) return true;
+  return false;
+}
+
+async function fetchNavItems() {
+  if (cachedNavItems && Date.now() < cacheExpiry) return cachedNavItems;
+  try {
+    const r = await axios.get(MENU_URL, { timeout: 5000, validateStatus: (s) => s === 200 });
+    const items = Array.isArray(r.data) ? r.data : (r.data?.items || r.data?.menu || []);
+    if (items.length > 0 && items.every(isValidNavItem)) {
+      cachedNavItems = items;
+      cacheExpiry = Date.now() + MENU_CACHE_MS;
+      return cachedNavItems;
+    }
+  } catch (err) {
+    console.error('Menu fetch failed:', err.message);
+  }
+  return defaultNavItems;
+}
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
@@ -14,28 +70,16 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Dynamic nav menu (add/remove items here)
-const navItems = [
-  { href: '/', label: 'Home' },
-  { href: '/fleet', label: 'Fleet Roster' },
-  { href: '/compare', label: 'Compare' },
-  { href: '/classes', label: 'Ship Classes' },
-  { href: '/captains', label: 'Captains' },
-  { href: '/timeline', label: 'Timeline' },
-  { href: '/stats', label: 'Statistics' },
-  { href: '/gallery', label: 'Photo Gallery' },
-  { href: '/logs', label: 'Daily Logs' },
-  { href: '/simulation', label: 'Live Battle' },
-  { href: '/donate', label: 'Donate' },
-  { href: '/membership', label: 'Membership' },
-  { href: '/members', label: 'Add Member' },
-  { href: '/cart', label: 'Cart' },
-  { href: '/checkout', label: 'Checkout' },
-  { href: '/verify-member', label: 'Verify Member' },
-  { href: '/trace', label: 'Distributed Trace' }
-];
-app.use((req, res, next) => {
-  res.locals.navItems = navItems;
+// Health check - no dependencies, before nav middleware
+app.get('/health', (req, res) => res.status(200).send('OK'));
+
+// Dynamic nav menu from online (MENU_URL), cached 5 min
+app.use(async (req, res, next) => {
+  try {
+    res.locals.navItems = await fetchNavItems();
+  } catch (e) {
+    res.locals.navItems = defaultNavItems;
+  }
   res.locals.currentPath = req.path;
   next();
 });
@@ -471,6 +515,12 @@ app.post('/simulation/join', async (req, res) => {
       error: err.response?.data?.title || 'Failed to join. Try again.'
     });
   }
+});
+
+// Global error handler
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).send('Internal Server Error');
 });
 
 // --- Start Server ---
