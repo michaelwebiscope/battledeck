@@ -162,21 +162,34 @@ if (-not $javaDir) {
 }
 $javaExe = if ($javaDir) { "$javaDir\bin\java.exe" } else { "java" }
 
-# Populate ship images from Wikipedia -> API (runs in background, non-blocking)
+# Populate ship images from Wikipedia -> API (foreground, visible progress and exit code)
 $populateDir = "C:\Windows\Temp\navalarchive-populate"
 if (-not (Test-Path $populateDir)) { New-Item -ItemType Directory -Path $populateDir -Force | Out-Null }
+$apiUrl = "http://localhost:5000"
 $populateJar = Get-ChildItem -Path $srcDir -Filter "image-populator-*.jar" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($populateJar -and (Test-Path $javaExe)) {
     Copy-Item $populateJar.FullName -Destination $populateDir -Force
     $jarName = Split-Path $populateJar.FullName -Leaf
-    Write-Host "Populating ship images (Java, background)..." -ForegroundColor Yellow
-    Start-Process -FilePath $javaExe -ArgumentList "-jar", $jarName, "http://localhost:5000" -WorkingDirectory $populateDir -WindowStyle Hidden
+    Write-Host ""
+    Write-Host "=== Image Population (Java ImagePopulator) ===" -ForegroundColor Cyan
+    Write-Host "Connecting to Java app. API: $apiUrl" -ForegroundColor Gray
+    Push-Location $populateDir
+    & $javaExe -jar $jarName $apiUrl
+    $popExit = $LASTEXITCODE
+    Pop-Location
+    Write-Host "ImagePopulator exit code: $popExit" -ForegroundColor $(if ($popExit -eq 0) { "Green" } else { "Yellow" })
 } else {
     $populateScript = Join-Path $srcDir "scripts\populate-images.js"
     if ((Test-Path $populateScript) -and (Test-Path "$nodeDir\node.exe")) {
         Copy-Item $populateScript -Destination $populateDir -Force
-        Write-Host "Populating ship images (Node, background)..." -ForegroundColor Yellow
-        Start-Process -FilePath "$nodeDir\node.exe" -ArgumentList "populate-images.js", "http://localhost:5000" -WorkingDirectory $populateDir -WindowStyle Hidden
+        Write-Host ""
+        Write-Host "=== Image Population (Node fallback) ===" -ForegroundColor Cyan
+        Write-Host "Connecting to Node script. API: $apiUrl" -ForegroundColor Gray
+        Push-Location $populateDir
+        & "$nodeDir\node.exe" populate-images.js $apiUrl
+        $popExit = $LASTEXITCODE
+        Pop-Location
+        Write-Host "populate-images.js exit code: $popExit" -ForegroundColor $(if ($popExit -eq 0) { "Green" } else { "Yellow" })
     }
 }
 

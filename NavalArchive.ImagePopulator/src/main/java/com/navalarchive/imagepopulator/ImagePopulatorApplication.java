@@ -32,7 +32,20 @@ public class ImagePopulatorApplication {
     private static final String USER_AGENT = "Mozilla/5.0 (compatible; NavalArchive-ImagePopulator/1.0)";
     private static final int DELAY_MS = 2500; // Avoid Wikipedia rate limit
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
+        int exitCode = 0;
+        try {
+            exitCode = run(args);
+        } catch (Exception e) {
+            System.err.println("FATAL: " + e.getMessage());
+            e.printStackTrace();
+            exitCode = 1;
+        }
+        System.out.println("[ImagePopulator exit code: " + exitCode + "]");
+        System.exit(exitCode);
+    }
+
+    private static int run(String[] args) throws Exception {
         String apiBase = System.getenv("API_URL");
         if (apiBase == null || apiBase.isBlank()) {
             apiBase = args.length > 0 ? args[0] : "http://localhost:5000";
@@ -40,44 +53,67 @@ public class ImagePopulatorApplication {
         boolean insecure = args.length > 1 && "--insecure".equals(args[1])
                 || "true".equals(System.getenv("INSECURE"));
 
-        System.out.println("Populate images from Wikipedia -> " + apiBase);
-
+        System.out.println("[ImagePopulator] Target API: " + apiBase);
         OkHttpClient client = buildClient(insecure);
 
+        System.out.println("[ImagePopulator] Connecting to API...");
         List<Map<String, Object>> ships = fetchShips(client, apiBase);
         if (ships == null || ships.isEmpty()) {
-            System.err.println("Failed to fetch ships");
-            System.exit(1);
+            System.err.println("[ImagePopulator] ERROR: Failed to fetch ships (connection or API error)");
+            return 1;
         }
 
-        int stored = 0;
-        for (Map<String, Object> ship : ships) {
-            Object imageUrl = ship.get("imageUrl");
-            if (imageUrl == null || !imageUrl.toString().startsWith("http")) continue;
+        List<Map<String, Object>> withImageList = ships.stream()
+                .filter(s -> {
+                    Object u = s.get("imageUrl");
+                    return u != null && u.toString().startsWith("http");
+                })
+                .toList();
+        int total = withImageList.size();
+        System.out.println("[ImagePopulator] Connected. Ships: " + ships.size() + ", with image URLs: " + total);
 
+        int index = 0;
+        int stored = 0;
+        for (Map<String, Object> ship : withImageList) {
+            Object imageUrl = ship.get("imageUrl");
+            index++;
             Object idObj = ship.get("id");
             int id = idObj instanceof Number ? ((Number) idObj).intValue() : 0;
             String name = String.valueOf(ship.getOrDefault("name", "Ship " + id));
 
             try {
-                byte[] img = fetchImage(client, imageUrl.toString());
-                if (img == null || img.length < 100) continue;
+                FetchResult imgResult = fetchImageWithStatus(client, imageUrl.toString());
+                if (imgResult == null || imgResult.data == null || imgResult.data.length < 100) {
+                    int code = imgResult != null ? imgResult.httpCode : -1;
+                    System.out.println("  [" + index + "/" + total + "] Skip: " + name + " - fetch HTTP " + code);
+                    continue;
+                }
 
-                int status = uploadImage(client, apiBase, id, img);
+                int status = uploadImage(client, apiBase, id, imgResult.data);
                 if (status >= 200 && status < 300) {
                     stored++;
-                    System.out.println("  OK: " + name + " (id " + id + ")");
+                    System.out.println("  [" + index + "/" + total + "] OK: " + name + " (id " + id + ")");
                 } else {
-                    System.out.println("  Skip: " + name + " - upload " + status);
+                    System.out.println("  [" + index + "/" + total + "] Skip: " + name + " - upload HTTP " + status);
                 }
             } catch (Exception e) {
-                System.out.println("  Fail: " + name + " - " + e.getMessage());
+                System.out.println("  [" + index + "/" + total + "] Fail: " + name + " - " + e.getMessage());
             }
 
             TimeUnit.MILLISECONDS.sleep(DELAY_MS);
         }
 
-        System.out.println("Done. Stored " + stored + " images.");
+        System.out.println("[ImagePopulator] Done. Stored " + stored + " images.");
+        return 0;
+    }
+
+    private static class FetchResult {
+        final int httpCode;
+        final byte[] data;
+        FetchResult(int httpCode, byte[] data) {
+            this.httpCode = httpCode;
+            this.data = data;
+        }
     }
 
     private static OkHttpClient buildClient(boolean insecure) {
@@ -120,7 +156,7 @@ public class ImagePopulatorApplication {
         }
     }
 
-    private static byte[] fetchImage(OkHttpClient client, String url) throws IOException {
+    private static FetchResult fetchImageWithStatus(OkHttpClient client, String url) throws IOException {
         Request req = new Request.Builder()
                 .url(url)
                 .header("User-Agent", USER_AGENT)
@@ -128,8 +164,9 @@ public class ImagePopulatorApplication {
                 .build();
 
         try (Response res = client.newCall(req).execute()) {
-            if (!res.isSuccessful() || res.body() == null) return null;
-            return res.body().bytes();
+            int code = res.code();
+            byte[] data = (res.body() != null && res.isSuccessful()) ? res.body().bytes() : null;
+            return new FetchResult(code, data);
         }
     }
 
