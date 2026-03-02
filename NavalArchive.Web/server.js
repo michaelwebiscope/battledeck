@@ -394,17 +394,37 @@ app.get('/gallery', async (req, res) => {
   }
 });
 
+// Placeholder when ship image unavailable (SVG - scales nicely)
+const PLACEHOLDER_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"><rect fill="#6c757d" width="400" height="300"/><text fill="#fff" x="200" y="150" dominant-baseline="middle" text-anchor="middle" font-size="16" font-family="sans-serif">No image</text></svg>';
+
 app.get('/gallery/image/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
-    const response = await api.get(`/api/images/${id}`, {
-      responseType: 'arraybuffer'
-    });
-    res.set('Content-Type', 'image/jpeg');
-    res.send(Buffer.from(response.data));
+    if (isNaN(id)) return res.status(400).send('Invalid id');
+
+    const shipRes = await api.get(`/api/ships/${id}`).catch(() => null);
+    const imageUrl = shipRes?.data?.imageUrl;
+
+    if (imageUrl && typeof imageUrl === 'string' && imageUrl.startsWith('http')) {
+      const imgRes = await axios.get(imageUrl, {
+        responseType: 'arraybuffer',
+        timeout: 10000,
+        headers: { 'User-Agent': 'NavalArchive/1.0' },
+        validateStatus: (s) => s === 200
+      });
+      if (imgRes.data && imgRes.data.byteLength > 0) {
+        const ct = imgRes.headers['content-type'] || 'image/jpeg';
+        res.set('Content-Type', ct);
+        return res.send(Buffer.from(imgRes.data));
+      }
+    }
+
+    res.set('Content-Type', 'image/svg+xml');
+    res.send(PLACEHOLDER_SVG);
   } catch (err) {
-    console.error('Image API error:', err.message);
-    res.status(500).send('Failed to load image');
+    console.error('Gallery image error:', err.message);
+    res.set('Content-Type', 'image/svg+xml');
+    res.send(PLACEHOLDER_SVG);
   }
 });
 
