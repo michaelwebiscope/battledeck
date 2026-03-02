@@ -65,7 +65,7 @@
               <div class="col-md-6 mb-3">
                 <div class="card h-100">
                   <% if (ship.captain.imageUrl && ship.captain.imageUrl.startsWith('http')) { %>
-                    <img src="<%= ship.captain.imageUrl %>" class="card-img-top" alt="<%= ship.captain.name %>" style="height: 160px; object-fit: cover;">
+                    <img src="<%= ship.captain.imageUrl %>" class="card-img-top" alt="<%= ship.captain.name %>" style="height: 160px; object-fit: cover;" onerror="this.onerror=null;this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22160%22%3E%3Crect fill=%22%236c757d%22 width=%22200%22 height=%22160%22/%3E%3Ctext fill=%22%23fff%22 x=%22100%22 y=%2280%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-size=%2212%22%3ENo photo%3C/text%3E%3C/svg%3E';">
                   <% } %>
                   <div class="card-header">Captain</div>
                   <div class="card-body">

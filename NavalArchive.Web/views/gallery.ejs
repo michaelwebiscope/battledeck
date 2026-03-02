@@ -15,7 +15,7 @@
             <div class="col-md-4 col-lg-3">
               <div class="card h-100">
                 <% if (ship.imageUrl && ship.imageUrl.startsWith('http')) { %>
-                  <img src="<%= ship.imageUrl %>" class="card-img-top" alt="<%= ship.name %>" style="height: 180px; object-fit: cover;">
+                  <img src="<%= ship.imageUrl %>" class="card-img-top" alt="<%= ship.name %>" style="height: 180px; object-fit: cover;" onerror="this.onerror=null;this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22180%22%3E%3Crect fill=%22%236c757d%22 width=%22200%22 height=%22180%22/%3E%3Ctext fill=%22%23fff%22 x=%22100%22 y=%2290%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-size=%2212%22%3ENo image%3C/text%3E%3C/svg%3E';">
                 <% } else { %>
                   <div class="card-img-top bg-secondary d-flex align-items-center justify-content-center" style="height: 180px;">
                     <span class="text-white-50"><%= ship.name %></span>

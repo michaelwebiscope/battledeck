@@ -81,7 +81,9 @@
                       <td>
                         <div class="d-flex align-items-center">
                           <% if (ship.imageUrl && ship.imageUrl.startsWith('http')) { %>
-                            <img src="<%= ship.imageUrl %>" alt="" class="rounded me-2" style="width: 48px; height: 32px; object-fit: cover;">
+                            <img src="<%= ship.imageUrl %>" alt="" class="rounded me-2" style="width: 48px; height: 32px; object-fit: cover;" onerror="this.onerror=null;this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2248%22 height=%2232%22%3E%3Crect fill=%22%236c757d%22 width=%2248%22 height=%2232%22/%3E%3C/svg%3E';">
+                          <% } else { %>
+                            <div class="rounded me-2 img-placeholder" style="width: 48px; height: 32px; font-size: 0.6rem;">—</div>
                           <% } %>
                           <a href="/ships/<%= ship.id %>" class="text-decoration-none fw-bold"><%= ship.name %></a>
                           <a href="/compare?id1=<%= ship.id %>" class="text-muted small ms-1" title="Compare">↔</a>
