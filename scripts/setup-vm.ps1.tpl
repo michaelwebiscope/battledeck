@@ -237,25 +237,19 @@ $dotnetExe = "C:\Program Files\dotnet\dotnet.exe"
 <configuration>
   <system.webServer>
     <rewrite>
-      <rule name="Redirect to HTTPS" stopProcessing="true">
-        <match url="(.*)" />
-        <conditions>
-          <add input="{HTTPS}" pattern="off" ignoreCase="true" />
-        </conditions>
-        <action type="Redirect" url="https://{HTTP_HOST}/{R:1}" redirectType="Permanent" />
-      </rule>
-      <rule name="API" stopProcessing="true">
-        <match url="^api/(.*)" />
-        <action type="Rewrite" url="http://localhost:5000/api/{R:1}" />
-      </rule>
-      <rule name="Trace" stopProcessing="true">
-        <match url="^trace$" />
-        <action type="Rewrite" url="http://localhost:5000/trace" />
-      </rule>
-      <rule name="Node" stopProcessing="true">
-        <match url="(.*)" />
-        <action type="Rewrite" url="http://localhost:3000/{R:1}" />
-      </rule>
+      <rules>
+        <rule name="Redirect to HTTPS" stopProcessing="true">
+          <match url="(.*)" />
+          <conditions>
+            <add input="{HTTPS}" pattern="off" ignoreCase="true" />
+          </conditions>
+          <action type="Redirect" url="https://{HTTP_HOST}/{R:1}" redirectType="Permanent" />
+        </rule>
+        <rule name="Node" stopProcessing="true">
+          <match url="(.*)" />
+          <action type="Rewrite" url="http://localhost:3000/{R:1}" appendQueryString="true" />
+        </rule>
+      </rules>
     </rewrite>
   </system.webServer>
 </configuration>
@@ -269,7 +263,7 @@ cd /d $webPath
 set API_URL=http://localhost:5000
 set GATEWAY_URL=http://localhost:5010
 set PORT=3000
-node server.js
+"$nodeDir\node.exe" server.js
 "@ | Set-Content -Path "$webPath\start-web.cmd" -Encoding ASCII
     $prevErr = $ErrorActionPreference
     $ErrorActionPreference = "SilentlyContinue"
@@ -377,6 +371,7 @@ if ($appcmd) {
     & $appcmd start site NavalArchive-API
     & $appcmd start site NavalArchive-Web
     icacls $apiPath /grant "IIS AppPool\NavalArchive-API:(OI)(CI)M" /T 2>$null
+    icacls $webPath /grant "IIS AppPool\DefaultAppPool:(OI)(CI)RX" /T 2>$null
 }
 
 $iisreset = if (Test-Path "$env:windir\SysNative\inetsrv\iisreset.exe") { "$env:windir\SysNative\inetsrv\iisreset.exe" } else { "$env:windir\System32\inetsrv\iisreset.exe" }
@@ -388,6 +383,42 @@ $diagScript = Get-ChildItem -Path $clonePath -Filter "diagnose-endpoints.ps1" -R
 if ($diagScript) { Copy-Item $diagScript.FullName -Destination "C:\inetpub\diagnose-endpoints.ps1" -Force }
 $startScript = Get-ChildItem -Path $clonePath -Filter "start-all-services.ps1" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($startScript) { Copy-Item $startScript.FullName -Destination "C:\inetpub\start-all-services.ps1" -Force }
+
+# Refresh-web script: run "powershell -File C:\inetpub\refresh-web.ps1" to pull latest from GitHub and restart Node
+$refreshScript = @'
+# Refresh NavalArchive.Web from GitHub (run: powershell -ExecutionPolicy Bypass -File C:\inetpub\refresh-web.ps1)
+$webPath = "C:\inetpub\navalarchive-web"
+$nodeDir = "C:\Program Files\nodejs"
+$repoUrl = "${repo_url}"
+$repoBranch = "${repo_branch}"
+$repoUrlClean = $repoUrl -replace '\.git$', '' -replace '/$', ''
+$parts = $repoUrlClean -split '/'
+$owner = $parts[-2]; $repo = $parts[-1]
+$zipUrl = "https://github.com/$owner/$repo/archive/refs/heads/$repoBranch.zip"
+$zipPath = "$env:TEMP\navalarchive-refresh.zip"
+Write-Host "Downloading from GitHub..." -ForegroundColor Cyan
+Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing -Headers @{ "User-Agent" = "Azure-Refresh/1.0" } -TimeoutSec 120
+$extractPath = "$env:TEMP\navalarchive-refresh"
+if (Test-Path $extractPath) { Remove-Item -Recurse -Force $extractPath }
+Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
+$extractedDir = Get-ChildItem -Path $extractPath -Directory | Select-Object -First 1
+$srcDir = if ($extractedDir) { $extractedDir.FullName } else { $extractPath }
+$webSrcDir = (Get-ChildItem -Path $srcDir -Filter "server.js" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.DirectoryName -like "*NavalArchive.Web*" } | Select-Object -First 1).DirectoryName
+if ($webSrcDir) {
+    sc.exe stop NavalArchiveWeb 2>$null; Start-Sleep -Seconds 3
+    Get-ChildItem $webPath -Exclude node_modules | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    Get-ChildItem -Path $webSrcDir -Exclude node_modules | Copy-Item -Destination $webPath -Recurse -Force
+    Push-Location $webPath
+    cmd /c "`"$nodeDir\npm.cmd`" install --omit=dev --no-audit --no-fund"
+    Pop-Location
+    sc.exe start NavalArchiveWeb
+    Write-Host "Web refreshed and restarted." -ForegroundColor Green
+} else { Write-Host "NavalArchive.Web not found in archive" -ForegroundColor Red }
+Remove-Item -Force $zipPath -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force $extractPath -ErrorAction SilentlyContinue
+'@
+$refreshScript = $refreshScript -replace '\$\{repo_url\}', $RepoUrl -replace '\$\{repo_branch\}', $RepoBranch
+$refreshScript | Set-Content -Path "C:\inetpub\refresh-web.ps1" -Encoding UTF8
 
 # Scheduled task: start all services 2 min after boot (fixes services not starting on restart)
 $taskName = "NavalArchive-StartServices"
