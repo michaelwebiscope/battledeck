@@ -29,8 +29,11 @@ import okhttp3.Response;
  */
 public class ImagePopulatorApplication {
 
-    private static final String USER_AGENT = "Mozilla/5.0 (compatible; NavalArchive-ImagePopulator/1.0)";
-    private static final int DELAY_MS = 2500; // Avoid Wikipedia rate limit
+    // Wikipedia User-Agent policy: identify app + contact (https://foundation.wikimedia.org/wiki/Policy:User-Agent_policy)
+    private static final String USER_AGENT = "NavalArchive-ImagePopulator/1.0 (https://github.com/michaelwebiscope/battledeck; educational project)";
+    private static final int DELAY_MS = 5000; // Avoid Wikipedia rate limit
+    private static final int RETRY_DELAY_MS = 60000; // Wait 60s on 429 before retry
+    private static final int MAX_RETRIES = 3;
 
     public static void main(String[] args) {
         int exitCode = 0;
@@ -82,7 +85,7 @@ public class ImagePopulatorApplication {
             String name = String.valueOf(ship.getOrDefault("name", "Ship " + id));
 
             try {
-                FetchResult imgResult = fetchImageWithStatus(client, imageUrl.toString());
+                FetchResult imgResult = fetchImageWithRetry(client, imageUrl.toString(), name, index, total);
                 if (imgResult == null || imgResult.data == null || imgResult.data.length < 100) {
                     int code = imgResult != null ? imgResult.httpCode : -1;
                     System.out.println("  [" + index + "/" + total + "] Skip: " + name + " - fetch HTTP " + code);
@@ -154,6 +157,19 @@ public class ImagePopulatorApplication {
             Type type = new TypeToken<List<Map<String, Object>>>(){}.getType();
             return new Gson().fromJson(res.body().string(), type);
         }
+    }
+
+    private static FetchResult fetchImageWithRetry(OkHttpClient client, String url, String name, int index, int total) throws IOException {
+        FetchResult result = null;
+        for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            result = fetchImageWithStatus(client, url);
+            if (result.httpCode != 429) break;
+            if (attempt < MAX_RETRIES) {
+                System.out.println("  [" + index + "/" + total + "] " + name + " - HTTP 429, retry " + attempt + "/" + MAX_RETRIES + " in 60s...");
+                try { TimeUnit.MILLISECONDS.sleep(RETRY_DELAY_MS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); break; }
+            }
+        }
+        return result;
     }
 
     private static FetchResult fetchImageWithStatus(OkHttpClient client, String url) throws IOException {

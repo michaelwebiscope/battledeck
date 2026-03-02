@@ -1,0 +1,44 @@
+# Populate ship images from Wikipedia -> API
+# Runs from GitHub's IPs (avoids VM/datacenter rate limits that cause 429)
+# Trigger: manual or after deploy (push to main)
+name: Populate Ship Images
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: 'API base URL (HTTPS)'
+        required: true
+        default: 'https://20.234.15.204'
+  push:
+    branches: [main]
+    paths:
+      - 'NavalArchive.Web/**'
+      - 'NavalArchive.Api/**'
+      - 'NavalArchive.ImagePopulator/**'
+      - 'scripts/**'
+      - '.github/workflows/populate-images.yml'
+
+jobs:
+  populate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Wait for API
+        run: |
+          API="${{ github.event.inputs.api_url || 'https://20.234.15.204' }}"
+          for i in $(seq 1 24); do
+            if curl -sk --connect-timeout 5 "$API/api/ships" | head -c 100 | grep -q '"id"'; then
+              echo "API ready"
+              break
+            fi
+            echo "Waiting for API... ($i/24)"
+            sleep 10
+          done
+
+      - name: Populate images
+        env:
+          API_URL: ${{ github.event.inputs.api_url || 'https://20.234.15.204' }}
+          NODE_TLS_REJECT_UNAUTHORIZED: '0'
+        run: node scripts/populate-images.js "$API_URL" --insecure

@@ -34,15 +34,33 @@ function fetchJson(url) {
   });
 }
 
+// Wikipedia User-Agent policy: identify app + contact
+const USER_AGENT = 'NavalArchive/1.0 (https://github.com/michaelwebiscope/battledeck; educational project)';
+const DELAY_MS = 5000;
+const RETRY_DELAY_MS = 60000;
+const MAX_RETRIES = 3;
+
 function fetchImageWithStatus(url) {
   return new Promise((resolve, reject) => {
     const lib = url.startsWith('https') ? https : http;
-    lib.get(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NavalArchive/1.0)' }, ...tlsOpts }, (res) => {
+    lib.get(url, { headers: { 'User-Agent': USER_AGENT }, ...tlsOpts }, (res) => {
       const chunks = [];
       res.on('data', (c) => chunks.push(c));
       res.on('end', () => resolve({ statusCode: res.statusCode, data: Buffer.concat(chunks) }));
     }).on('error', (e) => reject(e));
   });
+}
+
+async function fetchImageWithRetry(url, name, index, total) {
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const res = await fetchImageWithStatus(url);
+    if (res.statusCode !== 429) return res;
+    if (attempt < MAX_RETRIES) {
+      console.log(`  [${index}/${total}] ${name} - HTTP 429, retry ${attempt}/${MAX_RETRIES} in 60s...`);
+      await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+    }
+  }
+  return { statusCode: 429, data: null };
 }
 
 function uploadImage(apiBase, shipId, buffer, contentType) {
@@ -94,10 +112,10 @@ async function main() {
       const ship = withImage[i];
       const index = i + 1;
       try {
-        const imgRes = await fetchImageWithStatus(ship.imageUrl);
+        const imgRes = await fetchImageWithRetry(ship.imageUrl, ship.name, index, total);
         if (imgRes.statusCode !== 200 || !imgRes.data || imgRes.data.length < 100) {
           console.log(`  [${index}/${total}] Skip: ${ship.name} - fetch HTTP ${imgRes.statusCode}`);
-          await new Promise((r) => setTimeout(r, 2500));
+          await new Promise((r) => setTimeout(r, DELAY_MS));
           continue;
         }
         const ct = 'image/jpeg';
@@ -111,7 +129,7 @@ async function main() {
       } catch (err) {
         console.log(`  [${index}/${total}] Fail: ${ship.name} - ${err.message}`);
       }
-      await new Promise((r) => setTimeout(r, 2500)); // avoid Wikipedia rate limit (429)
+      await new Promise((r) => setTimeout(r, DELAY_MS));
     }
     console.log('[populate-images] Done. Stored', stored, 'images.');
     console.log('[populate-images exit code: 0]');
