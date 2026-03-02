@@ -433,9 +433,10 @@ app.get('/gallery/image/:id', async (req, res) => {
       } catch (proxyErr) {
         console.error('Image proxy failed:', proxyErr.message);
       }
-      // Proxy failed (e.g. Wikipedia blocks server requests) - redirect so browser fetches directly
-      res.redirect(302, imageUrl);
-      return;
+      // Proxy failed - serve HTML with img pointing to source URL (IIS may rewrite Location header)
+      res.set('Content-Type', 'text/html; charset=utf-8');
+      const safeUrl = imageUrl.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return res.send(`<!DOCTYPE html><html><head><title>Ship Image</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;background:#111"><img src="${safeUrl}" alt="Ship" style="max-width:100%;height:auto;display:block" /></body></html>`);
     }
 
     res.set('Content-Type', 'image/svg+xml');
