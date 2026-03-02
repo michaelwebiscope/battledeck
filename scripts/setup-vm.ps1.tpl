@@ -1,5 +1,6 @@
 # Naval Archive - Bootstrap: 1) Download GitHub 2) Setup IIS 3) Port 80
-# Template vars: repo_url, repo_branch, repo_token, newrelic_license_key
+# Template vars: repo_url, repo_branch, repo_token, newrelic_license_key, bootstrap_trigger
+# Bump bootstrap_trigger in terraform.tfvars to force re-run and update website
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $ErrorActionPreference = "Stop"
@@ -29,6 +30,9 @@ $RepoUrl = "${repo_url}"
 $RepoBranch = "${repo_branch}"
 $RepoToken = "${repo_token}"
 $NewRelicLicenseKey = "${newrelic_license_key}"
+$BootstrapTrigger = "${bootstrap_trigger}"
+
+Write-Host "=== Bootstrap trigger: $BootstrapTrigger (bump in terraform.tfvars to force website update) ===" -ForegroundColor Magenta
 
 # ========== 1. DOWNLOAD GITHUB ==========
 Write-Host "=== 1. Downloading from GitHub ===" -ForegroundColor Cyan
@@ -81,6 +85,21 @@ if (!(Test-Path "$nodeDir\node.exe")) {
 }
 $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
 if (Test-Path "$nodeDir\node.exe") { $env:Path = "$nodeDir;$env:Path" }
+
+# Java 17 (for ImagePopulator)
+$javaDir = "C:\Program Files\Eclipse Adoptium"
+$javaExists = (Test-Path $javaDir) -and (Get-ChildItem $javaDir -Directory -ErrorAction SilentlyContinue | Where-Object { Test-Path "$($_.FullName)\bin\java.exe" } | Select-Object -First 1)
+if (!$javaExists) {
+    $jdkZip = "$env:TEMP\openjdk17.zip"
+    Invoke-WebRequest -Uri "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.13%2B11/OpenJDK17U-jdk_x64_windows_hotspot_17.0.13_11.zip" -OutFile $jdkZip -UseBasicParsing -TimeoutSec 120
+    New-Item -ItemType Directory -Path $javaDir -Force | Out-Null
+    Expand-Archive -Path $jdkZip -DestinationPath $javaDir -Force
+    $jdkFolder = Get-ChildItem $javaDir -Directory | Where-Object { $_.Name -like "jdk*" } | Select-Object -First 1
+    if ($jdkFolder) {
+        [System.Environment]::SetEnvironmentVariable("Path", "$($jdkFolder.FullName)\bin;" + [System.Environment]::GetEnvironmentVariable("Path","Machine"), "Machine")
+    }
+    Remove-Item $jdkZip -Force -ErrorAction SilentlyContinue
+}
 
 $ps64 = "$env:windir\System32\WindowsPowerShell\v1.0\powershell.exe"
 Start-Process -FilePath $ps64 -ArgumentList "-NoProfile -Command", "Install-WindowsFeature -Name Web-Server, Web-Asp-Net45, Web-WebSockets, Web-Scripting-Tools -IncludeManagementTools" -Wait
@@ -197,12 +216,21 @@ if ($cartCsproj) {
     Pop-Location
 }
 
+# Deploy NavalArchive.Web - stop service first so files are not locked
+$prevErr = $ErrorActionPreference
+$ErrorActionPreference = "SilentlyContinue"
+sc.exe stop NavalArchiveWeb 2>$null
+$ErrorActionPreference = $prevErr
+Start-Sleep -Seconds 3
+
 $webServerJs = Get-ChildItem -Path $clonePath -Filter "server.js" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.DirectoryName -like "*NavalArchive.Web*" } | Select-Object -First 1
 if ($webServerJs) {
     $webSrcDir = $webServerJs.DirectoryName
-    # Clear web path to avoid stale files (like API)
+    Write-Host "Deploying web from $webSrcDir to $webPath" -ForegroundColor Cyan
+    # Clear web path completely to avoid stale files
     if (Test-Path $webPath) {
-        Get-ChildItem $webPath | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path $webPath -Recurse -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 2
     }
     New-Item -ItemType Directory -Force -Path $webPath | Out-Null
     Get-ChildItem -Path $webSrcDir -Exclude node_modules | Copy-Item -Destination $webPath -Recurse -Force
@@ -215,6 +243,9 @@ if ($webServerJs) {
     }
     $ErrorActionPreference = $prevErr
     Pop-Location
+    Write-Host "Web deployed successfully" -ForegroundColor Green
+} else {
+    Write-Host "WARNING: NavalArchive.Web not found in clone" -ForegroundColor Yellow
 }
 
 $dotnetExe = "C:\Program Files\dotnet\dotnet.exe"
@@ -401,6 +432,10 @@ Remove-Item -Force $zipPath -ErrorAction SilentlyContinue
 
 # ========== 4. VERIFY & RESTART IF NEEDED ==========
 Write-Host "=== 4. Verifying services ===" -ForegroundColor Cyan
+# Restart NavalArchiveWeb to ensure it runs the freshly deployed code
+sc.exe stop NavalArchiveWeb 2>$null
+Start-Sleep -Seconds 3
+sc.exe start NavalArchiveWeb 2>$null
 Start-Sleep -Seconds 20
 $apiOk = $false
 $webOk = $false

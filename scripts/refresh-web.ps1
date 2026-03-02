@@ -135,14 +135,49 @@ if (Test-Path $appcmd) {
     & $appcmd start site "NavalArchive-Web" 2>$null
 }
 
+# Ensure Java is installed (for ImagePopulator)
+$javaDir = $null
+$adoptiumBase = "C:\Program Files\Eclipse Adoptium"
+if (Test-Path $adoptiumBase) {
+    $jdkFolder = Get-ChildItem $adoptiumBase -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "jdk*" } | Select-Object -First 1
+    if ($jdkFolder -and (Test-Path "$($jdkFolder.FullName)\bin\java.exe")) { $javaDir = $jdkFolder.FullName }
+}
+if (-not $javaDir) {
+    Write-Host "Installing Java 17..." -ForegroundColor Yellow
+    $jdkZip = "$env:TEMP\openjdk17.zip"
+    $jdkExtract = "C:\Program Files\Eclipse Adoptium"
+    try {
+        Invoke-WebRequest -Uri "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.13%2B11/OpenJDK17U-jdk_x64_windows_hotspot_17.0.13_11.zip" -OutFile $jdkZip -UseBasicParsing -TimeoutSec 120
+        if (-not (Test-Path $jdkExtract)) { New-Item -ItemType Directory -Path $jdkExtract -Force | Out-Null }
+        Expand-Archive -Path $jdkZip -DestinationPath $jdkExtract -Force
+        $extracted = Get-ChildItem $jdkExtract -Directory | Where-Object { $_.Name -like "jdk*" } | Select-Object -First 1
+        if ($extracted -and (Test-Path "$($extracted.FullName)\bin\java.exe")) {
+            $javaDir = $extracted.FullName
+            [System.Environment]::SetEnvironmentVariable("Path", "$javaDir\bin;" + [System.Environment]::GetEnvironmentVariable("Path","Machine"), "Machine")
+        }
+        Remove-Item $jdkZip -Force -ErrorAction SilentlyContinue
+    } catch {
+        Write-Host "Java install failed: $_" -ForegroundColor Yellow
+    }
+}
+$javaExe = if ($javaDir) { "$javaDir\bin\java.exe" } else { "java" }
+
 # Populate ship images from Wikipedia -> API (runs in background, non-blocking)
-$populateScript = Join-Path $srcDir "scripts\populate-images.js"
-if ((Test-Path $populateScript) -and (Test-Path "$nodeDir\node.exe")) {
-    $populateDir = "C:\Windows\Temp\navalarchive-populate"
-    if (-not (Test-Path $populateDir)) { New-Item -ItemType Directory -Path $populateDir -Force | Out-Null }
-    Copy-Item $populateScript -Destination $populateDir -Force
-    Write-Host "Populating ship images (background)..." -ForegroundColor Yellow
-    Start-Process -FilePath "$nodeDir\node.exe" -ArgumentList "populate-images.js", "http://localhost:5000" -WorkingDirectory $populateDir -WindowStyle Hidden
+$populateDir = "C:\Windows\Temp\navalarchive-populate"
+if (-not (Test-Path $populateDir)) { New-Item -ItemType Directory -Path $populateDir -Force | Out-Null }
+$populateJar = Get-ChildItem -Path $srcDir -Filter "image-populator-*.jar" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($populateJar -and (Test-Path $javaExe)) {
+    Copy-Item $populateJar.FullName -Destination $populateDir -Force
+    $jarName = Split-Path $populateJar.FullName -Leaf
+    Write-Host "Populating ship images (Java, background)..." -ForegroundColor Yellow
+    Start-Process -FilePath $javaExe -ArgumentList "-jar", $jarName, "http://localhost:5000" -WorkingDirectory $populateDir -WindowStyle Hidden
+} else {
+    $populateScript = Join-Path $srcDir "scripts\populate-images.js"
+    if ((Test-Path $populateScript) -and (Test-Path "$nodeDir\node.exe")) {
+        Copy-Item $populateScript -Destination $populateDir -Force
+        Write-Host "Populating ship images (Node, background)..." -ForegroundColor Yellow
+        Start-Process -FilePath "$nodeDir\node.exe" -ArgumentList "populate-images.js", "http://localhost:5000" -WorkingDirectory $populateDir -WindowStyle Hidden
+    }
 }
 
 Remove-Item -Force $zipPath -ErrorAction SilentlyContinue

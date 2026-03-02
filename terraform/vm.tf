@@ -235,7 +235,7 @@ resource "null_resource" "refresh_web" {
   }
 
   provisioner "local-exec" {
-    command     = "cd ${path.module}/.. && git add NavalArchive.Web NavalArchive.Api scripts/refresh-web.ps1 scripts/populate-images.js && (git diff --staged --quiet || git commit -m 'deploy: sync web and API to VM') && git push"
+    command     = "cd ${path.module}/.. && git add NavalArchive.Web NavalArchive.Api NavalArchive.ImagePopulator scripts/refresh-web.ps1 scripts/populate-images.js && (git diff --staged --quiet || git commit -m 'deploy: sync web and API to VM') && git push"
     interpreter = ["bash", "-c"]
   }
 
