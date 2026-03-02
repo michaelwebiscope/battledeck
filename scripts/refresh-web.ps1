@@ -85,4 +85,11 @@ if (-not $svcStarted) {
 Remove-Item -Force $zipPath -ErrorAction SilentlyContinue
 Remove-Item -Recurse -Force $extractPath -ErrorAction SilentlyContinue
 
+# Ensure IIS serves NavalArchive-Web on 80/443 (not Default Web Site)
+$appcmd = "$env:windir\System32\inetsrv\appcmd.exe"
+if (Test-Path $appcmd) {
+    & $appcmd stop site "Default Web Site" 2>$null
+    & $appcmd start site "NavalArchive-Web" 2>$null
+}
+
 Write-Host "Web refreshed and restarted." -ForegroundColor Green
