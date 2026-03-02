@@ -1,0 +1,39 @@
+[
+  { "href": "/", "label": "Home" },
+  {
+    "label": "Explore",
+    "items": [
+      { "href": "/fleet", "label": "Fleet Roster" },
+      { "href": "/compare", "label": "Compare" },
+      { "href": "/classes", "label": "Ship Classes" },
+      { "href": "/captains", "label": "Captains" },
+      { "href": "/timeline", "label": "Timeline" },
+      { "href": "/stats", "label": "Statistics" },
+      { "href": "/gallery", "label": "Photo Gallery" },
+      { "href": "/logs", "label": "Daily Logs" }
+    ]
+  },
+  { "href": "/simulation", "label": "Live Battle" },
+  {
+    "label": "Support",
+    "items": [
+      { "href": "/donate", "label": "Donate" },
+      { "href": "/membership", "label": "Membership" }
+    ]
+  },
+  {
+    "label": "Member",
+    "items": [
+      { "href": "/members", "label": "Add Member" },
+      { "href": "/verify-member", "label": "Verify Member" }
+    ]
+  },
+  {
+    "label": "Cart",
+    "items": [
+      { "href": "/cart", "label": "View Cart" },
+      { "href": "/checkout", "label": "Checkout" }
+    ]
+  },
+  { "href": "/trace", "label": "Trace" }
+]

@@ -5,7 +5,7 @@
 </head>
 <body>
   <%- include('partials/header') %>
-  <main>
+  <main class="app-shell">
     <div class="container py-4">
       <nav aria-label="breadcrumb">
         <ol class="breadcrumb">
@@ -18,7 +18,13 @@
         <div class="col-lg-4 mb-4">
           <div class="card">
             <% if (ship.imageUrl && ship.imageUrl.startsWith('http')) { %>
-              <img src="<%= ship.imageUrl %>" class="card-img-top" alt="<%= ship.name %>" style="height: 240px; object-fit: cover;">
+              <div class="card-img-top position-relative" style="height: 240px; overflow: hidden;">
+                <img src="<%= ship.imageUrl %>" alt="<%= ship.name %>" style="height: 240px; width: 100%; object-fit: cover;"
+                  onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                <a href="/gallery/image/<%= ship.id %>" target="_blank" class="text-decoration-none bg-secondary d-flex align-items-center justify-content-center position-absolute top-0 start-0 w-100 h-100" style="display: none;">
+                  <span class="text-white">View Archive Photo</span>
+                </a>
+              </div>
             <% } else { %>
               <a href="/gallery/image/<%= ship.id %>" target="_blank" class="text-decoration-none">
                 <div class="card-img-top bg-secondary d-flex align-items-center justify-content-center" style="height: 240px;">
