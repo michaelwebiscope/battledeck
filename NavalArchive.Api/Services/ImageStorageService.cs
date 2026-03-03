@@ -10,8 +10,13 @@ namespace NavalArchive.Api.Services;
 public class ImageStorageService
 {
     private readonly IHttpClientFactory _http;
+    private readonly GoogleImageSearchService? _google;
 
-    public ImageStorageService(IHttpClientFactory http) => _http = http;
+    public ImageStorageService(IHttpClientFactory http, GoogleImageSearchService google)
+    {
+        _http = http;
+        _google = google;
+    }
 
     /// <summary>Audit: which ships/captains have ImageUrl, ImageData, or are missing both.</summary>
     public async Task<ImageAuditResult> GetAuditAsync(NavalArchiveDbContext db, CancellationToken ct = default)
@@ -43,53 +48,105 @@ public class ImageStorageService
         );
     }
 
-    /// <summary>Fetch image from URL and store in DB. Returns (stored, reason).</summary>
-    public async Task<(bool Stored, string? Reason)> PopulateShipImageAsync(NavalArchiveDbContext db, int shipId, CancellationToken ct = default)
+    /// <summary>Fetch image from URL and store in DB. Returns (stored, reason, bytesStored).</summary>
+    public async Task<(bool Stored, string? Reason, int BytesStored)> PopulateShipImageAsync(NavalArchiveDbContext db, int shipId, CancellationToken ct = default)
     {
         var ship = await db.Ships.FindAsync(new object[] { shipId }, ct);
-        if (ship == null) return (false, "Ship not found");
-        if (string.IsNullOrWhiteSpace(ship.ImageUrl)) return (false, "No ImageUrl");
-        if (ship.ImageData != null) return (true, "Already cached");
+        if (ship == null) return (false, "Ship not found", 0);
+        if (ship.ImageData != null) return (true, "Already cached", ship.ImageData.Length);
 
-        var (data, contentType, statusCode, error) = await FetchImageAsync(ship.ImageUrl, ct);
+        string? urlToTry = ship.ImageUrl;
+        if (string.IsNullOrWhiteSpace(urlToTry) && _google?.IsConfigured == true)
+        {
+            var searchQuery = $"{ship.Name} battleship ship photo";
+            urlToTry = await _google.FindImageUrlAsync(searchQuery, ct);
+            if (!string.IsNullOrWhiteSpace(urlToTry))
+                ship.ImageUrl = urlToTry;
+        }
+        if (string.IsNullOrWhiteSpace(urlToTry)) return (false, "No ImageUrl", 0);
+
+        var (data, contentType, statusCode, error) = await FetchImageAsync(urlToTry, ct);
         if (data == null || data.Length < 100)
         {
+            if (_google?.IsConfigured == true)
+            {
+                var fallbackQuery = $"{ship.Name} battleship ship";
+                var fallbackUrl = await _google.FindImageUrlAsync(fallbackQuery, ct);
+                if (!string.IsNullOrWhiteSpace(fallbackUrl) && fallbackUrl != urlToTry)
+                {
+                    (data, contentType, statusCode, error) = await FetchImageAsync(fallbackUrl, ct);
+                    if (data != null && data.Length >= 100)
+                    {
+                        ship.ImageUrl = fallbackUrl;
+                        ship.ImageData = data;
+                        ship.ImageContentType = contentType ?? "image/jpeg";
+                        await db.SaveChangesAsync(ct);
+                        return (true, "Google fallback", data.Length);
+                    }
+                }
+            }
             var reason = statusCode.HasValue ? $"HTTP {statusCode}" : (error ?? "Fetch failed");
-            return (false, reason);
+            return (false, reason, 0);
         }
 
         ship.ImageData = data;
         ship.ImageContentType = contentType ?? "image/jpeg";
         await db.SaveChangesAsync(ct);
-        return (true, null);
+        return (true, null, data.Length);
     }
 
-    /// <summary>Fetch image from URL and store in DB. Returns (stored, reason).</summary>
-    public async Task<(bool Stored, string? Reason)> PopulateCaptainImageAsync(NavalArchiveDbContext db, int captainId, CancellationToken ct = default)
+    /// <summary>Fetch image from URL and store in DB. Returns (stored, reason, bytesStored).</summary>
+    public async Task<(bool Stored, string? Reason, int BytesStored)> PopulateCaptainImageAsync(NavalArchiveDbContext db, int captainId, CancellationToken ct = default)
     {
         var captain = await db.Captains.FindAsync(new object[] { captainId }, ct);
-        if (captain == null) return (false, "Captain not found");
-        if (string.IsNullOrWhiteSpace(captain.ImageUrl)) return (false, "No ImageUrl");
-        if (captain.ImageData != null) return (true, "Already cached");
+        if (captain == null) return (false, "Captain not found", 0);
+        if (captain.ImageData != null) return (true, "Already cached", captain.ImageData.Length);
 
-        var (data, contentType, statusCode, error) = await FetchImageAsync(captain.ImageUrl!, ct);
+        string? urlToTry = captain.ImageUrl;
+        if (string.IsNullOrWhiteSpace(urlToTry) && _google?.IsConfigured == true)
+        {
+            var searchQuery = $"{captain.Name} naval captain portrait";
+            urlToTry = await _google.FindImageUrlAsync(searchQuery, ct);
+            if (!string.IsNullOrWhiteSpace(urlToTry))
+                captain.ImageUrl = urlToTry;
+        }
+        if (string.IsNullOrWhiteSpace(urlToTry)) return (false, "No ImageUrl", 0);
+
+        var (data, contentType, statusCode, error) = await FetchImageAsync(urlToTry, ct);
         if (data == null || data.Length < 100)
         {
+            if (_google?.IsConfigured == true)
+            {
+                var fallbackQuery = $"{captain.Name} admiral portrait";
+                var fallbackUrl = await _google.FindImageUrlAsync(fallbackQuery, ct);
+                if (!string.IsNullOrWhiteSpace(fallbackUrl) && fallbackUrl != urlToTry)
+                {
+                    (data, contentType, statusCode, error) = await FetchImageAsync(fallbackUrl, ct);
+                    if (data != null && data.Length >= 100)
+                    {
+                        captain.ImageUrl = fallbackUrl;
+                        captain.ImageData = data;
+                        captain.ImageContentType = contentType ?? "image/jpeg";
+                        await db.SaveChangesAsync(ct);
+                        return (true, "Google fallback", data.Length);
+                    }
+                }
+            }
             var reason = statusCode.HasValue ? $"HTTP {statusCode}" : (error ?? "Fetch failed");
-            return (false, reason);
+            return (false, reason, 0);
         }
 
         captain.ImageData = data;
         captain.ImageContentType = contentType ?? "image/jpeg";
         await db.SaveChangesAsync(ct);
-        return (true, null);
+        return (true, null, data.Length);
     }
 
-    /// <summary>Populate all ships and captains that have ImageUrl but no ImageData.</summary>
+    /// <summary>Populate all ships and captains that have no ImageData. Includes items without ImageUrl (tries Google if configured).</summary>
     public async Task<PopulateResult> PopulateAllAsync(NavalArchiveDbContext db, CancellationToken ct = default)
     {
-        var ships = await db.Ships.Where(s => s.ImageData == null && !string.IsNullOrWhiteSpace(s.ImageUrl)).ToListAsync(ct);
-        var captains = await db.Captains.Where(c => c.ImageData == null && !string.IsNullOrWhiteSpace(c.ImageUrl)).ToListAsync(ct);
+        var ships = await db.Ships.Where(s => s.ImageData == null).ToListAsync(ct);
+        var captains = await db.Captains.Where(c => c.ImageData == null).ToListAsync(ct);
 
         var shipResults = new List<PopulateItemResult>();
         var captainResults = new List<PopulateItemResult>();
@@ -98,8 +155,8 @@ public class ImageStorageService
         foreach (var ship in ships)
         {
             idx++;
-            var (stored, reason) = await PopulateShipImageAsync(db, ship.Id, ct);
-            shipResults.Add(new PopulateItemResult(ship.Id, ship.Name ?? "Ship " + ship.Id, stored ? "ok" : "fail", reason, idx, ships.Count));
+            var (stored, reason, bytes) = await PopulateShipImageAsync(db, ship.Id, ct);
+            shipResults.Add(new PopulateItemResult(ship.Id, ship.Name ?? "Ship " + ship.Id, stored ? "ok" : "fail", reason, idx, ships.Count, bytes > 0 ? bytes : null));
             await Task.Delay(200, ct);
         }
 
@@ -107,8 +164,8 @@ public class ImageStorageService
         foreach (var captain in captains)
         {
             idx++;
-            var (stored, reason) = await PopulateCaptainImageAsync(db, captain.Id, ct);
-            captainResults.Add(new PopulateItemResult(captain.Id, captain.Name ?? "Captain " + captain.Id, stored ? "ok" : "fail", reason, idx, captains.Count));
+            var (stored, reason, bytes) = await PopulateCaptainImageAsync(db, captain.Id, ct);
+            captainResults.Add(new PopulateItemResult(captain.Id, captain.Name ?? "Captain " + captain.Id, stored ? "ok" : "fail", reason, idx, captains.Count, bytes > 0 ? bytes : null));
             await Task.Delay(200, ct);
         }
 
@@ -156,4 +213,4 @@ public record ImageAuditResult(EntityAudit Ships, EntityAudit Captains);
 public record EntityAudit(int Total, int WithImageUrl, int WithImageData, List<MissingItem> MissingUrl, List<MissingItem> MissingCachedData);
 public record MissingItem(int Id, string Name);
 public record PopulateResult(int ShipsStored, int CaptainsStored, List<PopulateItemResult> ShipResults, List<PopulateItemResult> CaptainResults);
-public record PopulateItemResult(int Id, string Name, string Status, string? Reason, int Index, int Total);
+public record PopulateItemResult(int Id, string Name, string Status, string? Reason, int Index, int Total, int? BytesStored = null);

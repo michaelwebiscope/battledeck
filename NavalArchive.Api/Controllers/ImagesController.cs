@@ -84,7 +84,7 @@ public class ImagesController : ControllerBase
     [HttpPost("populate/ship/{id:int}")]
     public async Task<IActionResult> PopulateShip(int id)
     {
-        var (stored, reason) = await _storage.PopulateShipImageAsync(_db, id);
+        var (stored, reason, _) = await _storage.PopulateShipImageAsync(_db, id);
         return stored ? Ok() : NotFound(new { reason });
     }
 
@@ -92,7 +92,7 @@ public class ImagesController : ControllerBase
     [HttpPost("populate/captain/{id:int}")]
     public async Task<IActionResult> PopulateCaptain(int id)
     {
-        var (stored, reason) = await _storage.PopulateCaptainImageAsync(_db, id);
+        var (stored, reason, _) = await _storage.PopulateCaptainImageAsync(_db, id);
         return stored ? Ok() : NotFound(new { reason });
     }
 

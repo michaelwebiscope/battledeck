@@ -8,7 +8,7 @@
   <main class="app-shell">
     <div class="container py-4">
       <h1 class="mb-4">Image Audit</h1>
-      <p class="text-muted mb-4">Index of ships and captains: which have ImageUrl, which have cached ImageData in the database, and which are missing.</p>
+      <p class="text-muted mb-4">Index of ships and captains: which have ImageUrl, which have cached ImageData in the database, and which are missing. Populate runs Wikipedia sync first (to get captain ImageUrls), then fetches images. Set <code>GOOGLE_API_KEY</code> and <code>GOOGLE_CSE_ID</code> on the API for Google fallback when Wikipedia fails.</p>
 
       <% if (typeof error !== 'undefined' && error) { %>
         <div class="alert alert-danger"><%= error %></div>
@@ -74,7 +74,7 @@
           </div>
         </div>
         <div class="mb-4">
-          <button id="populateBtn" class="btn btn-modern">Populate All Images (fetch from URLs → store in DB)</button>
+          <button id="populateBtn" class="btn btn-modern">Populate All Images (sync + fetch → store)</button>
           <span id="populateStatus" class="ms-3"></span>
         </div>
         <div class="mb-4">
@@ -84,7 +84,10 @@
         <div id="terminalOutput" class="card mb-4" style="display: none;">
           <div class="card-header d-flex justify-content-between align-items-center">
             <span>Terminal Output</span>
-            <button type="button" class="btn btn-sm btn-outline-light" id="terminalCopy">Copy</button>
+            <div>
+              <button type="button" class="btn btn-sm btn-outline-light me-1" id="terminalCopy">Copy</button>
+              <button type="button" class="btn btn-sm btn-outline-light" id="terminalClear">Clear</button>
+            </div>
           </div>
           <div class="card-body p-0">
             <pre id="terminalPre" class="mb-0 p-3 bg-dark text-light font-monospace small" style="max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;"><span id="terminalContent"></span></pre>
@@ -125,19 +128,30 @@
         setTimeout(function() { btn.textContent = 'Copy'; }, 1500);
       }.bind(this));
     };
+    document.getElementById('terminalClear').onclick = function() {
+      document.getElementById('terminalContent').textContent = '';
+    };
     document.getElementById('populateBtn').onclick = function() {
       var btn = this, status = document.getElementById('populateStatus');
       btn.disabled = true;
-      status.textContent = 'Populating...';
-      showTerminal('[Populate] Fetching images from URLs...\n[Populate] This may take a few minutes.', true);
-      fetch('/admin/images/populate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      status.textContent = 'Syncing & populating...';
+      var startTime = Date.now();
+      showTerminal('[Populate] ' + new Date().toISOString() + '\n[Populate] Step 1: Running Wikipedia sync to fetch captain ImageUrls...\n[Populate] This may take several minutes.', true);
+      fetch('/admin/images/populate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runSyncFirst: true }) })
         .then(function(r) { return r.json(); })
         .then(function(d) {
-          var lines = [];
+          var elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+          var lines = (d.logLines || []).slice();
+          if (lines.length === 0) {
+            lines.push('[Populate] Sync phase: ' + (d.syncLog || 'completed'));
+          }
+          lines.push('');
+          lines.push('[Populate] Step 2: Fetching and storing images...');
           (d.shipResults || []).forEach(function(r) {
             var tag = r.status === 'ok' ? 'OK' : 'Fail';
             var suffix = r.reason ? ' - ' + r.reason : '';
-            lines.push('  [' + r.index + '/' + r.total + '] ' + tag + ': ' + r.name + ' (id ' + r.id + ')' + suffix);
+            var bytes = r.bytesStored ? ' (' + r.bytesStored + ' bytes)' : '';
+            lines.push('  [Ship ' + r.index + '/' + r.total + '] ' + tag + ': ' + r.name + ' (id ' + r.id + ')' + bytes + suffix);
           });
           if ((d.captainResults || []).length > 0) {
             lines.push('');
@@ -145,15 +159,16 @@
             (d.captainResults || []).forEach(function(r) {
               var tag = r.status === 'ok' ? 'OK' : 'Fail';
               var suffix = r.reason ? ' - ' + r.reason : '';
-              lines.push('  [' + r.index + '/' + r.total + '] ' + tag + ': ' + r.name + ' (id ' + r.id + ')' + suffix);
+              var bytes = r.bytesStored ? ' (' + r.bytesStored + ' bytes)' : '';
+              lines.push('  [Captain ' + r.index + '/' + r.total + '] ' + tag + ': ' + r.name + ' (id ' + r.id + ')' + bytes + suffix);
             });
           }
           lines.push('');
-          lines.push('[Populate] Done. Stored ' + (d.shipsStored || 0) + ' ships, ' + (d.captainsStored || 0) + ' captains.');
+          lines.push('[Populate] Done in ' + elapsed + 's. Stored ' + (d.shipsStored || 0) + ' ships, ' + (d.captainsStored || 0) + ' captains.');
+          lines.push('[Populate] Refresh the page to see updated audit stats.');
           showTerminal(lines);
           status.textContent = 'Done. Stored ' + (d.shipsStored || 0) + ' ships, ' + (d.captainsStored || 0) + ' captains.';
           btn.disabled = false;
-          location.reload();
         })
         .catch(function(e) {
           showTerminal('[Populate] Error: ' + e.message);

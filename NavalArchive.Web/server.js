@@ -488,8 +488,20 @@ app.get('/admin/images', async (req, res) => {
 
 app.post('/admin/images/populate', async (req, res) => {
   try {
-    const response = await api.post('/api/images/populate');
-    res.json(response.data);
+    const runSyncFirst = req.body?.runSyncFirst === true;
+    const logLines = [];
+    if (runSyncFirst) {
+      try {
+        const syncRes = await api.post('/api/admin/sync?force=true', {}, { timeout: 120000 });
+        logLines.push('[Sync] ' + (syncRes.data?.message || 'Completed'));
+      } catch (syncErr) {
+        logLines.push('[Sync] Error: ' + (syncErr.response?.data?.message || syncErr.message));
+      }
+    }
+    const response = await api.post('/api/images/populate', { runSyncFirst: false }, { timeout: 300000 });
+    const data = response.data || {};
+    data.logLines = logLines;
+    res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
