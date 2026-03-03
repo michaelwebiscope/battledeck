@@ -25,31 +25,43 @@ public class GoogleImageSearchService
     /// <summary>Search for an image by query. Returns first image URL or null.</summary>
     public async Task<string?> FindImageUrlAsync(string query, CancellationToken ct = default)
     {
-        if (!IsConfigured) return null;
+        var urls = await FindImageUrlsAsync(query, 1, ct);
+        return urls.Count > 0 ? urls[0] : null;
+    }
+
+    /// <summary>Search for images by query. Returns up to maxCount image URLs (direct links).</summary>
+    public async Task<List<string>> FindImageUrlsAsync(string query, int maxCount = 5, CancellationToken ct = default)
+    {
+        var result = new List<string>();
+        if (!IsConfigured) return result;
 
         try
         {
             var url = $"https://www.googleapis.com/customsearch/v1?key={Uri.EscapeDataString(_apiKey!)}" +
-                      $"&cx={Uri.EscapeDataString(_cx!)}&q={Uri.EscapeDataString(query)}&searchType=image&num=5";
+                      $"&cx={Uri.EscapeDataString(_cx!)}&q={Uri.EscapeDataString(query)}&searchType=image&num={Math.Min(maxCount, 10)}";
             var client = _http.CreateClient();
             client.Timeout = TimeSpan.FromSeconds(15);
             client.DefaultRequestHeaders.Add("User-Agent", "NavalArchive/1.0");
             var res = await client.GetAsync(url, ct);
-            if (!res.IsSuccessStatusCode) return null;
+            if (!res.IsSuccessStatusCode) return result;
 
             var json = await res.Content.ReadAsStringAsync(ct);
             using var doc = JsonDocument.Parse(json);
             var items = doc.RootElement.TryGetProperty("items", out var arr) ? arr : default;
-            if (items.ValueKind != JsonValueKind.Array || items.GetArrayLength() == 0) return null;
+            if (items.ValueKind != JsonValueKind.Array) return result;
 
-            var first = items[0];
-            if (first.TryGetProperty("link", out var link))
-                return link.GetString();
-            return null;
+            for (var i = 0; i < items.GetArrayLength() && result.Count < maxCount; i++)
+            {
+                var item = items[i];
+                var link = item.TryGetProperty("link", out var l) ? l.GetString() : null;
+                if (!string.IsNullOrWhiteSpace(link) && (link.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || link.StartsWith("https://", StringComparison.OrdinalIgnoreCase)))
+                    result.Add(link);
+            }
+            return result;
         }
         catch
         {
-            return null;
+            return result;
         }
     }
 }

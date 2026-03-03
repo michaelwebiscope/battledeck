@@ -56,32 +56,37 @@ public class ImageStorageService
         if (ship.ImageData != null) return (true, "Already cached", ship.ImageData.Length);
 
         string? urlToTry = ship.ImageUrl;
+        var triedUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (string.IsNullOrWhiteSpace(urlToTry) && _google?.IsConfigured == true)
         {
-            var searchQuery = $"{ship.Name} battleship ship photo";
-            urlToTry = await _google.FindImageUrlAsync(searchQuery, ct);
-            if (!string.IsNullOrWhiteSpace(urlToTry))
-                ship.ImageUrl = urlToTry;
+            var urls = await _google.FindImageUrlsAsync($"{ship.Name} battleship ship photo", 5, ct);
+            if (urls.Count > 0) { urlToTry = urls[0]; ship.ImageUrl = urlToTry; }
         }
         if (string.IsNullOrWhiteSpace(urlToTry)) return (false, "No ImageUrl", 0);
 
         var (data, contentType, statusCode, error) = await FetchImageAsync(urlToTry, ct);
+        triedUrls.Add(urlToTry);
         if (data == null || data.Length < 100)
         {
             if (_google?.IsConfigured == true)
             {
-                var fallbackQuery = $"{ship.Name} battleship ship";
-                var fallbackUrl = await _google.FindImageUrlAsync(fallbackQuery, ct);
-                if (!string.IsNullOrWhiteSpace(fallbackUrl) && fallbackUrl != urlToTry)
+                var queries = new[] { $"{ship.Name} battleship ship", $"{ship.Name} warship", $"{ship.Name} naval" };
+                foreach (var q in queries)
                 {
-                    (data, contentType, statusCode, error) = await FetchImageAsync(fallbackUrl, ct);
-                    if (data != null && data.Length >= 100)
+                    var urls = await _google.FindImageUrlsAsync(q, 5, ct);
+                    foreach (var u in urls.Where(u => !triedUrls.Contains(u)))
                     {
-                        ship.ImageUrl = fallbackUrl;
-                        ship.ImageData = data;
-                        ship.ImageContentType = contentType ?? "image/jpeg";
-                        await db.SaveChangesAsync(ct);
-                        return (true, "Google fallback", data.Length);
+                        triedUrls.Add(u);
+                        (data, contentType, statusCode, error) = await FetchImageAsync(u, ct);
+                        if (data != null && data.Length >= 100)
+                        {
+                            ship.ImageUrl = u;
+                            ship.ImageData = data;
+                            ship.ImageContentType = contentType ?? "image/jpeg";
+                            await db.SaveChangesAsync(ct);
+                            return (true, "Google", data.Length);
+                        }
+                        await Task.Delay(300, ct);
                     }
                 }
             }
@@ -103,32 +108,37 @@ public class ImageStorageService
         if (captain.ImageData != null) return (true, "Already cached", captain.ImageData.Length);
 
         string? urlToTry = captain.ImageUrl;
+        var triedUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (string.IsNullOrWhiteSpace(urlToTry) && _google?.IsConfigured == true)
         {
-            var searchQuery = $"{captain.Name} naval captain portrait";
-            urlToTry = await _google.FindImageUrlAsync(searchQuery, ct);
-            if (!string.IsNullOrWhiteSpace(urlToTry))
-                captain.ImageUrl = urlToTry;
+            var urls = await _google.FindImageUrlsAsync($"{captain.Name} naval captain portrait", 5, ct);
+            if (urls.Count > 0) { urlToTry = urls[0]; captain.ImageUrl = urlToTry; }
         }
         if (string.IsNullOrWhiteSpace(urlToTry)) return (false, "No ImageUrl", 0);
 
         var (data, contentType, statusCode, error) = await FetchImageAsync(urlToTry, ct);
+        triedUrls.Add(urlToTry);
         if (data == null || data.Length < 100)
         {
             if (_google?.IsConfigured == true)
             {
-                var fallbackQuery = $"{captain.Name} admiral portrait";
-                var fallbackUrl = await _google.FindImageUrlAsync(fallbackQuery, ct);
-                if (!string.IsNullOrWhiteSpace(fallbackUrl) && fallbackUrl != urlToTry)
+                var queries = new[] { $"{captain.Name} admiral portrait", $"{captain.Name} naval officer", $"{captain.Name} Kriegsmarine" };
+                foreach (var q in queries)
                 {
-                    (data, contentType, statusCode, error) = await FetchImageAsync(fallbackUrl, ct);
-                    if (data != null && data.Length >= 100)
+                    var urls = await _google.FindImageUrlsAsync(q, 5, ct);
+                    foreach (var u in urls.Where(u => !triedUrls.Contains(u)))
                     {
-                        captain.ImageUrl = fallbackUrl;
-                        captain.ImageData = data;
-                        captain.ImageContentType = contentType ?? "image/jpeg";
-                        await db.SaveChangesAsync(ct);
-                        return (true, "Google fallback", data.Length);
+                        triedUrls.Add(u);
+                        (data, contentType, statusCode, error) = await FetchImageAsync(u, ct);
+                        if (data != null && data.Length >= 100)
+                        {
+                            captain.ImageUrl = u;
+                            captain.ImageData = data;
+                            captain.ImageContentType = contentType ?? "image/jpeg";
+                            await db.SaveChangesAsync(ct);
+                            return (true, "Google", data.Length);
+                        }
+                        await Task.Delay(300, ct);
                     }
                 }
             }
