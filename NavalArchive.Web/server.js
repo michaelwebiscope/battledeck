@@ -502,7 +502,9 @@ app.get('/admin/images/verify', async (req, res) => {
     const ships = shipsRes.data || [];
     const baseUrl = `http://localhost:${PORT}`;
     const missing = [];
-    for (const ship of ships) {
+    for (let i = 0; i < ships.length; i++) {
+      const ship = ships[i];
+      const index = i + 1;
       try {
         const imgRes = await axios.get(`${baseUrl}/gallery/image/${ship.id}`, {
           responseType: 'arraybuffer',
@@ -512,12 +514,18 @@ app.get('/admin/images/verify', async (req, res) => {
         });
         const ct = (imgRes.headers['content-type'] || '').toLowerCase();
         const len = imgRes.data?.byteLength ?? 0;
+        const status = imgRes.status;
         // Placeholder = SVG or tiny/empty response
-        if (ct.includes('svg') || len < 200) {
-          missing.push({ id: ship.id, name: ship.name });
+        if (ct.includes('svg')) {
+          missing.push({ id: ship.id, name: ship.name, reason: 'SVG placeholder (no real image)' });
+        } else if (len < 200) {
+          missing.push({ id: ship.id, name: ship.name, reason: `Response too small (${len} bytes)` });
+        } else if (status !== 200) {
+          missing.push({ id: ship.id, name: ship.name, reason: `HTTP ${status}` });
         }
-      } catch {
-        missing.push({ id: ship.id, name: ship.name });
+      } catch (err) {
+        const reason = err.code === 'ECONNABORTED' ? 'Timeout' : (err.response ? `HTTP ${err.response.status}` : err.message || 'Request failed');
+        missing.push({ id: ship.id, name: ship.name, reason });
       }
     }
     res.json({

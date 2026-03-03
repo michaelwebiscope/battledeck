@@ -43,36 +43,46 @@ public class ImageStorageService
         );
     }
 
-    /// <summary>Fetch image from URL and store in DB. Returns true if stored.</summary>
-    public async Task<bool> PopulateShipImageAsync(NavalArchiveDbContext db, int shipId, CancellationToken ct = default)
+    /// <summary>Fetch image from URL and store in DB. Returns (stored, reason).</summary>
+    public async Task<(bool Stored, string? Reason)> PopulateShipImageAsync(NavalArchiveDbContext db, int shipId, CancellationToken ct = default)
     {
         var ship = await db.Ships.FindAsync(new object[] { shipId }, ct);
-        if (ship == null || string.IsNullOrWhiteSpace(ship.ImageUrl)) return false;
-        if (ship.ImageData != null) return true; // already cached
+        if (ship == null) return (false, "Ship not found");
+        if (string.IsNullOrWhiteSpace(ship.ImageUrl)) return (false, "No ImageUrl");
+        if (ship.ImageData != null) return (true, "Already cached");
 
-        var (data, contentType) = await FetchImageAsync(ship.ImageUrl, ct);
-        if (data == null || data.Length < 100) return false;
+        var (data, contentType, statusCode, error) = await FetchImageAsync(ship.ImageUrl, ct);
+        if (data == null || data.Length < 100)
+        {
+            var reason = statusCode.HasValue ? $"HTTP {statusCode}" : (error ?? "Fetch failed");
+            return (false, reason);
+        }
 
         ship.ImageData = data;
         ship.ImageContentType = contentType ?? "image/jpeg";
         await db.SaveChangesAsync(ct);
-        return true;
+        return (true, null);
     }
 
-    /// <summary>Fetch image from URL and store in DB. Returns true if stored.</summary>
-    public async Task<bool> PopulateCaptainImageAsync(NavalArchiveDbContext db, int captainId, CancellationToken ct = default)
+    /// <summary>Fetch image from URL and store in DB. Returns (stored, reason).</summary>
+    public async Task<(bool Stored, string? Reason)> PopulateCaptainImageAsync(NavalArchiveDbContext db, int captainId, CancellationToken ct = default)
     {
         var captain = await db.Captains.FindAsync(new object[] { captainId }, ct);
-        if (captain == null || string.IsNullOrWhiteSpace(captain.ImageUrl)) return false;
-        if (captain.ImageData != null) return true;
+        if (captain == null) return (false, "Captain not found");
+        if (string.IsNullOrWhiteSpace(captain.ImageUrl)) return (false, "No ImageUrl");
+        if (captain.ImageData != null) return (true, "Already cached");
 
-        var (data, contentType) = await FetchImageAsync(captain.ImageUrl!, ct);
-        if (data == null || data.Length < 100) return false;
+        var (data, contentType, statusCode, error) = await FetchImageAsync(captain.ImageUrl!, ct);
+        if (data == null || data.Length < 100)
+        {
+            var reason = statusCode.HasValue ? $"HTTP {statusCode}" : (error ?? "Fetch failed");
+            return (false, reason);
+        }
 
         captain.ImageData = data;
         captain.ImageContentType = contentType ?? "image/jpeg";
         await db.SaveChangesAsync(ct);
-        return true;
+        return (true, null);
     }
 
     /// <summary>Populate all ships and captains that have ImageUrl but no ImageData.</summary>
@@ -81,22 +91,36 @@ public class ImageStorageService
         var ships = await db.Ships.Where(s => s.ImageData == null && !string.IsNullOrWhiteSpace(s.ImageUrl)).ToListAsync(ct);
         var captains = await db.Captains.Where(c => c.ImageData == null && !string.IsNullOrWhiteSpace(c.ImageUrl)).ToListAsync(ct);
 
-        int shipsStored = 0, captainsStored = 0;
+        var shipResults = new List<PopulateItemResult>();
+        var captainResults = new List<PopulateItemResult>();
+
+        int idx = 0;
         foreach (var ship in ships)
         {
-            if (await PopulateShipImageAsync(db, ship.Id, ct)) shipsStored++;
-            await Task.Delay(200, ct); // be nice to Wikipedia
-        }
-        foreach (var captain in captains)
-        {
-            if (await PopulateCaptainImageAsync(db, captain.Id, ct)) captainsStored++;
+            idx++;
+            var (stored, reason) = await PopulateShipImageAsync(db, ship.Id, ct);
+            shipResults.Add(new PopulateItemResult(ship.Id, ship.Name ?? "Ship " + ship.Id, stored ? "ok" : "fail", reason, idx, ships.Count));
             await Task.Delay(200, ct);
         }
 
-        return new PopulateResult(shipsStored, captainsStored);
+        idx = 0;
+        foreach (var captain in captains)
+        {
+            idx++;
+            var (stored, reason) = await PopulateCaptainImageAsync(db, captain.Id, ct);
+            captainResults.Add(new PopulateItemResult(captain.Id, captain.Name ?? "Captain " + captain.Id, stored ? "ok" : "fail", reason, idx, captains.Count));
+            await Task.Delay(200, ct);
+        }
+
+        return new PopulateResult(
+            shipResults.Count(r => r.Status == "ok"),
+            captainResults.Count(r => r.Status == "ok"),
+            shipResults,
+            captainResults
+        );
     }
 
-    private async Task<(byte[]? Data, string? ContentType)> FetchImageAsync(string url, CancellationToken ct)
+    private async Task<(byte[]? Data, string? ContentType, int? StatusCode, string? Error)> FetchImageAsync(string url, CancellationToken ct)
     {
         try
         {
@@ -105,17 +129,31 @@ public class ImageStorageService
             client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
             client.DefaultRequestHeaders.Add("Accept", "image/webp,image/apng,image/*,*/*;q=0.8");
             var res = await client.GetAsync(url, ct);
-            if (!res.IsSuccessStatusCode) return (null, null);
+            if (!res.IsSuccessStatusCode)
+                return (null, null, (int)res.StatusCode, $"HTTP {(int)res.StatusCode}");
             var data = await res.Content.ReadAsByteArrayAsync(ct);
-            if (data.Length < 100) return (null, null);
+            if (data.Length < 100)
+                return (null, null, (int)res.StatusCode, "Response too small");
             var ctHeader = res.Content.Headers.ContentType?.ToString();
-            return (data, ctHeader);
+            return (data, ctHeader, null, null);
         }
-        catch { return (null, null); }
+        catch (HttpRequestException ex)
+        {
+            return (null, null, null, ex.Message ?? "Request failed");
+        }
+        catch (TaskCanceledException)
+        {
+            return (null, null, null, "Timeout");
+        }
+        catch (Exception ex)
+        {
+            return (null, null, null, ex.Message ?? "Error");
+        }
     }
 }
 
 public record ImageAuditResult(EntityAudit Ships, EntityAudit Captains);
 public record EntityAudit(int Total, int WithImageUrl, int WithImageData, List<MissingItem> MissingUrl, List<MissingItem> MissingCachedData);
 public record MissingItem(int Id, string Name);
-public record PopulateResult(int ShipsStored, int CaptainsStored);
+public record PopulateResult(int ShipsStored, int CaptainsStored, List<PopulateItemResult> ShipResults, List<PopulateItemResult> CaptainResults);
+public record PopulateItemResult(int Id, string Name, string Status, string? Reason, int Index, int Total);

@@ -84,16 +84,16 @@ public class ImagesController : ControllerBase
     [HttpPost("populate/ship/{id:int}")]
     public async Task<IActionResult> PopulateShip(int id)
     {
-        var ok = await _storage.PopulateShipImageAsync(_db, id);
-        return ok ? Ok() : NotFound();
+        var (stored, reason) = await _storage.PopulateShipImageAsync(_db, id);
+        return stored ? Ok() : NotFound(new { reason });
     }
 
     /// <summary>Populate a single captain image.</summary>
     [HttpPost("populate/captain/{id:int}")]
     public async Task<IActionResult> PopulateCaptain(int id)
     {
-        var ok = await _storage.PopulateCaptainImageAsync(_db, id);
-        return ok ? Ok() : NotFound();
+        var (stored, reason) = await _storage.PopulateCaptainImageAsync(_db, id);
+        return stored ? Ok() : NotFound(new { reason });
     }
 
     /// <summary>Upload ship image from external source (e.g. populate script running where Wikipedia is reachable).</summary>
