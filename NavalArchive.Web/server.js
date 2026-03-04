@@ -489,6 +489,12 @@ app.get('/admin/images', async (req, res) => {
 app.post('/admin/images/populate', async (req, res) => {
   try {
     const runSyncFirst = req.body?.runSyncFirst === true;
+    const keys = {};
+    if (req.body?.pexelsApiKey) keys.pexelsApiKey = req.body.pexelsApiKey;
+    if (req.body?.pixabayApiKey) keys.pixabayApiKey = req.body.pixabayApiKey;
+    if (req.body?.unsplashAccessKey) keys.unsplashAccessKey = req.body.unsplashAccessKey;
+    if (req.body?.googleApiKey) keys.googleApiKey = req.body.googleApiKey;
+    if (req.body?.googleCseId) keys.googleCseId = req.body.googleCseId;
     const logLines = [];
     if (runSyncFirst) {
       try {
@@ -498,7 +504,7 @@ app.post('/admin/images/populate', async (req, res) => {
         logLines.push('[Sync] Error: ' + (syncErr.response?.data?.message || syncErr.message));
       }
     }
-    const response = await api.post('/api/images/populate', { runSyncFirst: false }, { timeout: 300000 });
+    const response = await api.post('/api/images/populate', { ...keys }, { timeout: 300000 });
     const data = response.data || {};
     data.logLines = logLines;
     res.json(data);

@@ -2,9 +2,12 @@ using System.Text.Json;
 
 namespace NavalArchive.Api.Services;
 
+/// <summary>Optional API keys for image search (passed from UI, not persisted).</summary>
+public record ImageSearchKeys(string? PexelsApiKey, string? PixabayApiKey, string? UnsplashAccessKey, string? GoogleApiKey, string? GoogleCseId);
+
 /// <summary>
 /// Unified image search with fallback chain: Pexels (best) → Pixabay → Unsplash → Google (last).
-/// All free except Google (100/day). Set API keys via env or appsettings.
+/// All free except Google (100/day). Set API keys via env, appsettings, or pass per-request.
 /// </summary>
 public class ImageSearchService
 {
@@ -17,54 +20,62 @@ public class ImageSearchService
         _config = config;
     }
 
-    private string? GetKey(string name) =>
-        _config[name] ?? Environment.GetEnvironmentVariable(name);
-
-    private bool PexelsConfigured => !string.IsNullOrWhiteSpace(GetKey("PEXELS_API_KEY"));
-    private bool PixabayConfigured => !string.IsNullOrWhiteSpace(GetKey("PIXABAY_API_KEY"));
-    private bool UnsplashConfigured => !string.IsNullOrWhiteSpace(GetKey("UNSPLASH_ACCESS_KEY"));
-    private bool GoogleConfigured =>
-        !string.IsNullOrWhiteSpace(GetKey("GOOGLE_API_KEY")) &&
-        !string.IsNullOrWhiteSpace(GetKey("GOOGLE_CSE_ID"));
-
-    public bool IsConfigured =>
-        PexelsConfigured || PixabayConfigured || UnsplashConfigured || GoogleConfigured;
-
-    /// <summary>Search images. Tries Pexels (best) → Pixabay → Unsplash → Google (worst). Returns on first success.</summary>
-    public async Task<List<string>> FindImageUrlsAsync(string query, int maxCount = 5, CancellationToken ct = default)
-    {
-        // 1. Pexels (best: 200 req/hr, good stock photos)
-        if (PexelsConfigured)
+    private string? GetKey(string name, ImageSearchKeys? keys) =>
+        name switch
         {
-            var urls = await TryPexelsAsync(query, maxCount, ct);
+            "PEXELS_API_KEY" => keys?.PexelsApiKey ?? _config[name] ?? Environment.GetEnvironmentVariable(name),
+            "PIXABAY_API_KEY" => keys?.PixabayApiKey ?? _config[name] ?? Environment.GetEnvironmentVariable(name),
+            "UNSPLASH_ACCESS_KEY" => keys?.UnsplashAccessKey ?? _config[name] ?? Environment.GetEnvironmentVariable(name),
+            "GOOGLE_API_KEY" => keys?.GoogleApiKey ?? _config[name] ?? Environment.GetEnvironmentVariable(name),
+            "GOOGLE_CSE_ID" => keys?.GoogleCseId ?? _config[name] ?? Environment.GetEnvironmentVariable(name),
+            _ => _config[name] ?? Environment.GetEnvironmentVariable(name)
+        };
+
+    private bool IsConfiguredWith(ImageSearchKeys? keys) =>
+        !string.IsNullOrWhiteSpace(GetKey("PEXELS_API_KEY", keys)) ||
+        !string.IsNullOrWhiteSpace(GetKey("PIXABAY_API_KEY", keys)) ||
+        !string.IsNullOrWhiteSpace(GetKey("UNSPLASH_ACCESS_KEY", keys)) ||
+        (!string.IsNullOrWhiteSpace(GetKey("GOOGLE_API_KEY", keys)) && !string.IsNullOrWhiteSpace(GetKey("GOOGLE_CSE_ID", keys)));
+
+    public bool IsConfigured => IsConfiguredWith(null);
+
+    /// <summary>Search images. Tries Pexels (best) → Pixabay → Unsplash → Google (worst). Optional keys override config.</summary>
+    public async Task<List<string>> FindImageUrlsAsync(string query, int maxCount = 5, CancellationToken ct = default, ImageSearchKeys? keys = null)
+    {
+        if (!IsConfiguredWith(keys)) return new List<string>();
+
+        // 1. Pexels (best: 200 req/hr, good stock photos)
+        if (!string.IsNullOrWhiteSpace(GetKey("PEXELS_API_KEY", keys)))
+        {
+            var urls = await TryPexelsAsync(query, maxCount, ct, keys);
             if (urls.Count > 0) return urls;
         }
 
         // 2. Pixabay (large library)
-        if (PixabayConfigured)
+        if (!string.IsNullOrWhiteSpace(GetKey("PIXABAY_API_KEY", keys)))
         {
-            var urls = await TryPixabayAsync(query, maxCount, ct);
+            var urls = await TryPixabayAsync(query, maxCount, ct, keys);
             if (urls.Count > 0) return urls;
         }
 
         // 3. Unsplash (high quality, 50 req/hr demo)
-        if (UnsplashConfigured)
+        if (!string.IsNullOrWhiteSpace(GetKey("UNSPLASH_ACCESS_KEY", keys)))
         {
-            var urls = await TryUnsplashAsync(query, maxCount, ct);
+            var urls = await TryUnsplashAsync(query, maxCount, ct, keys);
             if (urls.Count > 0) return urls;
         }
 
         // 4. Google (last resort, 100/day free)
-        if (GoogleConfigured)
+        if (!string.IsNullOrWhiteSpace(GetKey("GOOGLE_API_KEY", keys)) && !string.IsNullOrWhiteSpace(GetKey("GOOGLE_CSE_ID", keys)))
         {
-            var urls = await TryGoogleAsync(query, maxCount, ct);
+            var urls = await TryGoogleAsync(query, maxCount, ct, keys);
             if (urls.Count > 0) return urls;
         }
 
         return new List<string>();
     }
 
-    private async Task<List<string>> TryPexelsAsync(string query, int maxCount, CancellationToken ct)
+    private async Task<List<string>> TryPexelsAsync(string query, int maxCount, CancellationToken ct, ImageSearchKeys? keys = null)
     {
         var result = new List<string>();
         try
@@ -72,7 +83,7 @@ public class ImageSearchService
             var url = $"https://api.pexels.com/v1/search?query={Uri.EscapeDataString(query)}&per_page={maxCount}";
             var client = _http.CreateClient();
             client.Timeout = TimeSpan.FromSeconds(15);
-            client.DefaultRequestHeaders.Add("Authorization", GetKey("PEXELS_API_KEY")!);
+            client.DefaultRequestHeaders.Add("Authorization", GetKey("PEXELS_API_KEY", keys)!);
             var res = await client.GetAsync(url, ct);
             if (!res.IsSuccessStatusCode) return result;
 
@@ -95,12 +106,12 @@ public class ImageSearchService
         return result;
     }
 
-    private async Task<List<string>> TryPixabayAsync(string query, int maxCount, CancellationToken ct)
+    private async Task<List<string>> TryPixabayAsync(string query, int maxCount, CancellationToken ct, ImageSearchKeys? keys = null)
     {
         var result = new List<string>();
         try
         {
-            var url = $"https://pixabay.com/api/?key={Uri.EscapeDataString(GetKey("PIXABAY_API_KEY")!)}&q={Uri.EscapeDataString(query)}&image_type=photo&per_page={maxCount}";
+            var url = $"https://pixabay.com/api/?key={Uri.EscapeDataString(GetKey("PIXABAY_API_KEY", keys)!)}&q={Uri.EscapeDataString(query)}&image_type=photo&per_page={maxCount}";
             var client = _http.CreateClient();
             client.Timeout = TimeSpan.FromSeconds(15);
             client.DefaultRequestHeaders.Add("User-Agent", "NavalArchive/1.0");
@@ -124,7 +135,7 @@ public class ImageSearchService
         return result;
     }
 
-    private async Task<List<string>> TryUnsplashAsync(string query, int maxCount, CancellationToken ct)
+    private async Task<List<string>> TryUnsplashAsync(string query, int maxCount, CancellationToken ct, ImageSearchKeys? keys = null)
     {
         var result = new List<string>();
         try
@@ -132,7 +143,7 @@ public class ImageSearchService
             var url = $"https://api.unsplash.com/search/photos?query={Uri.EscapeDataString(query)}&per_page={maxCount}";
             var client = _http.CreateClient();
             client.Timeout = TimeSpan.FromSeconds(15);
-            client.DefaultRequestHeaders.Add("Authorization", $"Client-ID {GetKey("UNSPLASH_ACCESS_KEY")}");
+            client.DefaultRequestHeaders.Add("Authorization", $"Client-ID {GetKey("UNSPLASH_ACCESS_KEY", keys)}");
             var res = await client.GetAsync(url, ct);
             if (!res.IsSuccessStatusCode) return result;
 
@@ -157,13 +168,13 @@ public class ImageSearchService
         return result;
     }
 
-    private async Task<List<string>> TryGoogleAsync(string query, int maxCount, CancellationToken ct)
+    private async Task<List<string>> TryGoogleAsync(string query, int maxCount, CancellationToken ct, ImageSearchKeys? keys = null)
     {
         var result = new List<string>();
         try
         {
-            var url = $"https://www.googleapis.com/customsearch/v1?key={Uri.EscapeDataString(GetKey("GOOGLE_API_KEY")!)}" +
-                      $"&cx={Uri.EscapeDataString(GetKey("GOOGLE_CSE_ID")!)}&q={Uri.EscapeDataString(query)}&searchType=image&num={Math.Min(maxCount, 10)}";
+            var url = $"https://www.googleapis.com/customsearch/v1?key={Uri.EscapeDataString(GetKey("GOOGLE_API_KEY", keys)!)}" +
+                      $"&cx={Uri.EscapeDataString(GetKey("GOOGLE_CSE_ID", keys)!)}&q={Uri.EscapeDataString(query)}&searchType=image&num={Math.Min(maxCount, 10)}";
             var client = _http.CreateClient();
             client.Timeout = TimeSpan.FromSeconds(15);
             client.DefaultRequestHeaders.Add("User-Agent", "NavalArchive/1.0");

@@ -8,7 +8,7 @@
   <main class="app-shell">
     <div class="container py-4">
       <h1 class="mb-4">Image Audit</h1>
-      <p class="text-muted mb-4">Index of ships and captains: which have ImageUrl, which have cached ImageData in the database, and which are missing. Populate runs Wikipedia sync first (to get captain ImageUrls), then fetches images. Fallback order: Pexels → Pixabay → Unsplash → Google. Set <code>PEXELS_API_KEY</code>, <code>PIXABAY_API_KEY</code>, <code>UNSPLASH_ACCESS_KEY</code>, or <code>GOOGLE_API_KEY</code>+<code>GOOGLE_CSE_ID</code> on the API.</p>
+      <p class="text-muted mb-4">Index of ships and captains: which have ImageUrl, which have cached ImageData in the database, and which are missing. Populate runs Wikipedia sync first (to get captain ImageUrls), then fetches images. Fallback order: Pexels → Pixabay → Unsplash → Google. Enter API keys below to use image search without RDP.</p>
 
       <% if (typeof error !== 'undefined' && error) { %>
         <div class="alert alert-danger"><%= error %></div>
@@ -74,6 +74,16 @@
           </div>
         </div>
         <div class="mb-4">
+          <details class="mb-3">
+            <summary class="text-muted small" style="cursor: pointer">Optional: API keys for image search (Pexels, Pixabay, Unsplash, Google)</summary>
+            <div class="mt-2 row g-2">
+              <div class="col-md-6"><input type="password" id="pexelsApiKey" class="form-control form-control-sm" placeholder="Pexels API key" autocomplete="off"></div>
+              <div class="col-md-6"><input type="password" id="pixabayApiKey" class="form-control form-control-sm" placeholder="Pixabay API key" autocomplete="off"></div>
+              <div class="col-md-6"><input type="password" id="unsplashAccessKey" class="form-control form-control-sm" placeholder="Unsplash Access key" autocomplete="off"></div>
+              <div class="col-md-6"><input type="password" id="googleApiKey" class="form-control form-control-sm" placeholder="Google API key" autocomplete="off"></div>
+              <div class="col-md-6"><input type="password" id="googleCseId" class="form-control form-control-sm" placeholder="Google CSE ID" autocomplete="off"></div>
+            </div>
+          </details>
           <button id="populateBtn" class="btn btn-modern">Populate All Images (sync + fetch → store)</button>
           <span id="populateStatus" class="ms-3"></span>
         </div>
@@ -137,7 +147,18 @@
       status.textContent = 'Syncing & populating...';
       var startTime = Date.now();
       showTerminal('[Populate] ' + new Date().toISOString() + '\n[Populate] Step 1: Running Wikipedia sync to fetch captain ImageUrls...\n[Populate] This may take several minutes.', true);
-      fetch('/admin/images/populate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runSyncFirst: true }) })
+      var body = { runSyncFirst: true };
+      var pexels = document.getElementById('pexelsApiKey')?.value?.trim();
+      var pixabay = document.getElementById('pixabayApiKey')?.value?.trim();
+      var unsplash = document.getElementById('unsplashAccessKey')?.value?.trim();
+      var googleKey = document.getElementById('googleApiKey')?.value?.trim();
+      var googleCse = document.getElementById('googleCseId')?.value?.trim();
+      if (pexels) body.pexelsApiKey = pexels;
+      if (pixabay) body.pixabayApiKey = pixabay;
+      if (unsplash) body.unsplashAccessKey = unsplash;
+      if (googleKey) body.googleApiKey = googleKey;
+      if (googleCse) body.googleCseId = googleCse;
+      fetch('/admin/images/populate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
         .then(function(r) { return r.json(); })
         .then(function(d) {
           var elapsed = ((Date.now() - startTime) / 1000).toFixed(1);

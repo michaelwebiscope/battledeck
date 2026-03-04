@@ -72,11 +72,14 @@ public class ImagesController : ControllerBase
         return await _storage.GetAuditAsync(_db);
     }
 
-    /// <summary>Populate all images from ImageUrl into ImageData.</summary>
+    /// <summary>Populate all images from ImageUrl into ImageData. Optional API keys for image search fallback.</summary>
     [HttpPost("populate")]
-    public async Task<ActionResult<PopulateResult>> PopulateAll()
+    public async Task<ActionResult<PopulateResult>> PopulateAll([FromBody] PopulateRequest? request = null)
     {
-        var result = await _storage.PopulateAllAsync(_db);
+        var keys = request != null && (request.PexelsApiKey != null || request.PixabayApiKey != null || request.UnsplashAccessKey != null || request.GoogleApiKey != null)
+            ? new ImageSearchKeys(request.PexelsApiKey, request.PixabayApiKey, request.UnsplashAccessKey, request.GoogleApiKey, request.GoogleCseId)
+            : null;
+        var result = await _storage.PopulateAllAsync(_db, default, keys);
         return Ok(result);
     }
 
@@ -117,3 +120,6 @@ public class ImagesController : ControllerBase
         return Ok(new { stored = data.Length });
     }
 }
+
+/// <summary>Request body for populate endpoint. Optional API keys for image search (not persisted).</summary>
+public record PopulateRequest(string? PexelsApiKey, string? PixabayApiKey, string? UnsplashAccessKey, string? GoogleApiKey, string? GoogleCseId);
