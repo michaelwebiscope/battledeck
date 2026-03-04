@@ -8,7 +8,7 @@
   <main class="app-shell">
     <div class="container py-4">
       <h1 class="mb-4">Image Audit</h1>
-      <p class="text-muted mb-4">Index of ships and captains: which have ImageUrl, which have cached ImageData in the database, and which are missing. Populate runs Wikipedia sync first (to get captain ImageUrls), then fetches images. Set <code>GOOGLE_API_KEY</code> and <code>GOOGLE_CSE_ID</code> on the API for Google fallback when Wikipedia fails.</p>
+      <p class="text-muted mb-4">Index of ships and captains: which have ImageUrl, which have cached ImageData in the database, and which are missing. Populate runs Wikipedia sync first (to get captain ImageUrls), then fetches images. Fallback order: Pexels → Pixabay → Unsplash → Google. Set <code>PEXELS_API_KEY</code>, <code>PIXABAY_API_KEY</code>, <code>UNSPLASH_ACCESS_KEY</code>, or <code>GOOGLE_API_KEY</code>+<code>GOOGLE_CSE_ID</code> on the API.</p>
 
       <% if (typeof error !== 'undefined' && error) { %>
         <div class="alert alert-danger"><%= error %></div>

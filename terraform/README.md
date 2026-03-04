@@ -41,6 +41,8 @@ Your app will be at:
 | `vm_auto_bootstrap` | true | Run setup script on VM first boot |
 | `github_repo_url` | "" | GitHub repo for full deploy (clone, build, deploy). Empty = bootstrap only |
 | `github_repo_branch` | main | Branch to clone |
+| `restrict_to_my_ip` | true | Restrict website/API/RDP to the IP that runs terraform apply. Set `false` to allow all |
+| `allowed_ip` | "" | Override: use this IP instead of auto-detection. E.g. `-var='allowed_ip=1.2.3.4'` |
 
 **Can't create resource groups?** Set `resource_group_name = "your-existing-rg"` and `use_app_service = false` to deploy a VM into an existing RG.
 
@@ -72,6 +74,24 @@ When `use_app_service = false`, Terraform creates a Windows VM and **automatical
 ### Bootstrap only
 
 Leave `github_repo_url` empty. The script installs IIS, .NET 8, Node.js, and creates directories. Deploy the app via your CI/CD pipeline.
+
+### Fast website updates
+
+To update the website without running the full bootstrap (which takes 45–60 min):
+
+```bash
+# Option 1: Terraform apply (updates website via null_resource)
+./apply-refresh.sh
+# Or: terraform apply -var="refresh_web_trigger=$(date +%s)" -auto-approve
+
+# Option 2: Direct az (no Terraform, no state lock)
+./refresh-web.sh
+```
+
+- **apply-refresh.sh** – Uses Terraform; runs null_resource that invokes az vm run-command (~5–7 min).
+- **refresh-web.sh** – Uses `az` directly; no Terraform state lock (~5–7 min).
+
+Requires `az` CLI.
 
 ---
 

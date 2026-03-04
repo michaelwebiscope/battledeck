@@ -23,7 +23,7 @@ builder.Services.AddDbContext<LogsDbContext>(options =>
 builder.Services.AddSingleton<DataSyncService>();
 builder.Services.AddSingleton<LogsDataService>();
 builder.Services.AddSingleton<GenuineLogsFetcher>();
-builder.Services.AddSingleton<GoogleImageSearchService>();
+builder.Services.AddSingleton<ImageSearchService>();
 builder.Services.AddScoped<ImageStorageService>();
 
 builder.Services.AddCors(options =>

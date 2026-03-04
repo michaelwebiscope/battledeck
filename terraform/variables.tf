@@ -81,3 +81,28 @@ variable "newrelic_license_key" {
   default     = ""
   sensitive   = true
 }
+
+variable "bootstrap_trigger" {
+  description = "Bump this (e.g. 2, 3) to force VM bootstrap to re-run. WARNING: Takes 45-60 min. For quick web updates use refresh_web_trigger instead."
+  type        = string
+  default     = "1"
+}
+
+variable "refresh_web_trigger" {
+  description = "Bump this (e.g. 2, 3) to refresh website from GitHub. Run: terraform apply -var='refresh_web_trigger=2'"
+  type        = string
+  default     = "0"
+}
+
+variable "restrict_to_my_ip" {
+  description = "Restrict website/API/RDP access to the IP that runs terraform apply. Set to false to allow all."
+  type        = bool
+  default     = true
+}
+
+variable "allowed_ip" {
+  description = "Override: use this IP instead of auto-detection. E.g. -var='allowed_ip=1.2.3.4'. Leave empty to auto-detect."
+  type        = string
+  default     = ""
+}
+

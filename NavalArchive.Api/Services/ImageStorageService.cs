@@ -10,12 +10,12 @@ namespace NavalArchive.Api.Services;
 public class ImageStorageService
 {
     private readonly IHttpClientFactory _http;
-    private readonly GoogleImageSearchService? _google;
+    private readonly ImageSearchService? _imageSearch;
 
-    public ImageStorageService(IHttpClientFactory http, GoogleImageSearchService google)
+    public ImageStorageService(IHttpClientFactory http, ImageSearchService imageSearch)
     {
         _http = http;
-        _google = google;
+        _imageSearch = imageSearch;
     }
 
     /// <summary>Audit: which ships/captains have ImageUrl, ImageData, or are missing both.</summary>
@@ -57,9 +57,9 @@ public class ImageStorageService
 
         string? urlToTry = ship.ImageUrl;
         var triedUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (string.IsNullOrWhiteSpace(urlToTry) && _google?.IsConfigured == true)
+        if (string.IsNullOrWhiteSpace(urlToTry) && _imageSearch?.IsConfigured == true)
         {
-            var urls = await _google.FindImageUrlsAsync($"{ship.Name} battleship ship photo", 5, ct);
+            var urls = await _imageSearch.FindImageUrlsAsync($"{ship.Name} battleship ship photo", 5, ct);
             if (urls.Count > 0) { urlToTry = urls[0]; ship.ImageUrl = urlToTry; }
         }
         if (string.IsNullOrWhiteSpace(urlToTry)) return (false, "No ImageUrl", 0);
@@ -68,12 +68,12 @@ public class ImageStorageService
         triedUrls.Add(urlToTry);
         if (data == null || data.Length < 100)
         {
-            if (_google?.IsConfigured == true)
+            if (_imageSearch?.IsConfigured == true)
             {
                 var queries = new[] { $"{ship.Name} battleship ship", $"{ship.Name} warship", $"{ship.Name} naval" };
                 foreach (var q in queries)
                 {
-                    var urls = await _google.FindImageUrlsAsync(q, 5, ct);
+                    var urls = await _imageSearch.FindImageUrlsAsync(q, 5, ct);
                     foreach (var u in urls.Where(u => !triedUrls.Contains(u)))
                     {
                         triedUrls.Add(u);
@@ -84,7 +84,7 @@ public class ImageStorageService
                             ship.ImageData = data;
                             ship.ImageContentType = contentType ?? "image/jpeg";
                             await db.SaveChangesAsync(ct);
-                            return (true, "Google", data.Length);
+                            return (true, "Fallback", data.Length);
                         }
                         await Task.Delay(300, ct);
                     }
@@ -109,9 +109,9 @@ public class ImageStorageService
 
         string? urlToTry = captain.ImageUrl;
         var triedUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (string.IsNullOrWhiteSpace(urlToTry) && _google?.IsConfigured == true)
+        if (string.IsNullOrWhiteSpace(urlToTry) && _imageSearch?.IsConfigured == true)
         {
-            var urls = await _google.FindImageUrlsAsync($"{captain.Name} naval captain portrait", 5, ct);
+            var urls = await _imageSearch.FindImageUrlsAsync($"{captain.Name} naval captain portrait", 5, ct);
             if (urls.Count > 0) { urlToTry = urls[0]; captain.ImageUrl = urlToTry; }
         }
         if (string.IsNullOrWhiteSpace(urlToTry)) return (false, "No ImageUrl", 0);
@@ -120,12 +120,12 @@ public class ImageStorageService
         triedUrls.Add(urlToTry);
         if (data == null || data.Length < 100)
         {
-            if (_google?.IsConfigured == true)
+            if (_imageSearch?.IsConfigured == true)
             {
                 var queries = new[] { $"{captain.Name} admiral portrait", $"{captain.Name} naval officer", $"{captain.Name} Kriegsmarine" };
                 foreach (var q in queries)
                 {
-                    var urls = await _google.FindImageUrlsAsync(q, 5, ct);
+                    var urls = await _imageSearch.FindImageUrlsAsync(q, 5, ct);
                     foreach (var u in urls.Where(u => !triedUrls.Contains(u)))
                     {
                         triedUrls.Add(u);
@@ -136,7 +136,7 @@ public class ImageStorageService
                             captain.ImageData = data;
                             captain.ImageContentType = contentType ?? "image/jpeg";
                             await db.SaveChangesAsync(ct);
-                            return (true, "Google", data.Length);
+                            return (true, "Fallback", data.Length);
                         }
                         await Task.Delay(300, ct);
                     }
