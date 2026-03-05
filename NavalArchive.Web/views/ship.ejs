@@ -14,24 +14,14 @@
           <li class="breadcrumb-item active"><%= ship.name %></li>
         </ol>
       </nav>
-      <div class="row">
-        <div class="col-lg-4 mb-4">
-          <div class="card">
-            <div class="card-img-top position-relative" style="height: 240px; overflow: hidden; cursor: pointer;" role="button" data-image-url="/gallery/image/<%= ship.id %>" data-image-title="<%= (ship.name || '').replace(/"/g, '&quot;') %>" onclick="showImageModal(this.dataset.imageUrl, this.dataset.imageTitle)" title="Click to enlarge">
-              <% if (ship.imageUrl && ship.imageUrl.startsWith('http')) { %>
-                <img src="<%= ship.imageUrl %>" alt="<%= ship.name %>" style="height: 240px; width: 100%; object-fit: cover;"
-                  onerror="this.src='/gallery/image/<%= ship.id %>'; this.onerror=null;">
-              <% } else { %>
-                <img src="/gallery/image/<%= ship.id %>" alt="<%= ship.name %>" style="height: 240px; width: 100%; object-fit: cover;">
-              <% } %>
-            </div>
-          </div>
-        </div>
-        <div class="col-lg-8">
-          <h1 class="mb-3"><%= ship.name %></h1>
-          <p class="text-muted mb-3">Commissioned <%= ship.yearCommissioned %></p>
+      <%
+        var shipEntity = toEntity(ship, 'ship');
+        shipEntity.subtitle = 'Commissioned ' + (ship.yearCommissioned || '');
+      %>
+      <%- include('partials/entity-detail', { entity: shipEntity, imageHeight: 240, editButtonId: 'shipEditBtn' }) %>
+      <div class="row mt-4">
           <% if (ship.videoUrl) { %>
-          <div class="mb-4">
+          <div class="col-12 mb-4">
             <h5 class="mb-2">Ship Video</h5>
             <video class="rounded w-100" style="max-height: 360px; background: #000;" controls preload="metadata">
               <source src="<%= ship.videoUrl %>" type="video/mp4">
@@ -39,9 +29,7 @@
             </video>
           </div>
           <% } %>
-          <p class="lead"><%= ship.description %></p>
-          <div class="row mt-4">
-            <% if (ship.class) { %>
+          <% if (ship.class) { %>
               <div class="col-md-6 mb-3">
                 <div class="card h-100">
                   <div class="card-header">Class</div>
@@ -54,28 +42,126 @@
                 </div>
               </div>
             <% } %>
-            <% if (ship.captain) { %>
+            <% if (ship.captain) {
+              var capEntity = toEntity(ship.captain, 'captain');
+            %>
               <div class="col-md-6 mb-3">
                 <div class="card h-100">
-                  <% if (ship.captain.imageUrl && ship.captain.imageUrl.startsWith('http')) { %>
-                    <img src="<%= ship.captain.imageUrl %>" class="card-img-top" alt="<%= ship.captain.name %>" style="height: 160px; object-fit: cover;" onerror="this.onerror=null;this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22160%22%3E%3Crect fill=%22%236c757d%22 width=%22200%22 height=%22160%22/%3E%3Ctext fill=%22%23fff%22 x=%22100%22 y=%2280%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-size=%2212%22%3ENo photo%3C/text%3E%3C/svg%3E';">
-                  <% } %>
+                  <div class="card-img-top" style="height: 160px; overflow: hidden;">
+                    <%- include('partials/entity-image', { entity: capEntity, size: '160', imageGallery: 'captain' }) %>
+                  </div>
                   <div class="card-header">Captain</div>
                   <div class="card-body">
                     <h5><%= ship.captain.name %></h5>
                     <p class="mb-0 text-muted"><%= ship.captain.rank %> · <%= ship.captain.serviceYears %> years service</p>
                     <a href="/captains/<%= ship.captain.id %>" class="btn btn-outline-dark btn-sm mt-2">View Captain</a>
+                    <a href="/captains/<%= ship.captain.id %>" class="btn btn-outline-secondary btn-sm mt-2 admin-only">Edit</a>
                   </div>
                 </div>
               </div>
             <% } %>
-          </div>
-        </div>
       </div>
     </div>
   </main>
   <%- include('partials/footer') %>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   <%- include('partials/image-lightbox') %>
+
+  <div id="shipEditModal" class="modal fade" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Edit Ship</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div id="shipEditFormPane">
+            <div class="mb-3">
+              <label class="form-label">Name</label>
+              <input type="text" class="form-control" id="shipEditName" value="<%= ship.name || '' %>">
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Description</label>
+              <textarea class="form-control" id="shipEditDesc" rows="4"><%= ship.description || '' %></textarea>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Year Commissioned</label>
+              <input type="number" class="form-control" id="shipEditYear" value="<%= ship.yearCommissioned %>">
+            </div>
+            <div class="mb-3">
+              <button type="button" class="btn btn-outline-secondary" id="shipEditImageBtn">Change Image</button>
+            </div>
+            <button type="button" class="btn btn-modern" id="shipEditSaveBtn">Save</button>
+          </div>
+          <div id="shipEditSearchPane" style="display: none;">
+            <button type="button" class="btn btn-outline-secondary btn-sm mb-2" id="shipEditSearchBack">← Back</button>
+            <iframe id="shipEditSearchFrame" style="width:100%; height: 400px; border: 1px solid #ddd; border-radius: 6px;"></iframe>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  (function() {
+    var shipId = <%= ship.id || ship.Id %>;
+    var modal = document.getElementById('shipEditModal');
+    var formPane = document.getElementById('shipEditFormPane');
+    var searchPane = document.getElementById('shipEditSearchPane');
+    var frame = document.getElementById('shipEditSearchFrame');
+    if (!modal) return;
+
+    document.getElementById('shipEditBtn').addEventListener('click', function(e) {
+      e.preventDefault();
+      new bootstrap.Modal(modal).show();
+    });
+
+    document.getElementById('shipEditSaveBtn').addEventListener('click', function() {
+      var name = document.getElementById('shipEditName').value.trim();
+      var desc = document.getElementById('shipEditDesc').value;
+      var year = parseInt(document.getElementById('shipEditYear').value, 10) || 0;
+      fetch('/api/ships/' + shipId, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name, description: desc, yearCommissioned: year })
+      }).then(function(r) {
+        if (!r.ok) return r.json().then(function(j) { throw new Error(j.error || j.message || 'Save failed'); });
+        return r.json();
+      }).then(function() {
+        bootstrap.Modal.getInstance(modal).hide();
+        location.reload();
+      }).catch(function(err) { alert('Save failed: ' + err.message); });
+    });
+
+    document.getElementById('shipEditImageBtn').addEventListener('click', function() {
+      formPane.style.display = 'none';
+      searchPane.style.display = 'block';
+      var q = encodeURIComponent((document.getElementById('shipEditName').value || 'battleship') + ' battleship');
+      frame.src = '/admin/images/search-frame?entity=ship&id=' + shipId + '&q=' + q;
+    });
+
+    document.getElementById('shipEditSearchBack').addEventListener('click', function() {
+      frame.src = 'about:blank';
+      searchPane.style.display = 'none';
+      formPane.style.display = 'block';
+    });
+
+    window.addEventListener('message', function(e) {
+      if (!e.data || e.data.type !== 'imageSelected' || String(e.data.entityId) !== String(shipId)) return;
+      if (e.data.entity !== 'ship') return;
+      fetch('/api/images/ship/' + shipId + '/from-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: e.data.url })
+      }).then(function(r) {
+        if (!r.ok) return r.json().then(function(j) { throw new Error(j.error || j.message || 'Set image failed'); });
+        frame.src = 'about:blank';
+        searchPane.style.display = 'none';
+        formPane.style.display = 'block';
+        location.reload();
+      }).catch(function(err) { alert('Set image failed: ' + err.message); });
+    });
+  })();
+  </script>
 </body>
 </html>

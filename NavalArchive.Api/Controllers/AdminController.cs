@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
-using NavalArchive.Api.Data;
+using NavalArchive.Data;
 using NavalArchive.Api.Services;
 
 namespace NavalArchive.Api.Controllers;

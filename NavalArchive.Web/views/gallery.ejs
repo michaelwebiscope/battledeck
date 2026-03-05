@@ -11,22 +11,11 @@
       <p class="text-muted mb-4">Archival photographs from the fleet. Click any image to view full size.</p>
       <div class="row g-4">
         <% if (ships && ships.length > 0) { %>
-          <% ships.forEach(function(ship) { %>
-            <div class="col-md-4 col-lg-3">
-              <div class="card h-100">
-                <div class="card-img-top position-relative" style="height: 180px; overflow: hidden; cursor: pointer;" role="button" data-image-url="/gallery/image/<%= ship.id %>" data-image-title="<%= (ship.name || '').replace(/"/g, '&quot;') %>" onclick="showImageModal(this.dataset.imageUrl, this.dataset.imageTitle)" title="Click to enlarge">
-                  <% if (ship.imageUrl && ship.imageUrl.startsWith('http')) { %>
-                    <img src="<%= ship.imageUrl %>" alt="<%= ship.name %>" style="height: 180px; width: 100%; object-fit: cover; display: block;" onerror="this.src='/gallery/image/<%= ship.id %>'; this.onerror=null;">
-                  <% } else { %>
-                    <img src="/gallery/image/<%= ship.id %>" alt="<%= ship.name %>" style="height: 180px; width: 100%; object-fit: cover; display: block;">
-                  <% } %>
-                </div>
-                <div class="card-body">
-                  <h6 class="card-title"><%= ship.name %></h6>
-                  <p class="card-text small text-muted"><%= ship.class ? ship.class.type : '' %> · <%= ship.yearCommissioned %></p>
-                </div>
-              </div>
-            </div>
+          <% ships.forEach(function(ship) {
+            var entity = toEntity(ship, 'ship');
+            entity.subtitle = [ship.class ? ship.class.type : '', ship.yearCommissioned].filter(Boolean).join(' · ');
+          %>
+            <%- include('partials/entity-card', { entity: entity, size: 'sm', variant: 'gallery', cols: 'col-md-4 col-lg-3', showSubtitle: true }) %>
           <% }); %>
         <% } else { %>
           <div class="col-12 text-center text-muted py-5">No images available. Ensure the API is running.</div>

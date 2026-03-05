@@ -1,1 +1,282 @@
-{}
+{
+  "Bismarck": {
+    "Name": "Bismarck",
+    "Description": "Bismarck was the first of two Bismarck-class battleships built for Nazi Germany\u0027s Kriegsmarine. Named after Chancellor Otto von Bismarck, the ship was laid down at the Blohm \u0026 Voss shipyard in Hamburg in July 1936 and launched in February 1939. Work was completed in August 1940, when she was commissioned into the German fleet. Bismarck and her sister ship Tirpitz were the largest battleships ever built by Germany, and two of the largest built by any European power.\nIn the course of the warship\u0027s...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/fe/Bundesarchiv_Bild_193-04-1-26%2C_Schlachtschiff_Bismarck.jpg/960px-Bundesarchiv_Bild_193-04-1-26%2C_Schlachtschiff_Bismarck.jpg"
+  },
+  "Tirpitz": {
+    "Name": "Tirpitz",
+    "Description": "Tirpitz (German pronunciation: [\u02C8t\u026A\u0281p\u026At\u0361s] ) was the second of two Bismarck-class battleships built for Nazi Germany\u0027s Kriegsmarine (navy) prior to and during the Second World War. Named after Grand Admiral Alfred von Tirpitz, the architect of the Kaiserliche Marine (Imperial Navy), the ship was laid down at the Kriegsmarinewerft in Wilhelmshaven in November 1936 and her hull was launched two and a half years later. Work was completed in February 1941, when she was commissioned into the German fleet...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/79/Tirpitz-2.jpg/960px-Tirpitz-2.jpg"
+  },
+  "Musashi": {
+    "Name": "Musashi",
+    "Description": "Musashi (Japanese: \u6B66\u8535; named after the former Japanese province) was one of four planned Yamato-class battleships built for the Imperial Japanese Navy (IJN), beginning in the late 1930s. The Yamato-class ships were the heaviest and most powerfully armed battleships ever constructed, displacing almost 72,000 long tons (73,000 t) fully loaded and armed with nine 460-millimetre (18.1 in) main guns. Their secondary armament consisted of four 155-millimetre (6.1 in) triple-gun turrets formerly used by...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/be/Japanese_battleship_Musashi_underway_in_1944_%28NH_63473%29_%28cropped%29.jpg/960px-Japanese_battleship_Musashi_underway_in_1944_%28NH_63473%29_%28cropped%29.jpg"
+  },
+  "Yamato": {
+    "Name": "Yamato",
+    "Description": "Yamato (Japanese: \u5927\u548C; named after the ancient Yamato Province) was the lead ship of her class of battleships built for the Imperial Japanese Navy (IJN) shortly before World War II. She and her sister ship, Musashi, were the heaviest and most powerfully armed battleships ever constructed, displacing nearly 72,000 tonnes (71,000 long tons) at full load and armed with nine 46 cm (18.1 in) Type 94 main guns, which were the largest guns ever mounted on a warship.\nYamato was designed to counter the numerically...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b2/Japanese_battleship_Yamato_running_trials_off_Bungo_Strait%2C_20_October_1941.jpg/960px-Japanese_battleship_Yamato_running_trials_off_Bungo_Strait%2C_20_October_1941.jpg"
+  },
+  "USS Iowa": {
+    "Name": "USS Iowa",
+    "Description": "USS Iowa (BB-61) is a retired battleship, the lead ship of her class, and the fourth in the United States Navy to be named after the state of Iowa. Owing to the cancellation of the Montana-class battleships, Iowa is the last lead ship of any class of United States battleships and was the only ship of her class to serve in the Atlantic Ocean during World War II.\nDuring World War II, she carried President Franklin D. Roosevelt across the Atlantic to Mers El K\u00E9bir, Algeria, en route to a conference...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/BB61_USS_Iowa_BB61_broadside_USN.jpg/960px-BB61_USS_Iowa_BB61_broadside_USN.jpg"
+  },
+  "USS Enterprise": {
+    "Name": "USS Enterprise",
+    "Description": "USS Enterprise (CV-6) was a Yorktown-class carrier built for the United States Navy during the 1930s. She was the seventh U.S. Navy vessel of that name. Colloquially called \u0022The Big E\u0022, she was the sixth aircraft carrier of the United States Navy. Launched in 1936, she was the only Yorktown-class carrier to survive World War II. She was also one of only three American fleet carriers commissioned before the war to survive it; the others were Saratoga and Ranger\u200A.\nEnterprise participated in more major...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/87/USS_Enterprise_%28CV-6%29_in_Puget_Sound%2C_September_1945.jpg/960px-USS_Enterprise_%28CV-6%29_in_Puget_Sound%2C_September_1945.jpg"
+  },
+  "USS Missouri": {
+    "Name": "USS Missouri",
+    "Description": "USS Missouri (BB-63) is an Iowa-class battleship built for the United States Navy (USN) in the 1940s and is now a museum ship. Completed in 1944, she is the last battleship commissioned by the United States. The ship was assigned to the Pacific Theater during World War II, where she participated in the Battles of Iwo Jima and Okinawa and shelled the Japanese home islands. Her quarterdeck was the site where the Japanese Instrument of Surrender was signed, officially ending World War II.\nAfter World...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/e/e8/Missouri_post_refit.JPG"
+  },
+  "USS New Jersey": {
+    "Name": "USS New Jersey",
+    "Description": "USS New Jersey (BB-62) is an Iowa-class battleship and the second ship of the United States Navy to be named after the U.S. state of New Jersey. She was often referred to fondly as \u0022Big J\u0022. New Jersey earned more battle stars for combat actions than the other three completed Iowa-class battleships, and was the only US battleship used to provide gunfire support during the Vietnam War.\nDuring World War II, New Jersey shelled targets on Guam and Okinawa, and screened aircraft carriers conducting raids...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5c/New_Jersey_Sails.jpg/960px-New_Jersey_Sails.jpg"
+  },
+  "USS Wisconsin": {
+    "Name": "USS Wisconsin",
+    "Description": "USS Wisconsin (BB-64) is an Iowa-class battleship built for the United States Navy (USN) in the 1940s and is currently a museum ship. Completed in 1944, the ship was assigned to the Pacific Theater during World War II, where she participated in the Philippines campaign and the Battles of Iwo Jima and Okinawa. The battleship shelled the Japanese home islands shortly before the end of the war in September 1945. During the Korean War, Wisconsin shelled North Korean targets in support of United Nations...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e0/USS_Wisconsin_%28BB-64%29_underway_at_sea%2C_circa_1988-1991_%28NH_97206-KN%29.jpg/960px-USS_Wisconsin_%28BB-64%29_underway_at_sea%2C_circa_1988-1991_%28NH_97206-KN%29.jpg"
+  },
+  "USS Yorktown": {
+    "Name": "USS Yorktown",
+    "Description": "USS Yorktown (CV-5) was an aircraft carrier that served in the United States Navy during World War II. Named after the Battle of Yorktown in 1781, she was commissioned in 1937. Yorktown was the lead ship of the Yorktown class, which was designed on the basis of lessons learned from operations with the converted battlecruisers of the Lexington class and the smaller purpose-built USS Ranger.\nYorktown was at port in Norfolk during the attack on Pearl Harbor, having just completed a patrol of the Atlantic...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/bc/USS_Yorktown_%28CV-5%29_Jul1937.jpg/960px-USS_Yorktown_%28CV-5%29_Jul1937.jpg"
+  },
+  "HMS Hood": {
+    "Name": "HMS Hood",
+    "Description": "",
+    "ImageUrl": ""
+  },
+  "HMS Illustrious": {
+    "Name": "HMS Illustrious",
+    "Description": "HMS Illustrious was the lead ship of her class of aircraft carriers built for the Royal Navy before World War II. Her first assignment after completion and working up was with the Mediterranean Fleet, in which her aircraft\u0027s most notable achievement was sinking one Italian battleship and badly damaging two others during the Battle of Taranto in late 1940. In January 1941, during Operation Excess, Illustrious was hit multiple times by German and Italian dive bombers and was repaired in the United...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ed/HMS_Illustrious_%28ca._1954%29_%2820921205028%29.jpg/960px-HMS_Illustrious_%28ca._1954%29_%2820921205028%29.jpg"
+  },
+  "USS Hornet": {
+    "Name": "USS Hornet",
+    "Description": "USS Hornet (CV-8), the seventh U.S. Navy vessel of that name, was a Yorktown-class aircraft carrier of the United States Navy.\nDuring World War II in the Pacific Theater, she launched the Doolittle Raid on Tokyo and participated in the Battle of Midway and the Buin-Faisi-Tonolai raid. In the Solomon Islands campaign, she was involved in the capture and defense of Guadalcanal and the Battle of the Santa Cruz Islands, where she was irreparably damaged by enemy torpedo and dive bombers. Faced with an...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/c/cb/Aft_view_of_USS_Hornet_%28CV-8%29%2C_circa_in_late_1941_%28NH_81313%29.jpg"
+  },
+  "USS Lexington": {
+    "Name": "USS Lexington",
+    "Description": "USS Lexington (hull number CV-2), nicknamed \u0022Lady Lex\u0022, was the name ship of her class of two aircraft carriers built for the United States Navy during the 1920s. Originally designed as a Lexington-class battlecruiser, she was converted into one of the Navy\u0027s first aircraft carriers during construction to comply with the terms of the Washington Naval Treaty of 1922, which essentially terminated all new battleship and battlecruiser construction. The ship entered service in 1928 and was assigned to...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/94/USS_Lexington_%28CV-2%29_leaving_San_Diego_on_14_October_1941_%2880-G-416362%29.jpg/960px-USS_Lexington_%28CV-2%29_leaving_San_Diego_on_14_October_1941_%2880-G-416362%29.jpg"
+  },
+  "USS Saratoga": {
+    "Name": "USS Saratoga",
+    "Description": "USS Saratoga (CV-3) was a Lexington-class aircraft carrier built for the United States Navy during the 1920s. Originally designed as a battlecruiser, she was converted into one of the Navy\u0027s first aircraft carriers during construction to comply with the Washington Naval Treaty of 1922. The ship entered service in 1928 and was assigned to the Pacific Fleet for her entire career. Saratoga and her sister ship, Lexington, were used to develop and refine carrier tactics in  a series of annual exercises...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7f/USS_Saratoga_%28CV-3%29_underway%2C_circa_in_1942_%2880-G-K-459%29.jpg/960px-USS_Saratoga_%28CV-3%29_underway%2C_circa_in_1942_%2880-G-K-459%29.jpg"
+  },
+  "HMS Ark Royal": {
+    "Name": "HMS Ark Royal",
+    "Description": "HMS Ark Royal (pennant number 91) was an aircraft carrier of the Royal Navy that operated during the Second World War.\nDesigned in 1934 to fit the restrictions of the Washington Naval Treaty, Ark Royal was built by Cammell Laird at Birkenhead, England, and completed in November 1938. Her design differed from previous aircraft carriers. Ark Royal was the first ship on which the hangars and flight deck were an integral part of the hull, instead of an add-on or part of the superstructure. Designed to...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f1/HMS_Ark_Royal_h79167.jpg/960px-HMS_Ark_Royal_h79167.jpg"
+  },
+  "HMS Formidable": {
+    "Name": "HMS Formidable",
+    "Description": "HMS Formidable was an Illustrious-class aircraft carrier ordered for the Royal Navy before the Second World War. After being completed in late 1940, she was briefly assigned to the Home Fleet before being transferred to the Mediterranean Fleet as a replacement for her crippled sister ship Illustrious. Formidable\u0027s aircraft played a key role in the Battle of Cape Matapan in early 1941, and they subsequently provided cover for Allied ships and attacked Axis forces until their carrier was badly damaged...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/c/ca/HMS_Formidable_underway_in_1942.jpg"
+  },
+  "HMS Victorious": {
+    "Name": "HMS Victorious",
+    "Description": "HMS Victorious was the third Illustrious-class aircraft carrier after Illustrious and Formidable.  Ordered under the 1936 Naval Programme, she was laid down at the Vickers-Armstrong shipyard at Newcastle upon Tyne in 1937 and launched two years later in 1939. Her commissioning was delayed until 1941 due to the greater need for escort vessels for service in the Battle of the Atlantic.\nHer service in 1941 and 1942 included famous actions against the battleship Bismarck, several Arctic convoys, and...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4b/HMS_Victorious_%28R38%29_aerial_c1959.jpeg/960px-HMS_Victorious_%28R38%29_aerial_c1959.jpeg"
+  },
+  "Shokaku": {
+    "Name": "Shokaku",
+    "Description": "",
+    "ImageUrl": ""
+  },
+  "Zuikaku": {
+    "Name": "Zuikaku",
+    "Description": "Zuikaku (Japanese: \u745E\u9DB4; meaning \u0022Auspicious Crane\u0022) was the second and last Sh\u014Dkaku-class aircraft carrier built for the Imperial Japanese Navy (IJN) shortly before the beginning of the Pacific War. Zuikaku was one of the most modern Japanese aircraft carriers when commissioned, and saw successful action throughout numerous battles during the Pacific War.\nZuikaku started the war as part of Kid\u014D Butai. Her aircraft struck airfields during the attack on Pearl Harbor that formally brought the United...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2b/Japanese.aircraft.carrier.zuikaku.jpg/960px-Japanese.aircraft.carrier.zuikaku.jpg"
+  },
+  "HMS Exeter": {
+    "Name": "HMS Exeter",
+    "Description": "HMS Exeter was the second and last York-class heavy cruiser built for the Royal Navy during the late 1920s. Aside from a temporary deployment with the Mediterranean Fleet during the Abyssinia Crisis of 1935\u20131936, she spent the bulk of the 1930s assigned to the Atlantic Fleet or the North America and West Indies Station. When World War II began in September 1939, the cruiser was assigned to patrol South American waters against German commerce raiders. Exeter was one of three British cruisers that...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0e/HMS_Exeter_%2868%29_off_Coco_Solo_c1939.jpg/960px-HMS_Exeter_%2868%29_off_Coco_Solo_c1939.jpg"
+  },
+  "USS Baltimore": {
+    "Name": "USS Baltimore",
+    "Description": "USS Baltimore (CA-68) was the lead ship of her class of heavy cruiser, the fifth ship of the United States Navy named after the city of Baltimore, Maryland.",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/92/USS_Baltimore_%28CA-68%29_off_the_Mare_Island_Naval_Shipyard_on_18_October_1944_%28NH_91462%29_%28cropped%29.jpg/960px-USS_Baltimore_%28CA-68%29_off_the_Mare_Island_Naval_Shipyard_on_18_October_1944_%28NH_91462%29_%28cropped%29.jpg"
+  },
+  "USS Fletcher": {
+    "Name": "USS Fletcher",
+    "Description": "USS Fletcher (DD/DDE-445), named for Admiral Frank Friday Fletcher, was the lead Fletcher-class destroyer, and served in the Pacific during World War II. She received fifteen battle stars for World War II service, and five for Korean War service.\nFletcher was laid down by the Federal Shipbuilding and Dry Dock Company, Kearny, New Jersey, on 2 October 1941. She was launched on 3 May 1942; sponsored by Mrs. F. F. Fletcher, widow of Admiral Fletcher; and commissioned on 30 June 1942.",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/06/USS_Fletcher_%28DD-445%29_underway_at_sea%2C_circa_the_1960s_%28NH_68912%29.jpg/960px-USS_Fletcher_%28DD-445%29_underway_at_sea%2C_circa_the_1960s_%28NH_68912%29.jpg"
+  },
+  "USS Indianapolis": {
+    "Name": "USS Indianapolis",
+    "Description": "USS Indianapolis (CL/CA-35) was a Portland-class heavy cruiser of the United States Navy, named for the city of Indianapolis, Indiana. Launched in 1931, she was the flagship of the commander of Scouting Force 1 for eight years, then flagship for Admiral Raymond Spruance from 1943 to 1945 while he commanded the Fifth Fleet in battles across the Central Pacific during World War II.\nIn July 1945, Indianapolis completed a top-secret high-speed trip to deliver uranium and other components for \u0022Little...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a9/USS_Indianapolis_%28CA-35%29_underway_at_sea_on_27_September_1939_%2880-G-425615%29.jpg/960px-USS_Indianapolis_%28CA-35%29_underway_at_sea_on_27_September_1939_%2880-G-425615%29.jpg"
+  },
+  "USS Johnston": {
+    "Name": "USS Johnston",
+    "Description": "USS Johnston (DD-557) was a Fletcher-class destroyer built for the United States Navy during World War II. She was named after Lieutenant John V. Johnston, an officer of the US Navy during the American Civil War. Johnston was laid down in May 1942 and was launched on 25 March 1943. She entered active duty on 27 October 1943 under the command of Lieutenant Commander Ernest E. Evans and was assigned to the US Pacific Fleet. Johnston provided naval gunfire support for American ground forces during the...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/USS_Johnston_%28DD-557%29_underway_on_27_October_1943_%28NH_63495%29.jpg/960px-USS_Johnston_%28DD-557%29_underway_on_27_October_1943_%28NH_63495%29.jpg"
+  },
+  "HMS Cossack": {
+    "Name": "HMS Cossack",
+    "Description": "HMS Cossack was a Tribal-class destroyer named after the Cossack people of the Eurasian steppe.  She became famous for the boarding of the German supply ship Altmark in Norwegian waters, and the associated rescue of sailors originally captured by the Admiral Graf Spee. She was torpedoed by the German submarine U-563 on 23 October 1941, and sank four days later.\n\n",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/0/0f/HMS_Cossack.jpg"
+  },
+  "HMS Prince of Wales": {
+    "Name": "HMS Prince of Wales",
+    "Description": "HMS Prince of Wales was a King George V-class battleship of the Royal Navy that was built at the Cammell Laird shipyard in Birkenhead. Despite being sunk less than a year after she was commissioned, Prince of Wales had an extensive battle history, first seeing action in August 1940 while still being outfitted in her drydock, when she was attacked and damaged by German aircraft. In her brief career, she was involved in several key actions of the Second World War, including the May 1941 Battle of the...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f9/HMS_Prince_Of_Wales_in_Singapore.jpg/960px-HMS_Prince_Of_Wales_in_Singapore.jpg"
+  },
+  "HMS Repulse": {
+    "Name": "HMS Repulse",
+    "Description": "HMS Repulse was one of two Renown-class battlecruisers built for the Royal Navy during the First World War. Originally laid down as an improved version of the Revenge-class battleship, her construction was suspended on the outbreak of war because she would not be ready in time. Admiral Lord Fisher, upon becoming First Sea Lord, gained approval for her to resume construction as a battlecruiser that could be built and enter service quickly. The Director of Naval Construction (DNC), Eustace Tennyson...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/77/Renown-7.jpg/960px-Renown-7.jpg"
+  },
+  "HMS Warspite": {
+    "Name": "HMS Warspite",
+    "Description": "HMS Warspite was one of five Queen Elizabeth-class battleships built for the Royal Navy during the early 1910s. Completed during the First World War in 1915, she was assigned to the Grand Fleet and participated in the Battle of Jutland. Other than that battle, and the inconclusive Action of 19 August, her service during the war generally consisted of routine patrols and training in the North Sea. During the interwar period the ship was deployed in the Atlantic Ocean and the Mediterranean Sea, often...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c0/HMS_Warspite%2C_Indian_Ocean_1942.jpg/960px-HMS_Warspite%2C_Indian_Ocean_1942.jpg"
+  },
+  "USS Hoel": {
+    "Name": "USS Hoel",
+    "Description": "USS Hoel (DD-533) was a Fletcher-class destroyer built for the United States Navy during World War II. She was named after Lieutenant Commander William R. Hoel. Commissioned in 1943, she is famous for helping to fend off a much larger Japanese center force at the Battle off Samar during the Battle of Leyte Gulf on 25 October 1944. She most notably assisted in forcing the battleship Yamato to retire from the battle with torpedo strikes. However, she did not live to tell the tale, first being crippled...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7b/USS_Hoel_%28DD-533%29_off_San_Francisco%2C_3_August_1943.jpg/960px-USS_Hoel_%28DD-533%29_off_San_Francisco%2C_3_August_1943.jpg"
+  },
+  "Akagi": {
+    "Name": "Akagi",
+    "Description": "Akagi (Japanese: \u8D64\u57CE; \u0022Red castle\u0022, named after Mount Akagi) was an aircraft carrier built for the Imperial Japanese Navy (IJN). Though she was laid down as an Amagi-class battlecruiser, Akagi was converted to an aircraft carrier while still under construction to comply with the terms of the Washington Naval Treaty. The ship was rebuilt from 1935 to 1938 with her original three flight decks consolidated into a single enlarged flight deck and an island superstructure. The second Japanese aircraft carrier...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/7/7b/AkagiDeckApril42.jpg"
+  },
+  "Kaga": {
+    "Name": "Kaga",
+    "Description": "Kaga (Japanese: \u52A0\u8CC0; named after the ancient Kaga Province) was an aircraft carrier built for the Imperial Japanese Navy (IJN). Originally intended to be one of two Tosa-class battleships, Kaga was converted under the terms of the Washington Naval Treaty to an aircraft carrier as the replacement for the battlecruiser Amagi, which had been irreparably damaged during the 1923 Great Kant\u014D earthquake. Kaga was rebuilt in 1933\u20131935, increasing her top speed, improving her exhaust systems, and adapting...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0e/Japanese_Navy_Aircraft_Carrier_Kaga.jpg/960px-Japanese_Navy_Aircraft_Carrier_Kaga.jpg"
+  },
+  "Soryu": {
+    "Name": "Soryu",
+    "Description": "",
+    "ImageUrl": ""
+  },
+  "USS Ranger": {
+    "Name": "USS Ranger",
+    "Description": "USS Ranger (CV-4) was an interwar United States Navy aircraft carrier, the only ship of its class.  A Treaty ship, Ranger was the first U.S. vessel to be designed and built from the keel up as a carrier.  She was relatively small, just 730 ft (220 m) long and under 15,000 tons, closer in size and displacement to the first US carrier\u2014Langley\u2014than later ships. An island superstructure was not included in the original design, but was added after completion.\nDeemed too slow for use with the Pacific Fleet...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6f/USS_Ranger_%28CV-4%29_underway_at_sea_during_the_later_1930s.jpg/960px-USS_Ranger_%28CV-4%29_underway_at_sea_during_the_later_1930s.jpg"
+  },
+  "USS Wasp": {
+    "Name": "USS Wasp",
+    "Description": "USS Wasp (CV-7) was a United States Navy aircraft carrier commissioned in 1940 and lost in action in 1942. She was the eighth ship named USS Wasp, and the sole ship of a class built to use up the remaining tonnage allowed to the U.S. for aircraft carriers under the treaties of the time. As a reduced-size version of the Yorktown-class aircraft carrier hull, Wasp was more vulnerable than other United States aircraft carriers available at the opening of hostilities. Wasp was initially employed in the...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/85/USS_Wasp_%28CV-7%29_entering_Hampton_Roads_on_26_May_1942.jpg/960px-USS_Wasp_%28CV-7%29_entering_Hampton_Roads_on_26_May_1942.jpg"
+  },
+  "Gneisenau": {
+    "Name": "Gneisenau",
+    "Description": "Gneisenau (German pronunciation: [\u02C8\u0261na\u026A\u032Fz\u0259na\u028A\u032F]) was a German capital ship, alternatively described as a battleship and battlecruiser, in Nazi Germany\u0027s Kriegsmarine. She was the second vessel of her class, which included her sister ship, Scharnhorst. The ship was built at the Deutsche Werke dockyard in Kiel; she was laid down on 6 May 1935 and launched on 8 December 1936. Her outfitting was completed in May 1938: she was armed with a main battery of nine 28 cm (11 in) C/34 guns in three triple turrets...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/9/98/Bundesarchiv_DVM_10_Bild-23-63-21%2C_Schlachtschiff_%22Gneisenau%22.jpg"
+  },
+  "Scharnhorst": {
+    "Name": "Scharnhorst",
+    "Description": "Scharnhorst was a German capital ship, alternatively described as a battleship or battlecruiser, of Nazi Germany\u0027s Kriegsmarine. She was the lead ship of her class, which included her sister ship Gneisenau. The ship was built at the Kriegsmarinewerft dockyard in Wilhelmshaven; she was laid down on 15 June 1935 and launched a year and four months later on 3 October 1936. Completed in January 1939, the ship was armed with a main battery of nine 28 cm (11 in) C/34 guns in three triple turrets. Plans...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/3/34/Bundesarchiv_DVM_10_Bild-23-63-07%2C_Schlachtschiff_%22Scharnhorst%22.jpg"
+  },
+  "Admiral Graf Spee": {
+    "Name": "Admiral Graf Spee",
+    "Description": "Admiral Graf Spee (German pronunciation: [admi\u02C8\u0281a\u02D0l \u0261\u0281\u00E4\u02D0f \u0283pe\u02D0]) was a Deutschland-class Panzerschiff (armored ship, nicknamed \u0022pocket battleships\u0022 by the British) which served with the Kriegsmarine of Nazi Germany during World War II. The vessel was named after World War I Admiral Maximilian von Spee, commander of the East Asia Squadron who fought the battles of Coronel and the Falkland Islands, where he was killed in action. She was laid down at the Reichsmarinewerft shipyard in Wilhelmshaven in...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/b/b0/Bundesarchiv_DVM_10_Bild-23-63-06%2C_Panzerschiff_%22Admiral_Graf_Spee%22.jpg"
+  },
+  "Hiryu": {
+    "Name": "Hiryu",
+    "Description": "",
+    "ImageUrl": ""
+  },
+  "USS San Francisco": {
+    "Name": "USS San Francisco",
+    "Description": "USS San Francisco (CL/CA-38), a New Orleans-class cruiser, was the second ship of three of the United States Navy named after the city of San Francisco, California. Commissioned in 1934, she was one of the most decorated ships of World War II, earning 17 battle stars and the Presidential Unit Citation.\nLike most of her sister ships, she saw extensive action during the Guadalcanal campaign, including the Battle of Cape Esperance and the Naval Battle of Guadalcanal, during which she was heavily damaged...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d9/USS_San_Francisco_%28CA-38%29_off_the_Mare_Island_Naval_Shipyard_on_13_October_1944_%2819-N-73588%29.jpg/960px-USS_San_Francisco_%28CA-38%29_off_the_Mare_Island_Naval_Shipyard_on_13_October_1944_%2819-N-73588%29.jpg"
+  },
+  "HMS Sheffield": {
+    "Name": "HMS Sheffield",
+    "Description": "HMS Sheffield was the third of ten Town-class light cruisers of the Royal Navy. The ship was laid down in January 1935, launched in July 1936, and commissioned in August 1937. She was active in all major naval European theatres of the Second World War, in the Atlantic Ocean, the Mediterranean Sea and the Arctic Ocean.\nHer career started with service in the Home Fleet, which took her on patrols against German blockade runners and on actions during the Norwegian Campaign. In August 1940, Sheffield...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3e/HMS_Sheffield.jpg/960px-HMS_Sheffield.jpg"
+  },
+  "USS Helena": {
+    "Name": "USS Helena",
+    "Description": "USS Helena was a Brooklyn-class light cruiser built for the United States Navy in the late 1930s, the ninth and final member of the class. The Brooklyns were the first modern light cruisers built by the US Navy under the limitations of the London Naval Treaty, and they were intended to counter the Japanese Mogami class; as such, they carried a battery of fifteen 6-inch (150 mm) guns, the same gun armament carried by the Mogamis. Helena and her sister St. Louis were built to a slightly modified design...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/65/USS_Helena_NH_95812.jpg/960px-USS_Helena_NH_95812.jpg"
+  },
+  "USS North Carolina": {
+    "Name": "USS North Carolina",
+    "Description": "USS North Carolina, hull number BB-55, is the lead ship of the North Carolina class of fast battleships, the first vessel of the type built for the United States Navy. Built under the Washington Treaty system, North Carolina\u0027s design was limited in displacement and armament, though the United States used a clause in the Second London Naval Treaty to increase the main battery from the original armament of twelve 14-inch (356 mm) guns in quadruple turrets to nine 16 in (406 mm) guns in triple turrets...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7f/USS_North_Carolina_NYNY_11306-6-46.jpg/960px-USS_North_Carolina_NYNY_11306-6-46.jpg"
+  },
+  "USS South Dakota": {
+    "Name": "USS South Dakota",
+    "Description": "USS South Dakota, hull number BB-57, was the lead vessel of the four South Dakota-class fast battleships built for the United States Navy in the 1930s. The first American battleships designed after the Washington treaty system began to break down in the mid-1930s, the South Dakotas were able to take advantage of a treaty clause that allowed them to increase the main battery to 16-inch (406 mm) guns. However, congressional refusal to authorize larger battleships kept their displacement close to the...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/40/USS_South_Dakota_%28BB-57%29_off_the_Norfolk_Naval_Shipyard_on_20_August_1943_%28NH_97264%29.jpg/960px-USS_South_Dakota_%28BB-57%29_off_the_Norfolk_Naval_Shipyard_on_20_August_1943_%28NH_97264%29.jpg"
+  },
+  "USS Washington": {
+    "Name": "USS Washington",
+    "Description": "USS Washington, hull number BB-56, was the second and final member of the North Carolina class of fast battleships, the first vessel of the type built for the United States Navy. Built under the Washington Treaty system, North Carolina\u0027s design was limited in displacement and armament, though the United States used a clause in the Second London Naval Treaty to increase the main battery from the original armament of nine 14 in (356 mm) guns to nine 16 in (406 mm) guns. The ship was laid down in 1938...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/22/USS_Washington_%28BB-56%29_in_Puget_Sound%2C_10_September_1945.jpg/960px-USS_Washington_%28BB-56%29_in_Puget_Sound%2C_10_September_1945.jpg"
+  },
+  "HMS King George V": {
+    "Name": "HMS King George V",
+    "Description": "HMS King George V (pennant number 41) was the lead ship of the five British King George V-class battleships of the Royal Navy. Laid down in 1937 and commissioned in 1940, King George V operated during the Second World War in all three major naval theatres of war, the Atlantic, Mediterranean and Pacific, as part of the British Home Fleet and Pacific Fleets. In May 1941, along with HMS Rodney, King George V was involved in the hunt for and pursuit of the German battleship Bismarck, eventually inflicting...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/King_George_V_class_battleship_1945.jpg/960px-King_George_V_class_battleship_1945.jpg"
+  },
+  "HMS Rodney": {
+    "Name": "HMS Rodney",
+    "Description": "HMS Rodney was one of two Nelson-class battleships built for the Royal Navy in the mid-1920s. The ship entered service in 1928, and spent her peacetime career with the Atlantic and Home Fleets, sometimes serving as a flagship when her sister ship, Nelson, was being refitted. During the early stages of the Second World War, she searched for German commerce raiders, participated in the Norwegian Campaign, and escorted convoys in the Atlantic Ocean. Rodney played a major role in the sinking of the German...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/81/HMS_Rodney_after_refitting_at_Liverpool.jpg/960px-HMS_Rodney_after_refitting_at_Liverpool.jpg"
+  },
+  "USS Essex": {
+    "Name": "USS Essex",
+    "Description": "USS Essex (CV/CVA/CVS-9) was an aircraft carrier and the lead ship of the 24-ship Essex class built for the United States Navy during World War II. She was the fourth US Navy ship to bear the name. Commissioned in December 1942, Essex participated in several campaigns in the Pacific Theater of Operations, earning the Presidential Unit Citation and 13 battle stars. Decommissioned shortly after the war, she was modernized and recommissioned in the early 1950s as an attack carrier (CVA), eventually...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/53/USS_Essex_CVS-9_June_1967.jpg/960px-USS_Essex_CVS-9_June_1967.jpg"
+  },
+  "USS Franklin": {
+    "Name": "USS Franklin",
+    "Description": "USS Franklin (CV/CVA/CVS-13, AVT-8), nicknamed \u0022Big Ben,\u0022 was one of 24 Essex-class aircraft carriers built during World War II for the United States Navy, and the fifth US Navy ship to bear the name. Commissioned in January 1944, she served in several campaigns in the Pacific War, earning four battle stars. In March 1945, while launching strikes against the Japanese mainland, she was badly damaged when a single Japanese dive bomber struck her with two bombs. The attack resulted in the loss of 807...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/98/USS_Franklin_%28CV-13%29_in_the_Elizabeth_River%2C_off_Norfolk%2C_Virginia_%28USA%29%2C_21_February_1944_%2880-G-224596%29.jpg/960px-USS_Franklin_%28CV-13%29_in_the_Elizabeth_River%2C_off_Norfolk%2C_Virginia_%28USA%29%2C_21_February_1944_%2880-G-224596%29.jpg"
+  },
+  "USS Intrepid": {
+    "Name": "USS Intrepid",
+    "Description": "USS Intrepid (CV/CVA/CVS-11), also known as The Fighting \u0022I\u0022, is one of 24 Essex-class aircraft carriers built during World War II for the United States Navy. It is the fourth US Navy ship to bear the name. Commissioned in August 1943, Intrepid participated in several campaigns in the Pacific Theater of Operations, including the Battle of Leyte Gulf.\nDecommissioned shortly after the end of the war, it was modernized and recommissioned in the early 1950s as an attack carrier (CVA), and then eventually...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/23/USS_Intrepid_%28CVS-11%29_underway_in_the_South_China_Sea_on_17_October_1968_%28NNMA.1996.488.244.058%29.jpg/960px-USS_Intrepid_%28CVS-11%29_underway_in_the_South_China_Sea_on_17_October_1968_%28NNMA.1996.488.244.058%29.jpg"
+  },
+  "HMS Ajax": {
+    "Name": "HMS Ajax",
+    "Description": "HMS Ajax was a Leander-class light cruiser which served with the Royal Navy during World War II. She became famous for her part in the Battle of the River Plate, the Battle of Crete, the Battle of Malta and as a supply escort in the siege of Tobruk. This ship was the eighth in the Royal Navy to bear the name. In February 1942, she was adopted by the civil community of Halifax, West Yorkshire.",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/8/86/HMS_Ajax.jpg"
+  },
+  "HMS Hermes": {
+    "Name": "HMS Hermes",
+    "Description": "HMS Hermes was a British aircraft carrier built for the Royal Navy and was the world\u0027s first ship to be designed as an aircraft carrier, although the Imperial Japanese Navy\u0027s H\u014Dsh\u014D was the first to be commissioned. The ship\u0027s construction began during the First World War, but she was not completed until after the end of the war, having been delayed by multiple changes in her design after she was laid down. After she was launched, the Armstrong Whitworth shipyard which built her closed, and her fitting...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7c/HMS_Hermes_%2895%29_off_Yantai_China_c1931.jpeg/960px-HMS_Hermes_%2895%29_off_Yantai_China_c1931.jpeg"
+  },
+  "USS Gambier Bay": {
+    "Name": "USS Gambier Bay",
+    "Description": "",
+    "ImageUrl": ""
+  },
+  "USS Quincy": {
+    "Name": "USS Quincy",
+    "Description": "USS Quincy (CL/CA-39) was a United States Navy New Orleans-class cruiser, sunk at the Battle of Savo Island in 1942.",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/fa/USS_Quincy_%28CA-39%29_in_New_York_harbour_on_23_May_1942_%2819-N-30732%29.jpg/960px-USS_Quincy_%28CA-39%29_in_New_York_harbour_on_23_May_1942_%2819-N-30732%29.jpg"
+  },
+  "USS Vincennes": {
+    "Name": "USS Vincennes",
+    "Description": "USS Vincennes (CL/CA-44) was a United States Navy New Orleans-class cruiser, sunk at the Battle of Savo Island in 1942. She was the second ship to bear the name.\nShe was laid down on 2 January 1934 at Quincy, Massachusetts, by the Bethlehem Shipbuilding Company\u0027s Fore River plant, launched on 21 May 1936, sponsored by Miss Harriet Virginia Kimmell (daughter of Joseph Kimmell, mayor of Vincennes, Indiana), and commissioned on 24 February 1937, Captain Burton H. Green in command.\nThe New Orleans-class...",
+    "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9f/USS_Vincennes_%28CA-44%29_in_Panama_Canal_1938.jpg/960px-USS_Vincennes_%28CA-44%29_in_Panama_Canal_1938.jpg"
+  },
+  "HMS Achilles": {
+    "Name": "HMS Achilles",
+    "Description": "",
+    "ImageUrl": ""
+  }
+}

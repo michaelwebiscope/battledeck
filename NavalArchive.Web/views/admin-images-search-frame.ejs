@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title><%= title %></title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 12px; background: #1a1a2e; color: #eee; }
+    .search-bar { display: flex; gap: 8px; margin-bottom: 12px; }
+    .search-bar input { flex: 1; padding: 8px 12px; border-radius: 6px; border: 1px solid #444; background: #16213e; color: #eee; }
+    .search-bar select { padding: 8px 12px; border-radius: 6px; border: 1px solid #444; background: #16213e; color: #eee; min-width: 120px; }
+    .search-bar button { padding: 8px 16px; background: #0f3460; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+    .search-bar button:hover { background: #1a4a7a; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+    .grid-item { cursor: pointer; border: 2px solid transparent; border-radius: 8px; overflow: hidden; transition: border-color 0.2s; }
+    .grid-item:hover { border-color: #e94560; }
+    .grid-item img { width: 100%; height: 100px; object-fit: cover; display: block; }
+    .status { padding: 8px; color: #888; font-size: 13px; }
+    .error { color: #e94560; }
+  </style>
+</head>
+<body>
+  <div class="search-bar">
+    <input type="text" id="queryInput" placeholder="Search images (e.g. Bismarck battleship)" value="<%= query %>" autofocus>
+    <select id="providerSelect" title="Search provider">
+      <option value="">All (fallback)</option>
+      <option value="Wikipedia">Wikipedia</option>
+      <option value="Pexels">Pexels</option>
+      <option value="Pixabay">Pixabay</option>
+      <option value="Unsplash">Unsplash</option>
+      <option value="Google">Google</option>
+    </select>
+    <button id="searchBtn">Search</button>
+  </div>
+  <div id="status" class="status"></div>
+  <div id="grid" class="grid"></div>
+
+  <script>
+    (function() {
+      var entity = '<%= entity %>';
+      var entityId = '<%= entityId %>';
+      var queryInput = document.getElementById('queryInput');
+      var searchBtn = document.getElementById('searchBtn');
+      var status = document.getElementById('status');
+      var grid = document.getElementById('grid');
+
+      function getKeys() {
+        try {
+          return JSON.parse(sessionStorage.getItem('adminImageKeys') || '{}');
+        } catch (e) { return {}; }
+      }
+
+      function sendImageToParent(url) {
+        if (window.opener) {
+          window.opener.postMessage({ type: 'imageSelected', entity: entity, entityId: entityId, url: url }, '*');
+          window.close();
+        } else {
+          window.parent.postMessage({ type: 'imageSelected', entity: entity, entityId: entityId, url: url }, '*');
+        }
+      }
+
+      function search() {
+        var q = queryInput.value.trim() || 'battleship';
+        var provider = (document.getElementById('providerSelect') || {}).value || '';
+        status.textContent = 'Searching...';
+        grid.innerHTML = '';
+        if (provider === 'Wikipedia') {
+          fetch('/api/wikipedia/search?q=' + encodeURIComponent(q) + '&limit=12')
+            .then(function(r) { return r.json(); })
+            .then(function(pages) {
+              if (!Array.isArray(pages)) { status.textContent = 'Error: ' + (pages.error || 'Invalid response'); status.className = 'status error'; return; }
+              status.textContent = pages.length + ' Wikipedia pages. Click to fetch image for that page.';
+              status.className = 'status';
+              pages.forEach(function(p) {
+                var title = p.title || p.Title || '';
+                var snippet = (p.snippet || p.Snippet || '').replace(/<[^>]+>/g, '');
+                var div = document.createElement('div');
+                div.className = 'grid-item';
+                div.style = 'display: flex; flex-direction: column; padding: 8px; min-height: 80px;';
+                var titleEl = document.createElement('div');
+                titleEl.className = 'small fw-bold';
+                titleEl.textContent = title;
+                titleEl.style = 'margin-bottom: 4px; line-height: 1.2;';
+                var snipEl = document.createElement('div');
+                snipEl.className = 'small text-muted';
+                snipEl.textContent = snippet.length > 80 ? snippet.substring(0, 80) + '…' : snippet;
+                snipEl.style = 'font-size: 11px; line-height: 1.2;';
+                div.appendChild(titleEl);
+                div.appendChild(snipEl);
+                div.onclick = function() {
+                  status.textContent = 'Fetching image for ' + title + '...';
+                  fetch('/api/wikipedia/image?title=' + encodeURIComponent(title))
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                      var url = data.imageUrl || data.ImageUrl;
+                      if (url) sendImageToParent(url);
+                      else { status.textContent = 'No image found for this page.'; status.className = 'status error'; }
+                    })
+                    .catch(function(e) {
+                      status.textContent = 'Error: ' + e.message;
+                      status.className = 'status error';
+                    });
+                };
+                grid.appendChild(div);
+              });
+            })
+            .catch(function(e) {
+              status.textContent = 'Error: ' + e.message;
+              status.className = 'status error';
+            });
+          return;
+        }
+        var keys = getKeys();
+        fetch('/api/images/search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: q, maxCount: 16, provider: provider || undefined, ...keys })
+        }).then(function(r) { return r.json(); })
+          .then(function(urls) {
+            if (!Array.isArray(urls)) { status.textContent = 'Error: ' + (urls.error || 'Invalid response'); status.className = 'status error'; return; }
+            status.textContent = urls.length + ' results. Click to select.';
+            status.className = 'status';
+            urls.forEach(function(url) {
+              var div = document.createElement('div');
+              div.className = 'grid-item';
+              var img = document.createElement('img');
+              img.src = url;
+              img.alt = '';
+              img.onerror = function() { div.style.display = 'none'; };
+              div.appendChild(img);
+              div.onclick = function() { sendImageToParent(url); };
+              grid.appendChild(div);
+            });
+          })
+          .catch(function(e) {
+            status.textContent = 'Error: ' + e.message;
+            status.className = 'status error';
+          });
+      }
+
+      searchBtn.onclick = search;
+      queryInput.onkeydown = function(e) { if (e.key === 'Enter') search(); };
+    })();
+  </script>
+</body>
+</html>

@@ -14,30 +14,20 @@
           <li class="breadcrumb-item active"><%= captain.name %></li>
         </ol>
       </nav>
-      <div class="row">
-        <div class="col-lg-4 mb-4">
-          <div class="card">
-            <% if (captain.imageUrl && captain.imageUrl.startsWith('http')) { %>
-              <img src="<%= captain.imageUrl %>" class="card-img-top" alt="<%= captain.name %>" style="height: 280px; object-fit: cover;" onerror="this.onerror=null;this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22280%22%3E%3Crect fill=%22%236c757d%22 width=%22200%22 height=%22280%22/%3E%3Ctext fill=%22%23fff%22 x=%22100%22 y=%22140%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-size=%2212%22%3ENo photo%3C/text%3E%3C/svg%3E';">
-            <% } else { %>
-              <div class="card-img-top bg-secondary d-flex align-items-center justify-content-center" style="height: 280px;">
-                <span class="text-white-50"><%= captain.name %></span>
-              </div>
-            <% } %>
-          </div>
-        </div>
-        <div class="col-lg-8">
-      <h1 class="mb-2"><%= captain.name %></h1>
-      <p class="text-muted mb-4"><%= captain.rank %> · <%= captain.serviceYears %> years of service</p>
-      <h3 class="mb-3">Ships Commanded</h3>
+      <%
+        var captainEntity = toEntity(captain, 'captain');
+      %>
+      <%- include('partials/entity-detail', { entity: captainEntity, imageHeight: 280, editButtonId: 'captainEditBtn' }) %>
+      <h3 class="mb-3 mt-4">Ships Commanded</h3>
       <div class="table-responsive">
         <table class="table table-hover">
           <thead class="table-light">
-            <tr>
-              <th>Ship</th>
-              <th>Year Commissioned</th>
-              <th></th>
-            </tr>
+                <tr>
+                  <th>Ship</th>
+                  <th>Year Commissioned</th>
+                  <th></th>
+                  <th class="admin-only"></th>
+                </tr>
           </thead>
           <tbody>
             <% if (captain.ships && captain.ships.length > 0) { %>
@@ -46,19 +36,115 @@
                   <td><strong><%= ship.name %></strong></td>
                   <td><%= ship.yearCommissioned %></td>
                   <td><a href="/ships/<%= ship.id %>" class="btn btn-outline-dark btn-sm">Details</a></td>
+                  <td class="admin-only"><a href="/ships/<%= ship.id %>" class="btn btn-outline-secondary btn-sm">Edit</a></td>
                 </tr>
               <% }); %>
             <% } else { %>
-              <tr><td colspan="3" class="text-center text-muted py-3">No ships on record.</td></tr>
+              <tr><td colspan="4" class="text-center text-muted py-3">No ships on record.</td></tr>
             <% } %>
           </tbody>
         </table>
-      </div>
-        </div>
       </div>
     </div>
   </main>
   <%- include('partials/footer') %>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <%- include('partials/image-lightbox') %>
+
+  <div id="captainEditModal" class="modal fade" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Edit Captain</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div id="captainEditFormPane">
+            <div class="mb-3">
+              <label class="form-label">Name</label>
+              <input type="text" class="form-control" id="captainEditName" value="<%= captain.name || '' %>">
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Rank</label>
+              <input type="text" class="form-control" id="captainEditRank" value="<%= captain.rank || '' %>">
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Years of Service</label>
+              <input type="number" class="form-control" id="captainEditYears" value="<%= captain.serviceYears %>">
+            </div>
+            <div class="mb-3">
+              <button type="button" class="btn btn-outline-secondary" id="captainEditImageBtn">Change Image</button>
+            </div>
+            <button type="button" class="btn btn-modern" id="captainEditSaveBtn">Save</button>
+          </div>
+          <div id="captainEditSearchPane" style="display: none;">
+            <button type="button" class="btn btn-outline-secondary btn-sm mb-2" id="captainEditSearchBack">← Back</button>
+            <iframe id="captainEditSearchFrame" style="width:100%; height: 400px; border: 1px solid #ddd; border-radius: 6px;"></iframe>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  (function() {
+    var captainId = <%= captain.id %>;
+    var modal = document.getElementById('captainEditModal');
+    var formPane = document.getElementById('captainEditFormPane');
+    var searchPane = document.getElementById('captainEditSearchPane');
+    var frame = document.getElementById('captainEditSearchFrame');
+    if (!modal) return;
+
+    document.getElementById('captainEditBtn').addEventListener('click', function() {
+      new bootstrap.Modal(modal).show();
+    });
+
+    document.getElementById('captainEditSaveBtn').addEventListener('click', function() {
+      var name = document.getElementById('captainEditName').value.trim();
+      var rank = document.getElementById('captainEditRank').value.trim();
+      var years = parseInt(document.getElementById('captainEditYears').value, 10) || 0;
+      fetch('/api/captains/' + captainId, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name, rank: rank, serviceYears: years })
+      }).then(function(r) {
+        if (!r.ok) return r.json().then(function(j) { throw new Error(j.error || j.message || 'Save failed'); });
+        return r.json();
+      }).then(function() {
+        bootstrap.Modal.getInstance(modal).hide();
+        location.reload();
+      }).catch(function(err) { alert('Save failed: ' + err.message); });
+    });
+
+    document.getElementById('captainEditImageBtn').addEventListener('click', function() {
+      formPane.style.display = 'none';
+      searchPane.style.display = 'block';
+      var q = encodeURIComponent((document.getElementById('captainEditName').value || 'admiral') + ' portrait');
+      frame.src = '/admin/images/search-frame?entity=captain&id=' + captainId + '&q=' + q;
+    });
+
+    document.getElementById('captainEditSearchBack').addEventListener('click', function() {
+      frame.src = 'about:blank';
+      searchPane.style.display = 'none';
+      formPane.style.display = 'block';
+    });
+
+    window.addEventListener('message', function(e) {
+      if (!e.data || e.data.type !== 'imageSelected' || String(e.data.entityId) !== String(captainId)) return;
+      if (e.data.entity !== 'captain') return;
+      fetch('/api/images/captain/' + captainId + '/from-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: e.data.url })
+      }).then(function(r) {
+        if (!r.ok) return r.json().then(function(j) { throw new Error(j.error || j.message || 'Set image failed'); });
+        frame.src = 'about:blank';
+        searchPane.style.display = 'none';
+        formPane.style.display = 'block';
+        location.reload();
+      }).catch(function(err) { alert('Set image failed: ' + err.message); });
+    });
+  })();
+  </script>
 </body>
 </html>

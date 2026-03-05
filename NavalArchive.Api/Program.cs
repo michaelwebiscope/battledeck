@@ -1,5 +1,5 @@
 using Microsoft.EntityFrameworkCore;
-using NavalArchive.Api.Data;
+using NavalArchive.Data;
 using NavalArchive.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -50,34 +50,21 @@ using (var scope = app.Services.CreateScope())
         try { db.Database.ExecuteSqlRaw("ALTER TABLE Ships ADD COLUMN VideoUrl TEXT"); } catch { /* column exists */ }
         try { db.Database.ExecuteSqlRaw("ALTER TABLE Ships ADD COLUMN ImageData BLOB"); } catch { }
         try { db.Database.ExecuteSqlRaw("ALTER TABLE Ships ADD COLUMN ImageContentType TEXT"); } catch { }
+        try { db.Database.ExecuteSqlRaw("ALTER TABLE Ships ADD COLUMN ImageVersion INTEGER DEFAULT 0"); } catch { }
         try { db.Database.ExecuteSqlRaw("ALTER TABLE Captains ADD COLUMN ImageData BLOB"); } catch { }
         try { db.Database.ExecuteSqlRaw("ALTER TABLE Captains ADD COLUMN ImageContentType TEXT"); } catch { }
+        try { db.Database.ExecuteSqlRaw("ALTER TABLE Captains ADD COLUMN ImageVersion INTEGER DEFAULT 0"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE Ships ADD COLUMN ImageManuallySet INTEGER DEFAULT 0"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE Captains ADD COLUMN ImageManuallySet INTEGER DEFAULT 0"); } catch { }
+    // Indexes for fast queries at scale
+    try { db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_Ships_ClassId ON Ships(ClassId)"); } catch { }
+    try { db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_Ships_CaptainId ON Ships(CaptainId)"); } catch { }
+    try { db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_Ships_YearCommissioned ON Ships(YearCommissioned)"); } catch { }
+    try { db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_Ships_Name ON Ships(Name)"); } catch { }
     }
 }
 
-// Fetch data from Wikipedia and genuine war diaries (runs in background)
-_ = Task.Run(async () =>
-{
-    await Task.Delay(2000);
-    try
-    {
-        using var scope = app.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<NavalArchiveDbContext>();
-        var logsDb = scope.ServiceProvider.GetRequiredService<LogsDbContext>();
-        var sync = scope.ServiceProvider.GetRequiredService<DataSyncService>();
-        var logsData = scope.ServiceProvider.GetRequiredService<LogsDataService>();
-        var genuineLogs = scope.ServiceProvider.GetRequiredService<GenuineLogsFetcher>();
-        await sync.SyncFromWikipediaAsync(db);
-        await logsData.RefreshFromWikipediaAsync();
-        await genuineLogs.FetchAndSaveAsync(logsDb);
-        var imageStorage = scope.ServiceProvider.GetRequiredService<ImageStorageService>();
-        await imageStorage.PopulateAllAsync(db);
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"Background sync failed: {ex.Message}");
-    }
-});
+// Wikipedia sync and image populate are manual only (Admin > Image Audit > Populate) to save API calls.
 
 app.UseSwagger();
 app.UseSwaggerUI();

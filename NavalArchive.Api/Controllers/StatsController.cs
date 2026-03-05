@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using NavalArchive.Api.Data;
+using NavalArchive.Data;
 
 namespace NavalArchive.Api.Controllers;
 

@@ -1,0 +1,42 @@
+<%#
+  Entity card partial - reusable card for ships, captains, etc.
+  Entity: { id, name, description?, subtitle?, detailUrl, imageUrl?, imageVersion?, imageGallery?, type? }
+  Options: size (sm|md|lg), showDescription, showSubtitle, variant (default|gallery), cols (col-md-6 col-lg-4)
+-%>
+<%
+  var entity = typeof entity !== 'undefined' ? entity : {};
+  var detailUrl = entity.detailUrl || ('/' + (entity.type || 'ships') + '/' + (entity.id || ''));
+  var imgSize = (typeof size !== 'undefined' && size === 'sm') ? '180' : ((typeof size !== 'undefined' && size === 'lg') ? '240' : '200');
+  var descLen = (typeof showDescription === 'number') ? showDescription : ((typeof showDescription !== 'undefined' && showDescription) ? 80 : 0);
+  var gallery = entity.imageGallery || (entity.type === 'captain' ? 'captain' : 'image');
+  var isGallery = typeof variant !== 'undefined' && variant === 'gallery';
+  var colClass = (typeof cols !== 'undefined' && cols) ? cols : 'col-md-6 col-lg-4';
+%>
+<div class="<%= colClass %>">
+  <div class="card h-100">
+    <div class="card-img-top position-relative" style="height: <%= imgSize %>px; overflow: hidden;<%= isGallery ? ' cursor: pointer;' : '' %>" <% if (isGallery) { %>role="button" data-image-url="<%= entity.imageUrl || ('/gallery/' + gallery + '/' + (entity.id || '') + '?v=' + (entity.imageVersion ?? entity.ImageVersion ?? 0)) %>" data-image-title="<%= (entity.name || '').replace(/"/g, '&quot;') %>" onclick="typeof showImageModal==='function'&&showImageModal(this.dataset.imageUrl, this.dataset.imageTitle)" title="Click to enlarge"<% } %>>
+      <% if (isGallery) { %>
+        <%- include('entity-image', { entity: entity, size: imgSize, imageGallery: gallery }) %>
+      <% } else { %>
+        <a href="<%= detailUrl %>" class="text-decoration-none text-dark d-block" style="height: 100%;">
+          <%- include('entity-image', { entity: entity, size: imgSize, imageGallery: gallery }) %>
+        </a>
+      <% } %>
+    </div>
+    <div class="card-body">
+      <h<%= isGallery ? '6' : '5' %> class="card-title"><%= entity.name || 'Unnamed' %></h<%= isGallery ? '6' : '5' %>>
+      <% if ((typeof showSubtitle === 'undefined' || showSubtitle !== false) && entity.subtitle) { %>
+        <p class="card-text <%= isGallery ? 'small ' : '' %>text-muted mb-1"><%= entity.subtitle %></p>
+      <% } %>
+      <% if (!isGallery) { %>
+        <% if (descLen > 0 && entity.description) { %>
+          <p class="card-text small mb-2"><%= entity.description.length > descLen ? entity.description.substring(0, descLen) + '…' : entity.description %></p>
+        <% } %>
+        <% if (entity.class) { %><p class="card-text small mb-1"><strong>Class:</strong> <%= entity.class.name %> · <%= entity.class.type %> · <%= entity.class.country %></p><% } %>
+        <% if (entity.captain) { %><p class="card-text small mb-2"><strong>Captain:</strong> <%= entity.captain.name %> (<%= entity.captain.rank %>)</p><% } %>
+        <a href="<%= detailUrl %>" class="btn btn-outline-dark btn-sm">View</a>
+        <a href="<%= detailUrl %>" class="btn btn-outline-secondary btn-sm admin-only ms-1">Edit</a>
+      <% } %>
+    </div>
+  </div>
+</div>

@@ -81,6 +81,7 @@ app.use(async (req, res, next) => {
     res.locals.navItems = defaultNavItems;
   }
   res.locals.currentPath = req.path;
+  res.locals.toEntity = toEntity;
   next();
 });
 
@@ -90,6 +91,29 @@ const api = axios.create({
   timeout: 30000,
   headers: { 'Content-Type': 'application/json' }
 });
+
+/** Normalize API data to entity format: { id, name, description, subtitle, imageUrl, imageVersion, imageGallery, type, detailUrl } */
+function toEntity(item, type = 'ship') {
+  if (!item) return null;
+  const id = item.id ?? item.Id;
+  const base = type === 'captain' ? '/captains' : '/ships';
+  const gallery = type === 'captain' ? 'captain' : 'image';
+  let subtitle = '';
+  if (type === 'ship') subtitle = item.yearCommissioned ? `Commissioned ${item.yearCommissioned}` : '';
+  if (type === 'captain') subtitle = [item.rank, item.serviceYears ? `${item.serviceYears} years service` : ''].filter(Boolean).join(' · ');
+  return {
+    id,
+    name: item.name ?? item.Name ?? '',
+    description: item.description ?? item.Description ?? '',
+    subtitle,
+    imageUrl: `/gallery/${gallery}/${id}?v=${item.imageVersion ?? item.ImageVersion ?? 0}`,
+    imageVersion: item.imageVersion ?? item.ImageVersion ?? 0,
+    imageGallery: gallery,
+    type,
+    detailUrl: `${base}/${id}`,
+    ...item
+  };
+}
 
 // Trace chain: Web -> Gateway (5010) -> Auth -> User -> ... -> Notification
 app.get('/api/trace', async (req, res) => {
@@ -175,30 +199,53 @@ app.get('/trace', (req, res) => {
   res.render('trace', { title: 'Distributed Trace' });
 });
 
-app.get('/', (req, res) => {
+app.get('/', async (req, res) => {
+  // Fetch USS Enterprise (id 9) from API so we use gallery proxy - more reliable than direct Wikimedia URL
+  let featuredShip = {
+    id: 9,
+    name: 'USS Enterprise (CV-6)',
+    description: 'The most decorated ship of the Second World War. "The Big E" earned 20 battle stars and participated in nearly every major Pacific engagement.',
+    year: 1938,
+    imageUrl: '/gallery/image/9',
+    imageVersion: 0
+  };
+  try {
+    const shipRes = await api.get('/api/ships/9').catch(() => null);
+    if (shipRes?.data) {
+      const s = shipRes.data;
+      featuredShip = {
+        id: s.id || 9,
+        name: s.name || featuredShip.name,
+        description: s.description || featuredShip.description,
+        year: s.yearCommissioned ?? featuredShip.year,
+        imageUrl: '/gallery/image/' + (s.id || 9) + '?v=' + (s.imageVersion ?? 0),
+        imageVersion: s.imageVersion ?? 0
+      };
+    }
+  } catch (_) { /* use defaults */ }
   res.render('home', {
     title: 'Home',
-    featuredShip: {
-      name: 'USS Enterprise (CV-6)',
-      description: 'The most decorated ship of the Second World War. "The Big E" earned 20 battle stars and participated in nearly every major Pacific engagement.',
-      year: 1938,
-      imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/2a/USS_Enterprise_%28CV-6%29_in_Puerto_Rico%2C_early_1941.jpg/800px-USS_Enterprise_%28CV-6%29_in_Puerto_Rico%2C_early_1941.jpg'
-    }
+    featuredShip
   });
 });
 
 app.get('/fleet', async (req, res) => {
   try {
-    const params = {};
+    const params = { page: req.query.page || 1, pageSize: req.query.pageSize || 100 };
     if (req.query.country) params.country = req.query.country;
     if (req.query.type) params.type = req.query.type;
     if (req.query.yearMin) params.yearMin = req.query.yearMin;
     if (req.query.yearMax) params.yearMax = req.query.yearMax;
     const response = await api.get('/api/ships', { params });
+    const data = response.data || {};
+    const ships = data.items || [];
     const classesRes = await api.get('/api/classes').catch(() => ({ data: [] }));
     res.render('fleet', {
       title: 'Fleet Roster',
-      ships: response.data,
+      ships,
+      total: data.total || ships.length,
+      page: data.page || 1,
+      pageSize: data.pageSize || 100,
       searchQuery: '',
       classes: classesRes.data,
       filters: { country: req.query.country, type: req.query.type, yearMin: req.query.yearMin, yearMax: req.query.yearMax }
@@ -208,6 +255,9 @@ app.get('/fleet', async (req, res) => {
     res.render('fleet', {
       title: 'Fleet Roster',
       ships: [],
+      total: 0,
+      page: 1,
+      pageSize: 100,
       classes: [],
       filters: {},
       error: `Unable to load fleet data. Ensure the API is running at ${API_BASE}.`,
@@ -220,10 +270,14 @@ app.get('/fleet/search', async (req, res) => {
   try {
     const q = req.query.q || '';
     const response = q ? await api.get('/api/ships/search', { params: { q } }) : { data: [] };
+    const ships = Array.isArray(response.data) ? response.data : [];
     const classesRes = await api.get('/api/classes').catch(() => ({ data: [] }));
     res.render('fleet', {
       title: 'Fleet Roster',
-      ships: response.data,
+      ships,
+      total: ships.length,
+      page: 1,
+      pageSize: ships.length,
       searchQuery: q,
       classes: classesRes.data,
       filters: {}
@@ -233,6 +287,9 @@ app.get('/fleet/search', async (req, res) => {
     res.render('fleet', {
       title: 'Fleet Roster',
       ships: [],
+      total: 0,
+      page: 1,
+      pageSize: 100,
       classes: [],
       filters: {},
       searchQuery: req.query.q || ''
@@ -245,12 +302,13 @@ app.get('/compare', async (req, res) => {
   const id2 = parseInt(req.query.id2, 10);
   if (!id1 || !id2 || id1 === id2) {
     try {
-      const shipsRes = await api.get('/api/ships');
+      const shipsRes = await api.get('/api/ships/choices', { params: { limit: 2000 } });
+      const ships = Array.isArray(shipsRes.data) ? shipsRes.data : [];
       return res.render('compare', {
         title: 'Compare Ships',
         ship1: id1 ? (await api.get(`/api/ships/${id1}`).catch(() => null))?.data : null,
         ship2: null,
-        ships: shipsRes.data,
+        ships,
         preselectedId: id1 || null
       });
     } catch (err) {
@@ -401,8 +459,10 @@ app.get('/timeline', async (req, res) => {
 
 app.get('/gallery', async (req, res) => {
   try {
-    const response = await api.get('/api/ships');
-    const ships = (response.data || []).slice(0, 50).map(s => ({
+    const response = await api.get('/api/ships', { params: { page: 1, pageSize: 50 } });
+    const data = response.data || {};
+    const items = data.items || [];
+    const ships = items.map(s => ({
       ...s,
       imageUrl: s.imageUrl ?? s.ImageUrl
     }));
@@ -431,7 +491,7 @@ app.get('/gallery/image/:id', async (req, res) => {
     if (imgRes?.data && imgRes.data.byteLength > 50) {
       const ct = imgRes.headers['content-type'] || 'image/jpeg';
       res.set('Content-Type', ct);
-      res.set('Cache-Control', 'public, max-age=86400');
+      res.set('Cache-Control', 'no-cache, must-revalidate');
       return res.send(Buffer.from(imgRes.data));
     }
 
@@ -449,7 +509,7 @@ app.get('/gallery/image/:id', async (req, res) => {
         if (proxyRes?.data && proxyRes.data.byteLength > 50) {
           const ct = proxyRes.headers['content-type'] || 'image/jpeg';
           res.set('Content-Type', ct);
-          res.set('Cache-Control', 'public, max-age=86400');
+          res.set('Cache-Control', 'no-cache, must-revalidate');
           return res.send(Buffer.from(proxyRes.data));
         }
       } catch (proxyErr) {
@@ -476,25 +536,196 @@ app.get('/gallery/image/:id', async (req, res) => {
   }
 });
 
-app.get('/admin/images', async (req, res) => {
+// Captain images: prefer DB (ImageData), else proxy imageUrl
+app.get('/gallery/captain/:id', async (req, res) => {
   try {
-    const response = await api.get('/api/images/audit');
-    res.render('admin-images', { title: 'Image Audit', audit: response.data });
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) return res.status(400).send('Invalid id');
+
+    const imgRes = await api.get(`/api/images/captain/${id}`, { responseType: 'arraybuffer', validateStatus: (s) => s === 200 }).catch(() => null);
+    if (imgRes?.data && imgRes.data.byteLength > 50) {
+      const ct = imgRes.headers['content-type'] || 'image/jpeg';
+      res.set('Content-Type', ct);
+      res.set('Cache-Control', 'no-cache, must-revalidate');
+      return res.send(Buffer.from(imgRes.data));
+    }
+
+    const capRes = await api.get(`/api/captains/${id}`).catch(() => null);
+    const imageUrl = capRes?.data?.imageUrl ?? capRes?.data?.ImageUrl;
+    if (imageUrl && typeof imageUrl === 'string' && imageUrl.startsWith('http')) {
+      try {
+        const proxyRes = await axios.get(imageUrl, {
+          responseType: 'arraybuffer',
+          timeout: 10000,
+          maxContentLength: 10 * 1024 * 1024,
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NavalArchive/1.0)', 'Accept': 'image/*' },
+          validateStatus: (s) => s === 200
+        });
+        if (proxyRes?.data && proxyRes.data.byteLength > 50) {
+          const ct = proxyRes.headers['content-type'] || 'image/jpeg';
+          res.set('Content-Type', ct);
+          res.set('Cache-Control', 'no-cache, must-revalidate');
+          return res.send(Buffer.from(proxyRes.data));
+        }
+      } catch (proxyErr) {
+        console.error('Captain image proxy failed:', proxyErr.message);
+      }
+    }
+
+    res.set('Content-Type', 'image/svg+xml');
+    res.send(PLACEHOLDER_SVG);
   } catch (err) {
-    console.error('Image audit error:', err.message);
-    res.render('admin-images', { title: 'Image Audit', audit: null, error: err.message });
+    console.error('Captain image error:', err.message);
+    res.set('Content-Type', 'image/svg+xml');
+    res.send(PLACEHOLDER_SVG);
   }
 });
 
-app.post('/admin/images/populate', async (req, res) => {
+// Debug: verify Web can reach API for images (for troubleshooting Fleet Roster placeholders)
+app.get('/admin/images/debug', async (req, res) => {
   try {
-    const runSyncFirst = req.body?.runSyncFirst === true;
+    const audit = (await api.get('/api/images/audit').catch(() => null))?.data;
+    const imgRes = await api.get('/api/images/1', { responseType: 'arraybuffer', validateStatus: (s) => s === 200 }).catch(() => null);
+    res.json({
+      apiBase: API_BASE,
+      apiReachable: !!audit,
+      audit: audit ? { ships: audit.ships, captains: audit.captains } : null,
+      firstImageSize: imgRes?.data?.byteLength ?? null,
+      firstImageOk: !!(imgRes?.data && imgRes.data.byteLength > 1000)
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message, apiBase: API_BASE });
+  }
+});
+
+app.post('/admin/images/test-keys', async (req, res) => {
+  try {
     const keys = {};
     if (req.body?.pexelsApiKey) keys.pexelsApiKey = req.body.pexelsApiKey;
     if (req.body?.pixabayApiKey) keys.pixabayApiKey = req.body.pixabayApiKey;
     if (req.body?.unsplashAccessKey) keys.unsplashAccessKey = req.body.unsplashAccessKey;
     if (req.body?.googleApiKey) keys.googleApiKey = req.body.googleApiKey;
     if (req.body?.googleCseId) keys.googleCseId = req.body.googleCseId;
+    const response = await api.post('/api/images/test-keys', keys);
+    res.json(response.data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/admin/images', async (req, res) => {
+  try {
+    const [auditRes, shipsRes, captainsRes] = await Promise.all([
+      api.get('/api/images/audit'),
+      api.get('/api/ships', { params: { page: 1, pageSize: 500 } }).catch(() => ({ data: {} })),
+      api.get('/api/captains').catch(() => ({ data: [] }))
+    ]);
+    const shipsData = shipsRes.data || {};
+    res.render('admin-images', {
+      title: 'Image Audit',
+      audit: auditRes.data,
+      ships: shipsData.items || [],
+      captains: captainsRes.data || []
+    });
+  } catch (err) {
+    console.error('Image audit error:', err.message);
+    res.render('admin-images', { title: 'Image Audit', audit: null, ships: [], captains: [], error: err.message });
+  }
+});
+
+app.get('/admin/images/search-frame', (req, res) => {
+  res.render('admin-images-search-frame', {
+    title: 'Search Image',
+    entity: req.query.entity || 'ship',
+    entityId: req.query.id || '',
+    query: req.query.q || ''
+  });
+});
+
+// In-memory job store for polling-based populate progress
+const populateJobs = new Map();
+const JOB_EXPIRE_MS = 30 * 60 * 1000; // 30 min
+
+function cleanupOldJobs() {
+  const now = Date.now();
+  for (const [id, job] of populateJobs) {
+    if (job.done && (now - (job.updatedAt || 0)) > JOB_EXPIRE_MS) populateJobs.delete(id);
+  }
+}
+setInterval(cleanupOldJobs, 60000);
+
+app.post('/admin/images/populate', async (req, res) => {
+  try {
+    const runSyncFirst = req.body?.runSyncFirst === true;
+    const usePolling = req.body?.usePolling === true;
+    const keys = {};
+    if (req.body?.pexelsApiKey) keys.pexelsApiKey = req.body.pexelsApiKey;
+    if (req.body?.pixabayApiKey) keys.pixabayApiKey = req.body.pixabayApiKey;
+    if (req.body?.unsplashAccessKey) keys.unsplashAccessKey = req.body.unsplashAccessKey;
+    if (req.body?.googleApiKey) keys.googleApiKey = req.body.googleApiKey;
+    if (req.body?.googleCseId) keys.googleCseId = req.body.googleCseId;
+
+    if (usePolling) {
+      const jobId = 'populate-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+      populateJobs.set(jobId, { events: [], done: false, updatedAt: Date.now() });
+      res.json({ jobId });
+
+      (async () => {
+        const job = populateJobs.get(jobId);
+        if (!job) return;
+        const add = (evt) => { job.events.push(evt); job.updatedAt = Date.now(); };
+        try {
+          if (runSyncFirst) {
+            try {
+              const syncRes = await api.post('/api/admin/sync?force=true', {}, { timeout: 120000 });
+              add({ type: 'sync', message: syncRes.data?.message || 'Completed' });
+            } catch (syncErr) {
+              add({ type: 'sync', error: syncErr.response?.data?.message || syncErr.message });
+            }
+          }
+          const streamRes = await axios({
+            method: 'post',
+            url: `${API_BASE}/api/images/populate/stream`,
+            data: keys,
+            responseType: 'stream',
+            timeout: 300000,
+            headers: { 'Content-Type': 'application/json' }
+          });
+          let buf = '';
+          streamRes.data.on('data', (chunk) => {
+            buf += chunk.toString();
+            const parts = buf.split(/\r?\n\r?\n+/);
+            buf = parts.pop() || '';
+            for (const p of parts) {
+              const m = p.match(/^data:\s*(.+)/s);
+              if (m) {
+                try {
+                  const evt = JSON.parse(m[1].trim());
+                  if (evt && (evt.type || evt.Type)) add(evt);
+                } catch (e) { /* skip malformed */ }
+              }
+            }
+          });
+          streamRes.data.on('end', () => {
+            if (buf.trim()) {
+              const m = buf.match(/^data:\s*(.+)/s);
+              if (m) try { const evt = JSON.parse(m[1].trim()); if (evt && (evt.type || evt.Type)) add(evt); } catch (e) {}
+            }
+            job.done = true;
+            job.updatedAt = Date.now();
+          });
+          streamRes.data.on('error', (err) => {
+            add({ type: 'error', error: err.message });
+            job.done = true;
+          });
+        } catch (err) {
+          add({ type: 'error', error: err.message });
+          job.done = true;
+        }
+      })();
+      return;
+    }
+
     const logLines = [];
     if (runSyncFirst) {
       try {
@@ -513,11 +744,52 @@ app.post('/admin/images/populate', async (req, res) => {
   }
 });
 
+app.get('/admin/images/populate/status/:jobId', (req, res) => {
+  const job = populateJobs.get(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+  res.json({ events: job.events, done: job.done });
+});
+
+// Test terminal: emits fake progress events over ~12s so you can verify the terminal updates in the browser
+app.post('/admin/images/populate/test-terminal', (req, res) => {
+  const jobId = 'test-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+  const job = { events: [], done: false, updatedAt: Date.now() };
+  populateJobs.set(jobId, job);
+  res.json({ jobId });
+
+  const add = (evt) => { job.events.push(evt); job.updatedAt = Date.now(); };
+  const events = [
+    { type: 'sync', message: 'Test sync completed (fake)' },
+    { type: 'info', data: 'Processing 3 ships, 2 captains without cached images.' },
+    { type: 'progress', data: '[Bismarck] Trying Unsplash...' },
+    { type: 'progress', data: 'Unsplash: 5 results' },
+    { type: 'ship', data: { id: 1, name: 'Bismarck', status: 'ok', reason: null, index: 1, total: 3, bytesStored: 45231 } },
+    { type: 'progress', data: '[Tirpitz] Trying Unsplash...' },
+    { type: 'progress', data: 'Unsplash: 4 results' },
+    { type: 'ship', data: { id: 2, name: 'Tirpitz', status: 'ok', reason: null, index: 2, total: 3, bytesStored: 38921 } },
+    { type: 'ship', data: { id: 3, name: 'Yamato', status: 'fail', reason: 'No ImageUrl', index: 3, total: 3, bytesStored: null } },
+    { type: 'captain', data: { id: 1, name: 'Ernst Lindemann', status: 'ok', reason: null, index: 1, total: 2, bytesStored: 12400 } },
+    { type: 'captain', data: { id: 2, name: 'Karl Topp', status: 'fail', reason: 'Duplicate image', index: 2, total: 2, bytesStored: null } },
+    { type: 'done', data: null }
+  ];
+  let i = 0;
+  const tick = () => {
+    if (i < events.length) {
+      add(events[i++]);
+      setTimeout(tick, 1200);
+    } else {
+      job.done = true;
+      job.updatedAt = Date.now();
+    }
+  };
+  setTimeout(tick, 500);
+});
+
 // Verify which ship images actually load (no placeholder)
 app.get('/admin/images/verify', async (req, res) => {
   try {
-    const shipsRes = await api.get('/api/ships');
-    const ships = shipsRes.data || [];
+    const shipsRes = await api.get('/api/ships/choices', { params: { limit: 5000 } });
+    const ships = Array.isArray(shipsRes.data) ? shipsRes.data : [];
     const baseUrl = `http://localhost:${PORT}`;
     const missing = [];
     for (let i = 0; i < ships.length; i++) {

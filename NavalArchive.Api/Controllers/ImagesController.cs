@@ -1,5 +1,6 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
-using NavalArchive.Api.Data;
+using NavalArchive.Data;
 using NavalArchive.Api.Services;
 
 namespace NavalArchive.Api.Controllers;
@@ -10,11 +11,13 @@ public class ImagesController : ControllerBase
 {
     private readonly NavalArchiveDbContext _db;
     private readonly ImageStorageService _storage;
+    private readonly ImageSearchService _imageSearch;
 
-    public ImagesController(NavalArchiveDbContext db, ImageStorageService storage)
+    public ImagesController(NavalArchiveDbContext db, ImageStorageService storage, ImageSearchService imageSearch)
     {
         _db = db;
         _storage = storage;
+        _imageSearch = imageSearch;
     }
 
     /// <summary>Serve ship image from database. Id is ship id.</summary>
@@ -72,6 +75,17 @@ public class ImagesController : ControllerBase
         return await _storage.GetAuditAsync(_db);
     }
 
+    /// <summary>Test API keys without populating. Returns per-provider success/failure.</summary>
+    [HttpPost("test-keys")]
+    public async Task<ActionResult<List<KeyTestResult>>> TestKeys([FromBody] PopulateRequest? request = null, CancellationToken ct = default)
+    {
+        var keys = request != null && (request.PexelsApiKey != null || request.PixabayApiKey != null || request.UnsplashAccessKey != null || request.GoogleApiKey != null)
+            ? new ImageSearchKeys(request.PexelsApiKey, request.PixabayApiKey, request.UnsplashAccessKey, request.GoogleApiKey, request.GoogleCseId)
+            : null;
+        var results = await _imageSearch.TestKeysAsync(keys, ct);
+        return Ok(results);
+    }
+
     /// <summary>Populate all images from ImageUrl into ImageData. Optional API keys for image search fallback.</summary>
     [HttpPost("populate")]
     public async Task<ActionResult<PopulateResult>> PopulateAll([FromBody] PopulateRequest? request = null)
@@ -81,6 +95,24 @@ public class ImagesController : ControllerBase
             : null;
         var result = await _storage.PopulateAllAsync(_db, default, keys);
         return Ok(result);
+    }
+
+    /// <summary>Streaming populate: Server-Sent Events with progress after each ship/captain.</summary>
+    [HttpPost("populate/stream")]
+    public async Task PopulateStream([FromBody] PopulateRequest? request = null, CancellationToken ct = default)
+    {
+        Response.ContentType = "text/event-stream";
+        Response.Headers.CacheControl = "no-cache";
+        var keys = request != null && (request.PexelsApiKey != null || request.PixabayApiKey != null || request.UnsplashAccessKey != null || request.GoogleApiKey != null)
+            ? new ImageSearchKeys(request.PexelsApiKey, request.PixabayApiKey, request.UnsplashAccessKey, request.GoogleApiKey, request.GoogleCseId)
+            : null;
+        var jsonOpts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+        await foreach (var evt in _storage.PopulateAllStreamAsync(_db, ct, keys))
+        {
+            var json = JsonSerializer.Serialize(new { evt.Type, evt.Data }, jsonOpts);
+            await Response.WriteAsync($"data: {json}\n\n", ct);
+            await Response.Body.FlushAsync(ct);
+        }
     }
 
     /// <summary>Populate a single ship image.</summary>
@@ -97,6 +129,84 @@ public class ImagesController : ControllerBase
     {
         var (stored, reason, _) = await _storage.PopulateCaptainImageAsync(_db, id);
         return stored ? Ok() : NotFound(new { reason });
+    }
+
+    /// <summary>Delete ship image. Clears ImageData, ImageUrl, and ImageManuallySet so sync can repopulate.</summary>
+    [HttpDelete("ship/{id:int}")]
+    public async Task<IActionResult> DeleteShipImage(int id)
+    {
+        var ship = await _db.Ships.FindAsync(id);
+        if (ship == null) return NotFound();
+        ship.ImageData = null;
+        ship.ImageContentType = null;
+        ship.ImageUrl = "";
+        ship.ImageManuallySet = false;
+        ship.ImageVersion++;
+        await _db.SaveChangesAsync();
+        return Ok(new { deleted = true });
+    }
+
+    /// <summary>Delete captain image. Clears ImageData, ImageUrl, and ImageManuallySet so sync can repopulate.</summary>
+    [HttpDelete("captain/{id:int}")]
+    public async Task<IActionResult> DeleteCaptainImage(int id)
+    {
+        var captain = await _db.Captains.FindAsync(id);
+        if (captain == null) return NotFound();
+        captain.ImageData = null;
+        captain.ImageContentType = null;
+        captain.ImageUrl = null;
+        captain.ImageManuallySet = false;
+        captain.ImageVersion++;
+        await _db.SaveChangesAsync();
+        return Ok(new { deleted = true });
+    }
+
+    /// <summary>Search images by query. Returns list of image URLs. Optional provider: Pexels, Pixabay, Unsplash, Google (or empty for fallback chain).</summary>
+    [HttpPost("search")]
+    public async Task<ActionResult<List<string>>> SearchImages([FromBody] ImageSearchRequest? request = null, CancellationToken ct = default)
+    {
+        var q = request?.Query ?? "battleship";
+        var keys = request != null && (request.PexelsApiKey != null || request.PixabayApiKey != null || request.UnsplashAccessKey != null || request.GoogleApiKey != null)
+            ? new ImageSearchKeys(request.PexelsApiKey, request.PixabayApiKey, request.UnsplashAccessKey, request.GoogleApiKey, request.GoogleCseId)
+            : null;
+        var urls = await _imageSearch.FindImageUrlsAsync(q, request?.MaxCount ?? 12, ct, keys, null, request?.Provider);
+        return Ok(urls);
+    }
+
+    /// <summary>Set ship image from URL (fetch and store).</summary>
+    [HttpPost("ship/{id:int}/from-url")]
+    public async Task<IActionResult> SetShipImageFromUrl(int id, [FromBody] SetImageFromUrlRequest request, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(request?.Url)) return BadRequest(new { error = "Url required" });
+        var ship = await _db.Ships.FindAsync(id);
+        if (ship == null) return NotFound();
+        var (data, contentType, _, error) = await _storage.FetchImageAsync(request.Url, ct);
+        if (data == null || data.Length < 100) return BadRequest(new { error = error ?? "Failed to fetch image" });
+        ship.ImageData = data;
+        ship.ImageContentType = contentType ?? "image/jpeg";
+        ship.ImageUrl = request.Url;
+        ship.ImageManuallySet = true;
+        ship.ImageVersion++;
+        await _db.SaveChangesAsync(ct);
+        return Ok(new { stored = data.Length });
+    }
+
+    /// <summary>Set captain image from URL.</summary>
+    [HttpPost("captain/{id:int}/from-url")]
+    public async Task<IActionResult> SetCaptainImageFromUrl(int id, [FromBody] SetImageFromUrlRequest request, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(request?.Url)) return BadRequest(new { error = "Url required" });
+        var captain = await _db.Captains.FindAsync(id);
+        if (captain == null) return NotFound();
+        var (data, contentType, _, error) = await _storage.FetchImageAsync(request.Url, ct);
+        if (data == null || data.Length < 100) return BadRequest(new { error = error ?? "Failed to fetch image" });
+        captain.ImageData = data;
+        captain.ImageContentType = contentType ?? "image/jpeg";
+        captain.ImageUrl = request.Url;
+        captain.ImageManuallySet = true;
+        captain.ImageVersion++;
+        await _db.SaveChangesAsync(ct);
+        return Ok(new { stored = data.Length });
     }
 
     /// <summary>Upload ship image from external source (e.g. populate script running where Wikipedia is reachable).</summary>
@@ -116,6 +226,7 @@ public class ImagesController : ControllerBase
 
         ship.ImageData = data;
         ship.ImageContentType = ct;
+        ship.ImageVersion++;
         await _db.SaveChangesAsync();
         return Ok(new { stored = data.Length });
     }
@@ -123,3 +234,9 @@ public class ImagesController : ControllerBase
 
 /// <summary>Request body for populate endpoint. Optional API keys for image search (not persisted).</summary>
 public record PopulateRequest(string? PexelsApiKey, string? PixabayApiKey, string? UnsplashAccessKey, string? GoogleApiKey, string? GoogleCseId);
+
+/// <summary>Image search request.</summary>
+public record ImageSearchRequest(string? Query, int? MaxCount, string? Provider, string? PexelsApiKey, string? PixabayApiKey, string? UnsplashAccessKey, string? GoogleApiKey, string? GoogleCseId);
+
+/// <summary>Set image from URL.</summary>
+public record SetImageFromUrlRequest(string Url);

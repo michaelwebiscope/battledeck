@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
-using NavalArchive.Api.Models;
+using NavalArchive.Data.Models;
 
-namespace NavalArchive.Api.Data;
+namespace NavalArchive.Data;
 
 public class NavalArchiveDbContext : DbContext
 {
@@ -59,7 +59,7 @@ public class NavalArchiveDbContext : DbContext
             new Captain { Id = 25, Name = "Ernest Evans", Rank = "Commander", ServiceYears = 22, ImageUrl = (string?)null }
         );
 
-        // Seed 50 famous ships - ImageUrl: real Wikimedia Commons URLs for display, /images/{id} for memory-leak API
+        // Seed 50 famous ships
         var ships = new List<Ship>
         {
             new Ship { Id = 1, Name = "Bismarck", ClassId = 1, CaptainId = 1, YearCommissioned = 1940, Description = "German battleship, flagship of the Kriegsmarine.", ImageUrl = "https://upload.wikimedia.org/wikipedia/commons/thumb/f/fe/Bundesarchiv_Bild_193-04-1-26%2C_Schlachtschiff_Bismarck.jpg/800px-Bundesarchiv_Bild_193-04-1-26%2C_Schlachtschiff_Bismarck.jpg" },
@@ -121,5 +121,11 @@ public class NavalArchiveDbContext : DbContext
         };
 
         modelBuilder.Entity<Ship>().HasData(ships);
+
+        // Indexes for fast queries at scale (12k+ ships)
+        modelBuilder.Entity<Ship>().HasIndex(s => s.ClassId);
+        modelBuilder.Entity<Ship>().HasIndex(s => s.CaptainId);
+        modelBuilder.Entity<Ship>().HasIndex(s => s.YearCommissioned);
+        modelBuilder.Entity<Ship>().HasIndex(s => s.Name);
     }
 }

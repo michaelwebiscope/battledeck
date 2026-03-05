@@ -1,0 +1,32 @@
+<%#
+  Entity detail partial - main block for entity detail pages (ship, captain).
+  Entity: { id, name, description, subtitle, imageUrl?, imageVersion?, imageGallery?, type? }
+  Options: imageHeight, showEdit
+-%>
+<%
+  var entity = typeof entity !== 'undefined' ? entity : {};
+  var imgH = typeof imageHeight !== 'undefined' ? imageHeight : 240;
+  var gallery = entity.imageGallery || (entity.type === 'captain' ? 'captain' : 'image');
+%>
+<div class="row">
+  <div class="col-lg-4 mb-4">
+    <div class="card">
+      <div class="card-img-top position-relative" style="height: <%= imgH %>px; overflow: hidden; cursor: pointer;" role="button" data-image-url="<%= entity.imageUrl || ('/gallery/' + gallery + '/' + entity.id + '?v=' + (entity.imageVersion ?? entity.ImageVersion ?? 0)) %>" data-image-title="<%= (entity.name || '').replace(/"/g, '&quot;') %>" onclick="typeof showImageModal==='function'&&showImageModal(this.dataset.imageUrl, this.dataset.imageTitle)" title="Click to enlarge">
+        <%- include('entity-image', { entity: entity, size: String(imgH), imageGallery: gallery }) %>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-8">
+    <div class="d-flex align-items-start justify-content-between gap-2 mb-3">
+      <div>
+        <h1 class="mb-2"><%= entity.name || 'Unnamed' %></h1>
+        <% if (entity.subtitle) { %><p class="text-muted mb-0"><%= entity.subtitle %></p><% } %>
+      </div>
+      <% if (typeof showEdit === 'undefined' || showEdit !== false) { %>
+        <button type="button" class="btn btn-outline-secondary btn-sm admin-only" id="<%= editButtonId || 'entityEditBtn' %>">Edit</button>
+      <% } %>
+    </div>
+    <% if (entity.extraHtml) { %><%- entity.extraHtml %><% } %>
+    <p class="lead"><%= entity.description || '' %></p>
+  </div>
+</div>

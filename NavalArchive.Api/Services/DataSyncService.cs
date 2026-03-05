@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
-using NavalArchive.Api.Data;
-using NavalArchive.Api.Models;
+using NavalArchive.Data;
+using NavalArchive.Data.Models;
 
 namespace NavalArchive.Api.Services;
 
@@ -105,8 +105,18 @@ public class DataSyncService
                     ship.Description = fetched.Description.Length > 2000
                         ? fetched.Description[..2000] + "..."
                         : fetched.Description;
+                // Never overwrite manually selected images
                 if (!string.IsNullOrWhiteSpace(fetched.ImageUrl))
-                    ship.ImageUrl = fetched.ImageUrl;
+                {
+                    var current = await db.Ships.AsNoTracking().Where(s => s.Id == ship.Id).Select(s => s.ImageManuallySet).FirstOrDefaultAsync(ct);
+                    if (!current)
+                    {
+                        ship.ImageUrl = fetched.ImageUrl;
+                        ship.ImageData = null;
+                        ship.ImageContentType = null;
+                        ship.ImageVersion++;
+                    }
+                }
             }
         }
         await db.SaveChangesAsync(ct);
@@ -120,7 +130,15 @@ public class DataSyncService
         {
             if (data.TryGetValue(captain.Name, out var fetched) && !string.IsNullOrWhiteSpace(fetched.ImageUrl))
             {
-                captain.ImageUrl = fetched.ImageUrl;
+                // Never overwrite manually selected images - re-query to ensure fresh value
+                var manuallySet = await db.Captains.AsNoTracking().Where(c => c.Id == captain.Id).Select(c => c.ImageManuallySet).FirstOrDefaultAsync(ct);
+                if (!manuallySet)
+                {
+                    captain.ImageUrl = fetched.ImageUrl;
+                    captain.ImageData = null;
+                    captain.ImageContentType = null;
+                    captain.ImageVersion++;
+                }
             }
         }
         await db.SaveChangesAsync(ct);

@@ -3,6 +3,12 @@
     <a class="navbar-brand fw-bold" href="/">
       <span class="text-uppercase" style="letter-spacing: 0.15em;">⚓ Naval Archive</span>
     </a>
+    <div class="d-flex align-items-center gap-2 me-2">
+      <label class="form-check form-switch mb-0" title="Admin mode: edit ships and captains from any page">
+        <input class="form-check-input" type="checkbox" id="adminModeToggle">
+        <span class="form-check-label text-white-50 small">Admin</span>
+      </label>
+    </div>
     <button class="navbar-toggler border-0 px-3 py-2" type="button" data-bs-toggle="collapse" data-bs-target="#navMain" aria-controls="navMain" aria-expanded="false" aria-label="Toggle navigation">
       <span class="navbar-toggler-icon"></span>
     </button>
@@ -28,3 +34,24 @@
     </div>
   </div>
 </nav>
+<script>
+(function(){
+  var key = 'adminMode';
+  var toggle = document.getElementById('adminModeToggle');
+  if (!toggle) return;
+  if (localStorage.getItem(key) === 'true') {
+    document.body.classList.add('admin-mode');
+    toggle.checked = true;
+  }
+  toggle.addEventListener('change', function() {
+    if (toggle.checked) {
+      localStorage.setItem(key, 'true');
+      document.body.classList.add('admin-mode');
+    } else {
+      localStorage.removeItem(key);
+      document.body.classList.remove('admin-mode');
+    }
+    window.dispatchEvent(new CustomEvent('adminModeChanged', { detail: { enabled: toggle.checked } }));
+  });
+})();
+</script>

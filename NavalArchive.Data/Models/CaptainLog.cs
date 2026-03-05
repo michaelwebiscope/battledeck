@@ -1,4 +1,4 @@
-namespace NavalArchive.Api.Models;
+namespace NavalArchive.Data.Models;
 
 public class CaptainLog
 {

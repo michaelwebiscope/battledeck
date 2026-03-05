@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using NavalArchive.Api.Data;
-using NavalArchive.Api.Models;
+using NavalArchive.Data;
+using NavalArchive.Data.Models;
 
 namespace NavalArchive.Api.Controllers;
 
@@ -32,49 +32,67 @@ public class ShipsController : ControllerBase
         catch { return false; }
     }
 
-    /// <summary>
-    /// N+1 BUG: Fetches all ships, then loops and loads Class/Captain individually.
-    /// Do NOT use .Include() - this causes hundreds of DB round-trips.
-    /// </summary>
+    /// <summary>List ships from DB. Single query with JOINs. Paginated for scale (12k+ ships).</summary>
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<object>>> GetShips([FromQuery] string? country, [FromQuery] string? type, [FromQuery] int? yearMin, [FromQuery] int? yearMax)
+    public async Task<ActionResult<object>> GetShips([FromQuery] string? country, [FromQuery] string? type, [FromQuery] int? yearMin, [FromQuery] int? yearMax, [FromQuery] int page = 1, [FromQuery] int pageSize = 100)
     {
-        var shipsQuery = _db.Ships.AsQueryable();
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 500);
+
+        var query = _db.Ships
+            .Include(s => s.Class)
+            .Include(s => s.Captain)
+            .AsNoTracking();
+
         if (!string.IsNullOrWhiteSpace(country) || !string.IsNullOrWhiteSpace(type) || yearMin.HasValue || yearMax.HasValue)
         {
-            var classQuery = _db.ShipClasses.AsQueryable();
+            var classQuery = _db.ShipClasses.AsNoTracking();
             if (!string.IsNullOrWhiteSpace(country))
                 classQuery = classQuery.Where(c => c.Country == country);
             if (!string.IsNullOrWhiteSpace(type))
                 classQuery = classQuery.Where(c => c.Type == type);
             var ids = await classQuery.Select(c => c.Id).ToListAsync();
-            shipsQuery = shipsQuery.Where(s => ids.Contains(s.ClassId));
-            if (yearMin.HasValue) shipsQuery = shipsQuery.Where(s => s.YearCommissioned >= yearMin.Value);
-            if (yearMax.HasValue) shipsQuery = shipsQuery.Where(s => s.YearCommissioned <= yearMax.Value);
+            query = query.Where(s => ids.Contains(s.ClassId));
+            if (yearMin.HasValue) query = query.Where(s => s.YearCommissioned >= yearMin.Value);
+            if (yearMax.HasValue) query = query.Where(s => s.YearCommissioned <= yearMax.Value);
         }
-        var ships = await shipsQuery.ToListAsync();
-        var videoChecks = await Task.WhenAll(ships.Select(s => VideoExistsAsync(s.Id)));
-        var hasVideo = ships.Zip(videoChecks).ToDictionary(x => x.First.Id, x => x.Second);
 
-        var result = new List<object>();
-        foreach (var ship in ships)
+        var total = await query.CountAsync();
+        var ships = await query
+            .OrderBy(s => s.Name)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        var items = ships.Select(s => new
         {
-            var shipClass = await _db.ShipClasses.FindAsync(ship.ClassId);
-            var captain = await _db.Captains.FindAsync(ship.CaptainId);
-            result.Add(new
-            {
-                ship.Id,
-                ship.Name,
-                ship.Description,
-                ship.ImageUrl,
-                ship.YearCommissioned,
-                VideoUrl = hasVideo.GetValueOrDefault(ship.Id) ? $"/api/videos/{ship.Id}" : (string?)null,
-                Class = shipClass != null ? new { shipClass.Name, shipClass.Type, shipClass.Country } : null,
-                Captain = captain != null ? new { captain.Name, captain.Rank, captain.ServiceYears } : null
-            });
-        }
+            s.Id,
+            s.Name,
+            s.Description,
+            s.ImageUrl,
+            s.ImageVersion,
+            s.YearCommissioned,
+            VideoUrl = (string?)null, // Check only on single-ship view
+            Class = s.Class != null ? new { s.Class.Name, s.Class.Type, s.Class.Country } : null,
+            Captain = s.Captain != null ? new { s.Captain.Name, s.Captain.Rank, s.Captain.ServiceYears } : null
+        }).ToList();
 
-        return Ok(result);
+        return Ok(new { items, total, page, pageSize });
+    }
+
+    /// <summary>Lightweight id+name list for dropdowns (compare, etc). Single query, no JOINs.</summary>
+    [HttpGet("choices")]
+    public async Task<ActionResult<IEnumerable<object>>> GetShipChoices([FromQuery] string? q, [FromQuery] int limit = 1000)
+    {
+        limit = Math.Clamp(limit, 1, 5000);
+        IQueryable<Ship> query = _db.Ships.AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var term = q.Trim();
+            query = query.Where(s => s.Name.Contains(term));
+        }
+        var list = await query.OrderBy(s => s.Name).Take(limit).Select(s => new { s.Id, s.Name }).ToListAsync();
+        return Ok(list);
     }
 
     [HttpGet("{id:int}")]
@@ -92,10 +110,11 @@ public class ShipsController : ControllerBase
             ship.Name,
             ship.Description,
             ship.ImageUrl,
+            ship.ImageVersion,
             ship.YearCommissioned,
             VideoUrl = await VideoExistsAsync(ship.Id) ? $"/api/videos/{ship.Id}" : (string?)null,
             Class = shipClass != null ? new { shipClass.Id, shipClass.Name, shipClass.Type, shipClass.Country } : null,
-            Captain = captain != null ? new { captain.Id, captain.Name, captain.Rank, captain.ServiceYears, captain.ImageUrl } : null
+            Captain = captain != null ? new { captain.Id, captain.Name, captain.Rank, captain.ServiceYears, captain.ImageUrl, captain.ImageVersion } : null
         });
     }
 
@@ -114,43 +133,77 @@ public class ShipsController : ControllerBase
             ship.Name,
             ship.Description,
             ship.ImageUrl,
+            ship.ImageVersion,
             ship.YearCommissioned,
             VideoUrl = await VideoExistsAsync(ship.Id) ? $"/api/videos/{ship.Id}" : (string?)null,
             Class = shipClass != null ? new { shipClass.Id, shipClass.Name, shipClass.Type, shipClass.Country } : null,
-            Captain = captain != null ? new { captain.Id, captain.Name, captain.Rank, captain.ServiceYears, captain.ImageUrl } : null
+            Captain = captain != null ? new { captain.Id, captain.Name, captain.Rank, captain.ServiceYears, captain.ImageUrl, captain.ImageVersion } : null
         });
     }
 
     [HttpGet("search")]
-    public async Task<ActionResult<IEnumerable<object>>> SearchShips([FromQuery] string? q)
+    public async Task<ActionResult<IEnumerable<object>>> SearchShips([FromQuery] string? q, [FromQuery] int limit = 50)
     {
         if (string.IsNullOrWhiteSpace(q))
             return Ok(Array.Empty<object>());
 
+        limit = Math.Clamp(limit, 1, 200);
+        var term = q.Trim();
+
         var ships = await _db.Ships
-            .Where(s => s.Name.Contains(q) || s.Description.Contains(q))
+            .Include(s => s.Class)
+            .Include(s => s.Captain)
+            .AsNoTracking()
+            .Where(s => s.Name.Contains(term) || s.Description.Contains(term))
+            .OrderBy(s => s.Name)
+            .Take(limit)
             .ToListAsync();
 
-        var videoChecks = await Task.WhenAll(ships.Select(s => VideoExistsAsync(s.Id)));
-        var hasVideo = ships.Zip(videoChecks).ToDictionary(x => x.First.Id, x => x.Second);
-
-        var result = new List<object>();
-        foreach (var ship in ships)
+        return Ok(ships.Select(s => new
         {
-            var shipClass = await _db.ShipClasses.FindAsync(ship.ClassId);
-            var captain = await _db.Captains.FindAsync(ship.CaptainId);
-            result.Add(new
-            {
-                ship.Id,
-                ship.Name,
-                ship.Description,
-                ship.ImageUrl,
-                ship.YearCommissioned,
-                VideoUrl = hasVideo.GetValueOrDefault(ship.Id) ? $"/api/videos/{ship.Id}" : (string?)null,
-                Class = shipClass != null ? new { shipClass.Name, shipClass.Type, shipClass.Country } : null,
-                Captain = captain != null ? new { captain.Name, captain.Rank } : null
-            });
-        }
-        return Ok(result);
+            s.Id,
+            s.Name,
+            s.Description,
+            s.ImageUrl,
+            s.ImageVersion,
+            s.YearCommissioned,
+            Class = s.Class != null ? new { s.Class.Name, s.Class.Type, s.Class.Country } : null,
+            Captain = s.Captain != null ? new { s.Captain.Name, s.Captain.Rank } : null
+        }));
     }
+
+    /// <summary>Update ship (admin). Edits persist to DB and appear everywhere.</summary>
+    [HttpPut("{id:int}")]
+    public async Task<ActionResult<object>> UpdateShip(int id, [FromBody] UpdateShipRequest? request, CancellationToken ct = default)
+    {
+        if (request == null) return BadRequest();
+        var ship = await _db.Ships.FindAsync(id);
+        if (ship == null) return NotFound();
+        if (request.Name != null) ship.Name = request.Name.Trim();
+        if (request.Description != null) ship.Description = request.Description;
+        if (request.YearCommissioned.HasValue) ship.YearCommissioned = request.YearCommissioned.Value;
+        if (request.ClassId.HasValue) ship.ClassId = request.ClassId.Value;
+        if (request.CaptainId.HasValue) ship.CaptainId = request.CaptainId.Value;
+        await _db.SaveChangesAsync(ct);
+        var shipClass = await _db.ShipClasses.FindAsync(ship.ClassId);
+        var captain = await _db.Captains.FindAsync(ship.CaptainId);
+        return Ok(new
+        {
+            ship.Id,
+            ship.Name,
+            ship.Description,
+            ship.YearCommissioned,
+            Class = shipClass != null ? new { shipClass.Id, shipClass.Name } : null,
+            Captain = captain != null ? new { captain.Id, captain.Name } : null
+        });
+    }
+}
+
+public class UpdateShipRequest
+{
+    public string? Name { get; set; }
+    public string? Description { get; set; }
+    public int? YearCommissioned { get; set; }
+    public int? ClassId { get; set; }
+    public int? CaptainId { get; set; }
 }

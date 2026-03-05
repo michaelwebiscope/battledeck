@@ -1,8 +1,8 @@
 using System.Text.RegularExpressions;
 using HtmlAgilityPack;
 using Microsoft.EntityFrameworkCore;
-using NavalArchive.Api.Data;
-using NavalArchive.Api.Models;
+using NavalArchive.Data;
+using NavalArchive.Data.Models;
 
 namespace NavalArchive.Api.Services;
 

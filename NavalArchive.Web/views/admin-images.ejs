@@ -2,42 +2,45 @@
 <html lang="en">
 <head>
   <%- include('partials/head') %>
+  <style>
+    .edit-card { width: 140px; border-radius: 8px; overflow: hidden; background: #1a1a2e; border: 1px solid #333; }
+    .edit-thumb { width: 100%; height: 90px; object-fit: cover; display: block; }
+    .edit-info { padding: 6px 8px; }
+    .edit-name { font-size: 0.8rem; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .edit-actions { display: flex; gap: 4px; }
+  </style>
 </head>
 <body>
   <%- include('partials/header') %>
   <main class="app-shell">
     <div class="container py-4">
       <h1 class="mb-4">Image Audit</h1>
-      <p class="text-muted mb-4">Index of ships and captains: which have ImageUrl, which have cached ImageData in the database, and which are missing. Populate runs Wikipedia sync first (to get captain ImageUrls), then fetches images. Fallback order: Pexels → Pixabay → Unsplash → Google. Enter API keys below to use image search without RDP.</p>
+      <p class="text-muted mb-4">Index of ships and captains: which have ImageUrl, which have cached ImageData in the database, and which are missing. <strong>Sync</strong> fetches ship data and captain ImageUrls from Wikipedia only. <strong>Populate</strong> runs sync first, then fetches images (Pexels → Pixabay → Unsplash → Google). All operations are manual to save API calls. Use <strong>Wikipedia</strong> in the Search provider to manually pick a Wikipedia page and fetch its image.</p>
 
       <% if (typeof error !== 'undefined' && error) { %>
         <div class="alert alert-danger"><%= error %></div>
       <% } %>
 
       <% if (audit) { %>
-        <div class="row g-4 mb-4">
+        <div class="row g-4 mb-4" id="auditSection">
           <div class="col-md-6">
             <div class="card">
               <div class="card-header">Ships</div>
-              <div class="card-body">
-                <p class="mb-1"><strong>Total:</strong> <%= audit.ships?.total ?? 0 %></p>
-                <p class="mb-1"><strong>With ImageUrl:</strong> <%= audit.ships?.withImageUrl ?? 0 %></p>
-                <p class="mb-1"><strong>With ImageData (cached):</strong> <%= audit.ships?.withImageData ?? 0 %></p>
+              <div class="card-body" id="auditShipsBody">
+                <p class="mb-1"><strong>Total:</strong> <span id="auditShipsTotal"><%= audit.ships?.total ?? 0 %></span></p>
+                <p class="mb-1"><strong>With ImageUrl:</strong> <span id="auditShipsWithUrl"><%= audit.ships?.withImageUrl ?? 0 %></span></p>
+                <p class="mb-1"><strong>With ImageData (cached):</strong> <span id="auditShipsWithData"><%= audit.ships?.withImageData ?? 0 %></span></p>
                 <% if (audit.ships?.missingUrl && audit.ships.missingUrl.length > 0) { %>
-                  <p class="mb-1 text-warning"><strong>Missing ImageUrl:</strong> <%= audit.ships.missingUrl.length %></p>
-                  <ul class="small mb-0">
-                    <% audit.ships.missingUrl.slice(0, 10).forEach(function(m) { %>
-                      <li><%= m.name %> (id <%= m.id %>)</li>
-                    <% }); %>
+                  <p class="mb-1 text-warning"><strong>Missing ImageUrl:</strong> <span id="auditShipsMissingUrlCount"><%= audit.ships.missingUrl.length %></span></p>
+                  <ul class="small mb-0" id="auditShipsMissingUrlList">
+                    <% audit.ships.missingUrl.slice(0, 10).forEach(function(m) { %><li><%= m.name %> (id <%= m.id %>)</li><% }); %>
                     <% if (audit.ships.missingUrl.length > 10) { %><li>... and <%= audit.ships.missingUrl.length - 10 %> more</li><% } %>
                   </ul>
                 <% } %>
                 <% if (audit.ships?.missingCachedData && audit.ships.missingCachedData.length > 0) { %>
-                  <p class="mb-1 text-info mt-2"><strong>Has URL but not cached:</strong> <%= audit.ships.missingCachedData.length %></p>
-                  <ul class="small mb-0">
-                    <% audit.ships.missingCachedData.slice(0, 10).forEach(function(m) { %>
-                      <li><%= m.name %> (id <%= m.id %>)</li>
-                    <% }); %>
+                  <p class="mb-1 text-info mt-2"><strong>Has URL but not cached:</strong> <span id="auditShipsMissingCachedCount"><%= audit.ships.missingCachedData.length %></span></p>
+                  <ul class="small mb-0" id="auditShipsMissingCachedList">
+                    <% audit.ships.missingCachedData.slice(0, 10).forEach(function(m) { %><li><%= m.name %> (id <%= m.id %>)</li><% }); %>
                     <% if (audit.ships.missingCachedData.length > 10) { %><li>... and <%= audit.ships.missingCachedData.length - 10 %> more</li><% } %>
                   </ul>
                 <% } %>
@@ -47,25 +50,21 @@
           <div class="col-md-6">
             <div class="card">
               <div class="card-header">Captains</div>
-              <div class="card-body">
-                <p class="mb-1"><strong>Total:</strong> <%= audit.captains?.total ?? 0 %></p>
-                <p class="mb-1"><strong>With ImageUrl:</strong> <%= audit.captains?.withImageUrl ?? 0 %></p>
-                <p class="mb-1"><strong>With ImageData (cached):</strong> <%= audit.captains?.withImageData ?? 0 %></p>
+              <div class="card-body" id="auditCaptainsBody">
+                <p class="mb-1"><strong>Total:</strong> <span id="auditCaptainsTotal"><%= audit.captains?.total ?? 0 %></span></p>
+                <p class="mb-1"><strong>With ImageUrl:</strong> <span id="auditCaptainsWithUrl"><%= audit.captains?.withImageUrl ?? 0 %></span></p>
+                <p class="mb-1"><strong>With ImageData (cached):</strong> <span id="auditCaptainsWithData"><%= audit.captains?.withImageData ?? 0 %></span></p>
                 <% if (audit.captains?.missingUrl && audit.captains.missingUrl.length > 0) { %>
-                  <p class="mb-1 text-warning"><strong>Missing ImageUrl:</strong> <%= audit.captains.missingUrl.length %></p>
-                  <ul class="small mb-0">
-                    <% audit.captains.missingUrl.slice(0, 10).forEach(function(m) { %>
-                      <li><%= m.name %> (id <%= m.id %>)</li>
-                    <% }); %>
+                  <p class="mb-1 text-warning"><strong>Missing ImageUrl:</strong> <span id="auditCaptainsMissingUrlCount"><%= audit.captains.missingUrl.length %></span></p>
+                  <ul class="small mb-0" id="auditCaptainsMissingUrlList">
+                    <% audit.captains.missingUrl.slice(0, 10).forEach(function(m) { %><li><%= m.name %> (id <%= m.id %>)</li><% }); %>
                     <% if (audit.captains.missingUrl.length > 10) { %><li>... and <%= audit.captains.missingUrl.length - 10 %> more</li><% } %>
                   </ul>
                 <% } %>
                 <% if (audit.captains?.missingCachedData && audit.captains.missingCachedData.length > 0) { %>
-                  <p class="mb-1 text-info mt-2"><strong>Has URL but not cached:</strong> <%= audit.captains.missingCachedData.length %></p>
-                  <ul class="small mb-0">
-                    <% audit.captains.missingCachedData.slice(0, 10).forEach(function(m) { %>
-                      <li><%= m.name %> (id <%= m.id %>)</li>
-                    <% }); %>
+                  <p class="mb-1 text-info mt-2"><strong>Has URL but not cached:</strong> <span id="auditCaptainsMissingCachedCount"><%= audit.captains.missingCachedData.length %></span></p>
+                  <ul class="small mb-0" id="auditCaptainsMissingCachedList">
+                    <% audit.captains.missingCachedData.slice(0, 10).forEach(function(m) { %><li><%= m.name %> (id <%= m.id %>)</li><% }); %>
                     <% if (audit.captains.missingCachedData.length > 10) { %><li>... and <%= audit.captains.missingCachedData.length - 10 %> more</li><% } %>
                   </ul>
                 <% } %>
@@ -84,12 +83,53 @@
               <div class="col-md-6"><input type="password" id="googleCseId" class="form-control form-control-sm" placeholder="Google CSE ID" autocomplete="off"></div>
             </div>
           </details>
+          <button id="syncBtn" class="btn btn-outline-secondary" title="Fetch ship data and captain ImageUrls from Wikipedia only (no image search)">Sync from Wikipedia</button>
           <button id="populateBtn" class="btn btn-modern">Populate All Images (sync + fetch → store)</button>
+          <button id="testTerminalBtn" class="btn btn-outline-secondary ms-2" title="Test that the terminal updates in real-time">Test Terminal</button>
+          <button id="testKeysBtn" class="btn btn-outline-secondary ms-2" title="Validate API keys and show failures">Test Keys</button>
           <span id="populateStatus" class="ms-3"></span>
         </div>
         <div class="mb-4">
           <button id="verifyBtn" class="btn btn-outline-dark">Verify Images (check which fail to load)</button>
           <span id="verifyStatus" class="ms-3"></span>
+        </div>
+        <div class="mb-4">
+          <h5 class="mb-3">Edit Images</h5>
+          <p class="text-muted small mb-3">Edit, delete, or search for a different image for each ship or captain.</p>
+          <div class="row g-3">
+            <div class="col-12">
+              <h6 class="text-muted mb-2">Ships</h6>
+              <div class="d-flex flex-wrap gap-2">
+                <% (ships || []).forEach(function(s) { %>
+                  <div class="edit-card" data-entity="ship" data-id="<%= s.id || s.Id %>" data-name="<%= s.name || s.Name %>">
+                    <img src="/gallery/image/<%= s.id || s.Id %>?v=<%= s.imageVersion ?? s.ImageVersion ?? 0 %>" alt="" class="edit-thumb" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22120%22%3E%3Crect fill=%22%236c757d%22 width=%22200%22 height=%22120%22/%3E%3Ctext fill=%22%23fff%22 x=%22100%22 y=%2260%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-size=%2210%22%3ENo image%3C/text%3E%3C/svg%3E';">
+                    <div class="edit-info">
+                      <span class="edit-name"><%= s.name || s.Name %></span>
+                      <div class="edit-actions mt-1">
+                        <button type="button" class="btn btn-sm btn-outline-light edit-btn">Edit</button>
+                      </div>
+                    </div>
+                  </div>
+                <% }); %>
+              </div>
+            </div>
+            <div class="col-12">
+              <h6 class="text-muted mb-2">Captains</h6>
+              <div class="d-flex flex-wrap gap-2">
+                <% (captains || []).forEach(function(c) { %>
+                  <div class="edit-card" data-entity="captain" data-id="<%= c.id || c.Id %>" data-name="<%= c.name || c.Name %>">
+                    <img src="/gallery/captain/<%= c.id || c.Id %>?v=<%= c.imageVersion ?? c.ImageVersion ?? 0 %>" alt="" class="edit-thumb" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22120%22%3E%3Crect fill=%22%236c757d%22 width=%22200%22 height=%22120%22/%3E%3Ctext fill=%22%23fff%22 x=%22100%22 y=%2260%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-size=%2210%22%3ENo image%3C/text%3E%3C/svg%3E';">
+                    <div class="edit-info">
+                      <span class="edit-name"><%= c.name || c.Name %></span>
+                      <div class="edit-actions mt-1">
+                        <button type="button" class="btn btn-sm btn-outline-light edit-btn">Edit</button>
+                      </div>
+                    </div>
+                  </div>
+                <% }); %>
+              </div>
+            </div>
+          </div>
         </div>
         <div id="terminalOutput" class="card mb-4" style="display: none;">
           <div class="card-header d-flex justify-content-between align-items-center">
@@ -100,7 +140,7 @@
             </div>
           </div>
           <div class="card-body p-0">
-            <pre id="terminalPre" class="mb-0 p-3 bg-dark text-light font-monospace small" style="max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;"><span id="terminalContent"></span></pre>
+            <pre id="terminalPre" class="mb-0 p-3 bg-dark text-light font-monospace small" style="max-height: 70vh; overflow-y: auto; white-space: pre-wrap; word-break: break-all;"><span id="terminalContent"></span></pre>
           </div>
         </div>
         <div id="verifyResults" class="card mb-4" style="display: none;">
@@ -115,6 +155,32 @@
       <% } else { %>
         <div class="alert alert-warning">No audit data. Ensure the API is running.</div>
       <% } %>
+
+      <div id="editImageModal" class="modal fade" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+          <div class="modal-content bg-dark text-light">
+            <div class="modal-header">
+              <h5 class="modal-title" id="editModalTitle">Edit Image</h5>
+              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+              <div id="editImagePane">
+                <div class="mb-3">
+                  <img id="editCurrentImg" src="" alt="" class="img-fluid rounded" style="max-height: 200px;">
+                </div>
+                <div class="d-flex gap-2">
+                  <button type="button" class="btn btn-outline-danger" id="editDeleteBtn">Delete</button>
+                  <button type="button" class="btn btn-modern" id="editSearchBtn">Search</button>
+                </div>
+              </div>
+              <div id="editSearchPane" style="display: none;">
+                <button type="button" class="btn btn-outline-secondary btn-sm mb-2" id="editSearchBackBtn">← Back</button>
+                <iframe id="editSearchFrame" src="" style="width:100%; height: 400px; border: 1px solid #444; border-radius: 6px;"></iframe>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </main>
   <%- include('partials/footer') %>
@@ -127,8 +193,12 @@
       var panel = document.getElementById('terminalOutput');
       content.textContent = Array.isArray(lines) ? lines.join('\n') : lines;
       panel.style.display = 'block';
-      pre.scrollTop = pre.scrollHeight;
-      if (showPanel !== false) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      requestAnimationFrame(function() {
+        requestAnimationFrame(function() {
+          pre.scrollTop = pre.scrollHeight;
+        });
+      });
+      if (showPanel !== false) panel.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
     document.getElementById('terminalCopy').onclick = function() {
       var text = document.getElementById('terminalContent').textContent;
@@ -141,13 +211,166 @@
     document.getElementById('terminalClear').onclick = function() {
       document.getElementById('terminalContent').textContent = '';
     };
+    function runPollingFlow(jobId, statusEl, btnEl, startMsg) {
+      var lines = ['[Populate] ' + new Date().toISOString(), startMsg, ''];
+      var shipResults = [], captainResults = [], lastIdx = 0;
+      var pollCount = 0;
+      var maxPolls = 600;
+      function appendLine(s) { lines.push(s); showTerminal(lines, false); }
+      function poll() {
+        if (++pollCount > maxPolls) {
+          appendLine('[Error] Poll limit reached. Stopping.');
+          statusEl.textContent = 'Stopped (timeout)';
+          btnEl.disabled = false;
+          return;
+        }
+        fetch('/admin/images/populate/status/' + jobId)
+          .then(function(r) {
+            if (!r.ok) throw new Error(r.status === 404 ? 'Job not found' : 'Status ' + r.status);
+            return r.json();
+          })
+          .then(function(st) {
+            for (var i = lastIdx; i < (st.events || []).length; i++) {
+              var evt = st.events[i];
+              var t = evt.type || evt.Type;
+              var d = evt.data !== undefined ? evt.data : evt.Data;
+              if (t === 'sync') {
+                appendLine('[Sync] ' + (evt.message || evt.error || ''));
+                appendLine('');
+                appendLine('[Populate] Step 2: Checking API keys...');
+              } else if (t === 'key' && d) {
+                var p = d.provider || d.Provider || '?';
+                var ok = d.ok !== false;
+                var msg = d.message || d.Message || '';
+                if (msg === 'nokey') appendLine('  [' + p + ']nokey');
+                else appendLine(ok ? '  ' + p + ': OK' : '  [' + p + ']FAIL - ' + msg);
+              } else if (t === 'info' && d) {
+                appendLine('');
+                appendLine('[Populate] Step 3: Fetching and storing images...');
+                appendLine('  ' + d);
+                if (typeof d === 'string' && /Processing 0 ships, 0 captains/.test(d)) appendLine('  (All images cached.)');
+              } else if (t === 'progress' && d) {
+                appendLine('    ' + d);
+              } else if (t === 'error' && evt.error) {
+                appendLine('[Error] ' + evt.error);
+              } else if (t === 'ship' && d) {
+                var x = d;
+                var statusVal = x.status || x.Status;
+                var tag = statusVal === 'ok' ? 'OK' : 'Fail';
+                var suffix = (x.reason || x.Reason) ? ' - ' + (x.reason || x.Reason) : '';
+                var bytes = (x.bytesStored || x.BytesStored) ? ' (' + (x.bytesStored || x.BytesStored) + ' bytes)' : '';
+                appendLine('  [Ship ' + (x.index || x.Index) + '/' + (x.total || x.Total) + '] ' + tag + ': ' + (x.name || x.Name) + ' (id ' + (x.id || x.Id) + ')' + bytes + suffix);
+                shipResults.push(x);
+              } else if (t === 'captain' && d) {
+                var x = d;
+                if (captainResults.length === 0 && shipResults.length > 0) appendLine('');
+                if (captainResults.length === 0) appendLine('[Captains]');
+                var statusVal = x.status || x.Status;
+                var tag = statusVal === 'ok' ? 'OK' : 'Fail';
+                var suffix = (x.reason || x.Reason) ? ' - ' + (x.reason || x.Reason) : '';
+                var bytes = (x.bytesStored || x.BytesStored) ? ' (' + (x.bytesStored || x.BytesStored) + ' bytes)' : '';
+                appendLine('  [Captain ' + (x.index || x.Index) + '/' + (x.total || x.Total) + '] ' + tag + ': ' + (x.name || x.Name) + ' (id ' + (x.id || x.Id) + ')' + bytes + suffix);
+                captainResults.push(x);
+              } else if (t === 'done') {
+                appendLine('');
+                var sOk = shipResults.filter(function(x) { return (x.status || x.Status) === 'ok'; }).length;
+                var cOk = captainResults.filter(function(x) { return (x.status || x.Status) === 'ok'; }).length;
+                appendLine('[Populate] Done. Stored ' + sOk + ' ships, ' + cOk + ' captains.');
+              }
+            }
+            lastIdx = (st.events || []).length;
+            if (st.done) {
+              appendLine('[Populate] Refresh the page to see updated audit stats.');
+              showTerminal(lines);
+              var s = shipResults.filter(function(x) { return (x.status || x.Status) === 'ok'; }).length;
+              var c = captainResults.filter(function(x) { return (x.status || x.Status) === 'ok'; }).length;
+              statusEl.textContent = 'Done. Stored ' + s + ' ships, ' + c + ' captains.';
+              btnEl.disabled = false;
+            } else {
+              setTimeout(poll, 1200);
+            }
+          })
+          .catch(function(e) {
+            appendLine('[Error] Poll failed: ' + e.message);
+            setTimeout(poll, 3000);
+          });
+      }
+      poll();
+    }
+    document.getElementById('testKeysBtn').onclick = function() {
+      var btn = this;
+      btn.disabled = true;
+      var keys = {
+        pexelsApiKey: document.getElementById('pexelsApiKey')?.value?.trim() || null,
+        pixabayApiKey: document.getElementById('pixabayApiKey')?.value?.trim() || null,
+        unsplashAccessKey: document.getElementById('unsplashAccessKey')?.value?.trim() || null,
+        googleApiKey: document.getElementById('googleApiKey')?.value?.trim() || null,
+        googleCseId: document.getElementById('googleCseId')?.value?.trim() || null
+      };
+      showTerminal('[Test Keys] ' + new Date().toISOString() + '\n[Test Keys] Validating API keys...', true);
+      fetch('/admin/images/test-keys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(keys) })
+        .then(function(r) { return r.json(); })
+        .then(function(results) {
+          var lines = ['[Test Keys] ' + new Date().toISOString(), ''];
+          if (Array.isArray(results)) {
+            results.forEach(function(r) {
+              var ok = r.ok !== false;
+              var msg = (r.provider || r.Provider || '?') + ': ' + (ok ? 'OK' : 'FAIL - ' + (r.message || r.Message || ''));
+              lines.push(ok ? '  ' + msg : '  [FAIL] ' + msg);
+            });
+          } else if (results.error) {
+            lines.push('[Error] ' + results.error);
+          } else {
+            lines.push(JSON.stringify(results));
+          }
+          lines.push('');
+          showTerminal(lines);
+          btn.disabled = false;
+        })
+        .catch(function(e) {
+          showTerminal('[Test Keys] Error: ' + e.message);
+          btn.disabled = false;
+        });
+    };
+    document.getElementById('testTerminalBtn').onclick = function() {
+      var btn = this, status = document.getElementById('populateStatus');
+      btn.disabled = true;
+      status.textContent = 'Testing terminal...';
+      showTerminal('[Test] ' + new Date().toISOString() + '\n[Test] Emitting fake progress... Watch the terminal update every ~1.2s.', true);
+      fetch('/admin/images/populate/test-terminal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (d.jobId) runPollingFlow(d.jobId, status, btn, '[Test] Step 1: Fake sync...');
+          else { status.textContent = 'Error: no jobId'; btn.disabled = false; }
+        })
+        .catch(function(e) {
+          showTerminal('[Test] Error: ' + e.message);
+          status.textContent = 'Error: ' + e.message;
+          btn.disabled = false;
+        });
+    };
+    document.getElementById('syncBtn').onclick = function() {
+      var btn = this, status = document.getElementById('populateStatus');
+      btn.disabled = true;
+      status.textContent = 'Syncing from Wikipedia...';
+      fetch('/admin/sync?force=true', { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          status.textContent = d.message || 'Sync done.';
+          refreshAudit();
+        })
+        .catch(function(e) {
+          status.textContent = 'Error: ' + e.message;
+        })
+        .finally(function() { btn.disabled = false; });
+    };
     document.getElementById('populateBtn').onclick = function() {
       var btn = this, status = document.getElementById('populateStatus');
       btn.disabled = true;
       status.textContent = 'Syncing & populating...';
       var startTime = Date.now();
       showTerminal('[Populate] ' + new Date().toISOString() + '\n[Populate] Step 1: Running Wikipedia sync to fetch captain ImageUrls...\n[Populate] This may take several minutes.', true);
-      var body = { runSyncFirst: true };
+      var body = { runSyncFirst: true, usePolling: true };
       var pexels = document.getElementById('pexelsApiKey')?.value?.trim();
       var pixabay = document.getElementById('pixabayApiKey')?.value?.trim();
       var unsplash = document.getElementById('unsplashAccessKey')?.value?.trim();
@@ -161,6 +384,15 @@
       fetch('/admin/images/populate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
         .then(function(r) { return r.json(); })
         .then(function(d) {
+          if (d.jobId) {
+            runPollingFlow(d.jobId, status, btn, '[Populate] Step 1: Running Wikipedia sync...');
+            return { stream: true };
+          }
+          return { stream: false, data: d };
+        })
+        .then(function(result) {
+          if (result && result.stream) return;
+          var d = result.data;
           var elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
           var lines = (d.logLines || []).slice();
           if (lines.length === 0) {
@@ -240,6 +472,157 @@
           btn.disabled = false;
         });
     };
+
+    var editModal = document.getElementById('editImageModal');
+    var editImagePane = document.getElementById('editImagePane');
+    var editSearchPane = document.getElementById('editSearchPane');
+    var editSearchFrame = document.getElementById('editSearchFrame');
+    var editCurrentImg = document.getElementById('editCurrentImg');
+    var editModalTitle = document.getElementById('editModalTitle');
+    var currentEdit = { entity: null, id: null, card: null };
+
+    document.addEventListener('click', function(e) {
+      var btn = e.target.closest('.edit-btn');
+      if (!btn) return;
+      var card = btn.closest('.edit-card');
+      if (!card) return;
+      currentEdit.entity = card.dataset.entity;
+      currentEdit.id = card.dataset.id;
+      currentEdit.name = card.dataset.name;
+      currentEdit.card = card;
+      var img = card.querySelector('.edit-thumb');
+      editCurrentImg.src = img.src;
+      editModalTitle.textContent = 'Edit: ' + currentEdit.name;
+      editImagePane.style.display = 'block';
+      editSearchPane.style.display = 'none';
+      new bootstrap.Modal(editModal).show();
+    });
+
+    var noImagePlaceholder = "data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22120%22%3E%3Crect fill=%22%236c757d%22 width=%22200%22 height=%22120%22/%3E%3Ctext fill=%22%23fff%22 x=%22100%22 y=%2260%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-size=%2210%22%3ENo image%3C/text%3E%3C/svg%3E";
+    editModal.addEventListener('click', function(e) {
+      if (!e.target.closest('#editDeleteBtn')) return;
+      if (!currentEdit.entity || !currentEdit.id) return;
+      if (!confirm('Delete cached image for ' + (currentEdit.name || 'this item') + '?')) return;
+      var btn = document.getElementById('editDeleteBtn');
+      if (btn) { btn.disabled = true; btn.textContent = 'Deleting...'; }
+      var url = '/api/images/' + currentEdit.entity + '/' + currentEdit.id;
+      fetch(url, { method: 'DELETE' })
+        .then(function(r) {
+          if (!r.ok) return r.json().then(function(j) { throw new Error(j.error || j.message || 'Delete failed'); });
+          return r.json().catch(function() { return {}; });
+        })
+        .then(function() {
+          var inst = bootstrap.Modal.getInstance(editModal);
+          if (inst) inst.hide();
+          if (currentEdit.card) {
+            var thumb = currentEdit.card.querySelector('.edit-thumb');
+            if (thumb) thumb.src = noImagePlaceholder;
+          }
+          editCurrentImg.src = noImagePlaceholder;
+          refreshAudit();
+        })
+        .catch(function(e) {
+          if (btn) { btn.disabled = false; btn.textContent = 'Delete'; }
+          alert('Delete failed: ' + e.message);
+        });
+    });
+
+    document.getElementById('editSearchBackBtn').onclick = function() {
+      editSearchFrame.src = 'about:blank';
+      editImagePane.style.display = 'block';
+      editSearchPane.style.display = 'none';
+    };
+
+    document.getElementById('editSearchBtn').onclick = function() {
+      if (!currentEdit.entity || !currentEdit.id) return;
+      var keys = {
+        pexelsApiKey: document.getElementById('pexelsApiKey')?.value?.trim() || null,
+        pixabayApiKey: document.getElementById('pixabayApiKey')?.value?.trim() || null,
+        unsplashAccessKey: document.getElementById('unsplashAccessKey')?.value?.trim() || null,
+        googleApiKey: document.getElementById('googleApiKey')?.value?.trim() || null,
+        googleCseId: document.getElementById('googleCseId')?.value?.trim() || null
+      };
+      sessionStorage.setItem('adminImageKeys', JSON.stringify(keys));
+      var q = encodeURIComponent(currentEdit.name + (currentEdit.entity === 'ship' ? ' battleship' : ' portrait'));
+      editSearchFrame.src = '/admin/images/search-frame?entity=' + currentEdit.entity + '&id=' + currentEdit.id + '&q=' + q;
+      editImagePane.style.display = 'none';
+      editSearchPane.style.display = 'block';
+    };
+
+    function refreshAudit() {
+      fetch('/api/images/audit').then(function(r) { return r.json(); })
+        .then(function(audit) {
+          if (!audit) return;
+          function renderEntityBody(ent) {
+            if (!ent) return '';
+            var html = '<p class="mb-1"><strong>Total:</strong> ' + (ent.total ?? 0) + '</p>';
+            html += '<p class="mb-1"><strong>With ImageUrl:</strong> ' + (ent.withImageUrl ?? 0) + '</p>';
+            html += '<p class="mb-1"><strong>With ImageData (cached):</strong> ' + (ent.withImageData ?? 0) + '</p>';
+            var mu = ent.missingUrl || [];
+            if (mu.length > 0) {
+              html += '<p class="mb-1 text-warning"><strong>Missing ImageUrl:</strong> ' + mu.length + '</p><ul class="small mb-0">';
+              mu.slice(0, 10).forEach(function(m) { html += '<li>' + (m.name || '') + ' (id ' + (m.id || '') + ')</li>'; });
+              if (mu.length > 10) html += '<li>... and ' + (mu.length - 10) + ' more</li>';
+              html += '</ul>';
+            }
+            var mc = ent.missingCachedData || [];
+            if (mc.length > 0) {
+              html += '<p class="mb-1 text-info mt-2"><strong>Has URL but not cached:</strong> ' + mc.length + '</p><ul class="small mb-0">';
+              mc.slice(0, 10).forEach(function(m) { html += '<li>' + (m.name || '') + ' (id ' + (m.id || '') + ')</li>'; });
+              if (mc.length > 10) html += '<li>... and ' + (mc.length - 10) + ' more</li>';
+              html += '</ul>';
+            }
+            return html;
+          }
+          var shipsBody = document.getElementById('auditShipsBody');
+          var captainsBody = document.getElementById('auditCaptainsBody');
+          if (shipsBody) shipsBody.innerHTML = renderEntityBody(audit.ships);
+          if (captainsBody) captainsBody.innerHTML = renderEntityBody(audit.captains);
+        })
+        .catch(function() {});
+    }
+
+    window.addEventListener('message', function(e) {
+      if (!e.data || e.data.type !== 'imageSelected' || String(e.data.entityId) !== String(currentEdit.id)) return;
+      var entity = e.data.entity;
+      var entityId = e.data.entityId;
+      var url = e.data.url;
+      fetch('/api/images/' + entity + '/' + entityId + '/from-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: url })
+      })
+        .then(function(r) {
+          if (!r.ok) return r.json().then(function(j) { throw new Error(j.error || j.message || 'Set image failed'); });
+          return r.json().catch(function() { return {}; });
+        })
+        .then(function() {
+          var v = Date.now();
+          var imgUrl = (entity === 'ship' ? '/gallery/image/' : '/gallery/captain/') + entityId + '?v=' + v;
+          if (currentEdit.card) {
+            var thumb = currentEdit.card.querySelector('.edit-thumb');
+            if (thumb) thumb.src = imgUrl;
+          }
+          editCurrentImg.src = imgUrl;
+          editSearchFrame.src = 'about:blank';
+          editImagePane.style.display = 'block';
+          editSearchPane.style.display = 'none';
+          refreshAudit();
+          var inst = bootstrap.Modal.getInstance(editModal);
+          if (inst) inst.hide();
+        })
+        .catch(function(err) { alert('Set image failed: ' + err.message); });
+    });
+
+    if (editModal) {
+      editModal.addEventListener('hidden.bs.modal', function() {
+        editSearchFrame.src = 'about:blank';
+        editImagePane.style.display = 'block';
+        editSearchPane.style.display = 'none';
+        var db = document.getElementById('editDeleteBtn');
+        if (db) { db.disabled = false; db.textContent = 'Delete'; }
+      });
+    }
   </script>
   <% } %>
 </body>

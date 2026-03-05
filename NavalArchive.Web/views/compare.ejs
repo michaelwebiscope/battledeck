@@ -46,53 +46,16 @@
         <div class="alert alert-info">Select a second ship above to compare with <strong><%= ship1.name %></strong>.</div>
         <% } %>
       <% } %>
-      <% if (ship1 && ship2) { %>
+      <% if (ship1 && ship2) {
+        var e1 = toEntity(ship1, 'ship');
+        var e2 = toEntity(ship2, 'ship');
+      %>
       <div class="row g-4">
         <div class="col-md-6">
-          <div class="card h-100">
-            <div class="card-header d-flex justify-content-between align-items-center">
-              <span><%= ship1.name %></span>
-              <a href="/ships/<%= ship1.id %>" class="btn btn-outline-light btn-sm">View</a>
-            </div>
-            <div class="card-body">
-              <% if (ship1.imageUrl && ship1.imageUrl.startsWith('http')) { %>
-                <img src="<%= ship1.imageUrl %>" class="img-fluid rounded mb-3" alt="<%= ship1.name %>" style="height: 200px; width: 100%; object-fit: cover;" onerror="this.onerror=null;this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22400%22 height=%22200%22%3E%3Crect fill=%22%236c757d%22 width=%22400%22 height=%22200%22/%3E%3Ctext fill=%22%23fff%22 x=%22200%22 y=%22100%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-size=%2212%22%3ENo image%3C/text%3E%3C/svg%3E';">
-              <% } else { %>
-                <div class="img-placeholder rounded mb-3" style="height: 200px;"><%= ship1.name %></div>
-              <% } %>
-              <p class="text-muted small">Commissioned <%= ship1.yearCommissioned %></p>
-              <p><%= ship1.description %></p>
-              <% if (ship1.class) { %>
-                <p class="mb-0"><strong>Class:</strong> <%= ship1.class.name %> · <%= ship1.class.type %> · <%= ship1.class.country %></p>
-              <% } %>
-              <% if (ship1.captain) { %>
-                <p class="mb-0"><strong>Captain:</strong> <%= ship1.captain.name %> (<%= ship1.captain.rank %>)</p>
-              <% } %>
-            </div>
-          </div>
+          <%- include('partials/entity-card', { entity: e1, size: 'md', cols: 'col-12', showSubtitle: true, showDescription: 200 }) %>
         </div>
         <div class="col-md-6">
-          <div class="card h-100">
-            <div class="card-header d-flex justify-content-between align-items-center">
-              <span><%= ship2.name %></span>
-              <a href="/ships/<%= ship2.id %>" class="btn btn-outline-light btn-sm">View</a>
-            </div>
-            <div class="card-body">
-              <% if (ship2.imageUrl && ship2.imageUrl.startsWith('http')) { %>
-                <img src="<%= ship2.imageUrl %>" class="img-fluid rounded mb-3" alt="<%= ship2.name %>" style="height: 200px; width: 100%; object-fit: cover;" onerror="this.onerror=null;this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22400%22 height=%22200%22%3E%3Crect fill=%22%236c757d%22 width=%22400%22 height=%22200%22/%3E%3Ctext fill=%22%23fff%22 x=%22200%22 y=%22100%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-size=%2212%22%3ENo image%3C/text%3E%3C/svg%3E';">
-              <% } else { %>
-                <div class="img-placeholder rounded mb-3" style="height: 200px;"><%= ship2.name %></div>
-              <% } %>
-              <p class="text-muted small">Commissioned <%= ship2.yearCommissioned %></p>
-              <p><%= ship2.description %></p>
-              <% if (ship2.class) { %>
-                <p class="mb-0"><strong>Class:</strong> <%= ship2.class.name %> · <%= ship2.class.type %> · <%= ship2.class.country %></p>
-              <% } %>
-              <% if (ship2.captain) { %>
-                <p class="mb-0"><strong>Captain:</strong> <%= ship2.captain.name %> (<%= ship2.captain.rank %>)</p>
-              <% } %>
-            </div>
-          </div>
+          <%- include('partials/entity-card', { entity: e2, size: 'md', cols: 'col-12', showSubtitle: true, showDescription: 200 }) %>
         </div>
       </div>
       <div class="mt-4">

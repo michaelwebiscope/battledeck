@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Text.RegularExpressions;
-using NavalArchive.Api.Data;
+using NavalArchive.Data;
 using NavalArchive.Api.Services;
 
 namespace NavalArchive.Api.Controllers;

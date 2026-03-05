@@ -1,0 +1,24 @@
+<%#
+  Entity image partial - single source for all entity images with placeholder fallback.
+  Entity: { id, name, imageUrl?, imageVersion?, imageGallery? }
+  imageGallery: 'image' (ships) | 'captain' (captains) - default 'image'
+  Options: size (48x32, 160, 180, 200, 240, 280), rounded, lightbox
+-%>
+<%
+  var gallery = (typeof imageGallery !== 'undefined' ? imageGallery : (entity.imageGallery || 'image'));
+  var path = entity.imageUrl || ('/gallery/' + gallery + '/' + (entity.id || '') + '?v=' + (entity.imageVersion ?? entity.ImageVersion ?? 0));
+  var alt = (entity.name || '').replace(/"/g, '&quot;');
+  var height = typeof size === 'string' ? size : (size || '240');
+  var placeholderSvg = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22400%22 height=%22300%22%3E%3Crect fill=%22%236c757d%22 width=%22400%22 height=%22300%22/%3E%3Ctext fill=%22%23fff%22 x=%22200%22 y=%22150%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-size=%2216%22%3ENo image%3C/text%3E%3C/svg%3E';
+  if (height === '48x32') placeholderSvg = "data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2248%22 height=%2232%22%3E%3Crect fill=%22%236c757d%22 width=%2248%22 height=%2232%22/%3E%3C/svg%3E";
+  var imgStyle = height === '48x32' ? 'width: 48px; height: 32px;' : 'height: ' + height + 'px; width: 100%;';
+  var imgClass = typeof rounded !== 'undefined' && rounded ? 'rounded' : '';
+  var lightbox = typeof lightbox !== 'undefined' ? lightbox : false;
+%>
+<% if (lightbox) { %>
+<div class="position-relative" style="overflow: hidden; cursor: pointer;" role="button" data-image-url="<%= path %>" data-image-title="<%= alt %>" onclick="typeof showImageModal==='function'&&showImageModal(this.dataset.imageUrl, this.dataset.imageTitle)" title="Click to enlarge">
+  <img src="<%= path %>" alt="<%= alt %>" class="<%= imgClass %>" style="<%= imgStyle %> object-fit: cover; display: block;" onerror="this.onerror=null;this.src='<%= placeholderSvg %>';">
+</div>
+<% } else { %>
+<img src="<%= path %>" alt="<%= alt %>" class="<%= imgClass %>" style="<%= imgStyle %> object-fit: cover; display: block;" onerror="this.onerror=null;this.src='<%= placeholderSvg %>';">
+<% } %>

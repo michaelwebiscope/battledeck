@@ -1,4 +1,4 @@
-namespace NavalArchive.Api.Models;
+namespace NavalArchive.Data.Models;
 
 public class Captain
 {
@@ -11,5 +11,9 @@ public class Captain
     public byte[]? ImageData { get; set; }
     /// <summary>Content-Type of ImageData (e.g. image/jpeg).</summary>
     public string? ImageContentType { get; set; }
+    /// <summary>Incremented when image changes; use in URLs for cache busting.</summary>
+    public long ImageVersion { get; set; }
+    /// <summary>True when image was manually selected; sync will not overwrite until deleted.</summary>
+    public bool ImageManuallySet { get; set; }
     public ICollection<Ship> Ships { get; set; } = new List<Ship>();
 }

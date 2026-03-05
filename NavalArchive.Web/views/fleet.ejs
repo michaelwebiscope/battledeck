@@ -72,21 +72,20 @@
                   <th>Rank</th>
                   <th>Year</th>
                   <th>Description</th>
+                  <th class="admin-only" style="width: 60px;"></th>
                 </tr>
               </thead>
               <tbody>
                 <% if (ships && ships.length > 0) { %>
-                  <% ships.forEach(function(ship) { %>
+                  <% ships.forEach(function(ship) {
+                    var shipEntity = toEntity(ship, 'ship');
+                  %>
                     <tr>
                       <td>
                         <div class="d-flex align-items-center">
-                          <% if (ship.imageUrl && ship.imageUrl.startsWith('http')) { %>
-                            <img src="<%= ship.imageUrl %>" alt="" class="rounded me-2" style="width: 48px; height: 32px; object-fit: cover;" title="Ship photo" onerror="this.onerror=null;this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2248%22 height=%2232%22%3E%3Crect fill=%22%236c757d%22 width=%2248%22 height=%2232%22/%3E%3C/svg%3E'; this.title='No image';">
-                          <% } else { %>
-                            <div class="rounded me-2 img-placeholder" style="width: 48px; height: 32px; font-size: 0.6rem;" title="No image">—</div>
-                          <% } %>
-                          <a href="/ships/<%= ship.id %>" class="text-decoration-none fw-bold"><%= ship.name %></a>
-                          <a href="/compare?id1=<%= ship.id %>" class="text-muted small ms-1" title="Compare">↔</a>
+                          <span class="me-2 flex-shrink-0"><%- include('partials/entity-image', { entity: shipEntity, size: '48x32' }) %></span>
+                          <a href="/ships/<%= ship.id || ship.Id %>" class="text-decoration-none fw-bold"><%= ship.name %></a>
+                          <a href="/compare?id1=<%= ship.id || ship.Id %>" class="text-muted small ms-1" title="Compare">↔</a>
                         </div>
                       </td>
                       <td><%= ship.class ? ship.class.name : '-' %></td>
@@ -95,17 +94,32 @@
                       <td><%= ship.captain ? ship.captain.name : '-' %></td>
                       <td><%= ship.captain ? ship.captain.rank : '-' %></td>
                       <td><%= ship.yearCommissioned %></td>
-                      <td class="small text-muted" style="max-width: 200px;"><%= ship.description %></td>
+                      <td class="small text-muted" style="max-width: 180px;" title="<%= (ship.description || '').replace(/"/g, '&quot;') %>"><%= (ship.description || '').length > 80 ? (ship.description || '').substring(0, 80) + '…' : (ship.description || '') %></td>
+                      <td class="admin-only"><a href="/ships/<%= ship.id || ship.Id %>" class="btn btn-outline-secondary btn-sm">Edit</a></td>
                     </tr>
                   <% }); %>
                 <% } else { %>
-                  <tr><td colspan="8" class="text-center py-4 text-muted">No ships loaded.</td></tr>
+                  <tr><td colspan="9" class="text-center py-4 text-muted">No ships loaded.</td></tr>
                 <% } %>
               </tbody>
             </table>
           </div>
         </div>
       </div>
+      <% if (typeof total !== 'undefined' && total > (pageSize || 100) && !(typeof searchQuery !== 'undefined' && searchQuery)) { %>
+      <nav class="mt-3" aria-label="Fleet pagination">
+        <ul class="pagination justify-content-center mb-0">
+          <% var totalPages = Math.ceil(total / (pageSize || 100)); %>
+          <li class="page-item <%= page <= 1 ? 'disabled' : '' %>">
+            <a class="page-link" href="<%= page <= 1 ? '#' : '/fleet?page=' + (page - 1) + (filters && filters.country ? '&country=' + encodeURIComponent(filters.country) : '') + (filters && filters.type ? '&type=' + encodeURIComponent(filters.type) : '') + (filters && filters.yearMin ? '&yearMin=' + filters.yearMin : '') + (filters && filters.yearMax ? '&yearMax=' + filters.yearMax : '') %>">Previous</a>
+          </li>
+          <li class="page-item disabled"><span class="page-link">Page <%= page %> of <%= totalPages %> (<%= total %> ships)</span></li>
+          <li class="page-item <%= page >= totalPages ? 'disabled' : '' %>">
+            <a class="page-link" href="<%= page >= totalPages ? '#' : '/fleet?page=' + (page + 1) + (filters && filters.country ? '&country=' + encodeURIComponent(filters.country) : '') + (filters && filters.type ? '&type=' + encodeURIComponent(filters.type) : '') + (filters && filters.yearMin ? '&yearMin=' + filters.yearMin : '') + (filters && filters.yearMax ? '&yearMax=' + filters.yearMax : '') %>">Next</a>
+          </li>
+        </ul>
+      </nav>
+      <% } %>
     </div>
   </main>
   <%- include('partials/footer') %>

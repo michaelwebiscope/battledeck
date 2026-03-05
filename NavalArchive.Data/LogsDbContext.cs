@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
-using NavalArchive.Api.Models;
+using NavalArchive.Data.Models;
 
-namespace NavalArchive.Api.Data;
+namespace NavalArchive.Data;
 
 public class LogsDbContext : DbContext
 {
