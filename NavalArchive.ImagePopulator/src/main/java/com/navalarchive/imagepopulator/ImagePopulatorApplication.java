@@ -3,6 +3,7 @@ package com.navalarchive.imagepopulator;
 import java.io.IOException;
 import java.lang.reflect.Type;
 import java.security.cert.X509Certificate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -145,18 +146,25 @@ public class ImagePopulatorApplication {
     }
 
     private static List<Map<String, Object>> fetchShips(OkHttpClient client, String apiBase) throws IOException {
-        String url = apiBase.replaceAll("/$", "") + "/api/ships";
-        Request req = new Request.Builder()
-                .url(url)
-                .header("Accept", "application/json")
-                .get()
-                .build();
-
-        try (Response res = client.newCall(req).execute()) {
-            if (!res.isSuccessful() || res.body() == null) return null;
-            Type type = new TypeToken<List<Map<String, Object>>>(){}.getType();
-            return new Gson().fromJson(res.body().string(), type);
+        String base = apiBase.replaceAll("/$", "");
+        List<Map<String, Object>> all = new ArrayList<>();
+        int page = 1;
+        int pageSize = 500;
+        while (true) {
+            String url = base + "/api/ships?page=" + page + "&pageSize=" + pageSize;
+            Request req = new Request.Builder().url(url).header("Accept", "application/json").get().build();
+            try (Response res = client.newCall(req).execute()) {
+                if (!res.isSuccessful() || res.body() == null) break;
+                Map<String, Object> json = new Gson().fromJson(res.body().string(), new TypeToken<Map<String, Object>>(){}.getType());
+                List<Map<String, Object>> items = (List<Map<String, Object>>) json.get("items");
+                if (items == null || items.isEmpty()) break;
+                all.addAll(items);
+                Number total = (Number) json.get("total");
+                if (total == null || all.size() >= total.intValue()) break;
+                page++;
+            }
         }
+        return all;
     }
 
     private static FetchResult fetchImageWithRetry(OkHttpClient client, String url, String name, int index, int total) throws IOException {

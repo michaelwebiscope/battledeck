@@ -98,10 +98,14 @@ function uploadImage(apiBase, shipId, buffer, contentType) {
 async function main() {
   console.log('[populate-images] Target API:', API_BASE);
   try {
-    const ships = await fetchJson(`${API_BASE}/api/ships`);
-    if (!Array.isArray(ships)) {
-      console.error('[populate-images] ERROR: Failed to fetch ships (invalid response)');
-      process.exit(1);
+    const first = await fetchJson(`${API_BASE}/api/ships?page=1&pageSize=500`);
+    let ships = Array.isArray(first?.items) ? first.items : (Array.isArray(first) ? first : []);
+    const total = first?.total ?? ships.length;
+    if (total > 500) {
+      for (let p = 2; p <= Math.ceil(total / 500); p++) {
+        const page = await fetchJson(`${API_BASE}/api/ships?page=${p}&pageSize=500`);
+        ships = ships.concat(page?.items || []);
+      }
     }
     const withImage = ships.filter((s) => s.imageUrl && String(s.imageUrl).startsWith('http'));
     console.log('[populate-images] Connected. Ships:', ships.length, ', with image URLs:', withImage.length);
