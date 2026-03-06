@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
+using NavalArchive.Api.Models;
 using NavalArchive.Data;
 using NavalArchive.Data.Models;
 
@@ -52,7 +53,7 @@ public class ImageStorageService
     }
 
     /// <summary>Fetch image from URL and store in DB. Returns (stored, reason, bytesStored). Optional onProgress for integration status.</summary>
-    public async Task<(bool Stored, string? Reason, int BytesStored)> PopulateShipImageAsync(NavalArchiveDbContext db, int shipId, CancellationToken ct = default, ImageSearchKeys? keys = null, Action<string>? onProgress = null)
+    public async Task<(bool Stored, string? Reason, int BytesStored)> PopulateShipImageAsync(NavalArchiveDbContext db, int shipId, CancellationToken ct = default, ImageSearchKeys? keys = null, Action<string>? onProgress = null, PopulateOptions? options = null)
     {
         var ship = await db.Ships.FindAsync(new object[] { shipId }, ct);
         if (ship == null) return (false, "Ship not found", 0);
@@ -63,10 +64,11 @@ public class ImageStorageService
 
         string? urlToTry = ship.ImageUrl;
         var triedUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var shipPrefix = options?.ShipPrefix ?? "battleship";
         if (string.IsNullOrWhiteSpace(urlToTry) && _imageSearch != null && (keys != null || _imageSearch.IsConfigured))
         {
             onProgress?.Invoke($"[{ship.Name}] No ImageUrl, searching...");
-            var urls = await _imageSearch.FindImageUrlsAsync($"{ship.Name} battleship ship photo", 5, ct, keys, onProgress);
+            var urls = await _imageSearch.FindImageUrlsAsync($"{ship.Name} {shipPrefix} ship photo", 5, ct, keys, onProgress, null, options?.ImageSources);
             if (urls.Count > 0) { urlToTry = urls[0]; ship.ImageUrl = urlToTry; }
         }
         if (string.IsNullOrWhiteSpace(urlToTry)) return (false, "No ImageUrl", 0);
@@ -78,10 +80,10 @@ public class ImageStorageService
             if (_imageSearch != null && (keys != null || _imageSearch.IsConfigured))
             {
                 onProgress?.Invoke($"[{ship.Name}] Fetch failed, trying fallback search...");
-                var queries = new[] { $"{ship.Name} battleship ship", $"{ship.Name} warship", $"{ship.Name} naval" };
+                var queries = new[] { $"{ship.Name} {shipPrefix} ship", $"{ship.Name} warship", $"{ship.Name} naval" };
                 foreach (var q in queries)
                 {
-                    var urls = await _imageSearch.FindImageUrlsAsync(q, 5, ct, keys, onProgress);
+                    var urls = await _imageSearch.FindImageUrlsAsync(q, 5, ct, keys, onProgress, null, options?.ImageSources);
                     foreach (var u in urls.Where(u => !triedUrls.Contains(u)))
                     {
                         triedUrls.Add(u);
@@ -111,7 +113,7 @@ public class ImageStorageService
     }
 
     /// <summary>Fetch image from URL and store in DB. Returns (stored, reason, bytesStored). usedCaptainUrls: skip URLs already used. usedCaptainHashes: skip images with same hash (catches duplicates from different URLs).</summary>
-    public async Task<(bool Stored, string? Reason, int BytesStored)> PopulateCaptainImageAsync(NavalArchiveDbContext db, int captainId, CancellationToken ct = default, ImageSearchKeys? keys = null, HashSet<string>? usedCaptainUrls = null, HashSet<string>? usedCaptainHashes = null, Action<string>? onProgress = null)
+    public async Task<(bool Stored, string? Reason, int BytesStored)> PopulateCaptainImageAsync(NavalArchiveDbContext db, int captainId, CancellationToken ct = default, ImageSearchKeys? keys = null, HashSet<string>? usedCaptainUrls = null, HashSet<string>? usedCaptainHashes = null, Action<string>? onProgress = null, PopulateOptions? options = null)
     {
         var captain = await db.Captains.FindAsync(new object[] { captainId }, ct);
         if (captain == null) return (false, "Captain not found", 0);
@@ -120,12 +122,13 @@ public class ImageStorageService
         if (manuallySet) return (true, "Manually set (skip)", captain.ImageData?.Length ?? 0);
         if (captain.ImageData != null) return (true, "Already cached", captain.ImageData.Length);
 
+        var captainPrefix = options?.CaptainPrefix ?? "captain";
         string? urlToTry = captain.ImageUrl;
         var triedUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (string.IsNullOrWhiteSpace(urlToTry) && _imageSearch != null && (keys != null || _imageSearch.IsConfigured))
         {
             onProgress?.Invoke($"[{captain.Name}] No ImageUrl, searching...");
-            var urls = await _imageSearch.FindImageUrlsAsync($"{captain.Name} naval captain portrait", 8, ct, keys, onProgress);
+            var urls = await _imageSearch.FindImageUrlsAsync($"{captain.Name} {captainPrefix}", 8, ct, keys, onProgress, null, options?.ImageSources);
             urlToTry = urls.FirstOrDefault(u => (usedCaptainUrls == null || !usedCaptainUrls.Contains(u)) && !triedUrls.Contains(u));
             if (urlToTry != null) captain.ImageUrl = urlToTry;
         }
@@ -138,10 +141,10 @@ public class ImageStorageService
             if (_imageSearch != null && (keys != null || _imageSearch.IsConfigured))
             {
                 onProgress?.Invoke($"[{captain.Name}] Fetch failed, trying fallback search...");
-                var queries = new[] { $"{captain.Name} admiral portrait", $"{captain.Name} naval officer", $"{captain.Name} WWII admiral", $"{captain.Name} Kriegsmarine" };
+                var queries = new[] { $"{captain.Name} {captainPrefix}", $"{captain.Name} admiral portrait", $"{captain.Name} naval officer", $"{captain.Name} WWII admiral", $"{captain.Name} Kriegsmarine" };
                 foreach (var q in queries)
                 {
-                    var urls = await _imageSearch.FindImageUrlsAsync(q, 8, ct, keys, onProgress);
+                    var urls = await _imageSearch.FindImageUrlsAsync(q, 8, ct, keys, onProgress, null, options?.ImageSources);
                     foreach (var u in urls.Where(u => !triedUrls.Contains(u) && (usedCaptainUrls == null || !usedCaptainUrls.Contains(u))))
                     {
                         triedUrls.Add(u);
@@ -195,7 +198,7 @@ public class ImageStorageService
     }
 
     /// <summary>Populate all ships and captains that have no ImageData. Optional keys for fallback when not in config.</summary>
-    public async Task<PopulateResult> PopulateAllAsync(NavalArchiveDbContext db, CancellationToken ct = default, ImageSearchKeys? keys = null)
+    public async Task<PopulateResult> PopulateAllAsync(NavalArchiveDbContext db, CancellationToken ct = default, ImageSearchKeys? keys = null, PopulateOptions? options = null)
     {
         var ships = await db.Ships.Where(s => s.ImageData == null && !s.ImageManuallySet).ToListAsync(ct);
         var captains = await db.Captains.Where(c => c.ImageData == null && !c.ImageManuallySet).ToListAsync(ct);
@@ -209,7 +212,7 @@ public class ImageStorageService
         foreach (var ship in ships)
         {
             idx++;
-            var (stored, reason, bytes) = await PopulateShipImageAsync(db, ship.Id, ct, keys);
+            var (stored, reason, bytes) = await PopulateShipImageAsync(db, ship.Id, ct, keys, null, options);
             shipResults.Add(new PopulateItemResult(ship.Id, ship.Name ?? "Ship " + ship.Id, stored ? "ok" : "fail", reason, idx, ships.Count, bytes > 0 ? bytes : null));
             await Task.Delay(200, ct);
         }
@@ -218,7 +221,7 @@ public class ImageStorageService
         foreach (var captain in captains)
         {
             idx++;
-            var (stored, reason, bytes) = await PopulateCaptainImageAsync(db, captain.Id, ct, keys, usedCaptainUrls, usedCaptainHashes);
+            var (stored, reason, bytes) = await PopulateCaptainImageAsync(db, captain.Id, ct, keys, usedCaptainUrls, usedCaptainHashes, null, options);
             captainResults.Add(new PopulateItemResult(captain.Id, captain.Name ?? "Captain " + captain.Id, stored ? "ok" : "fail", reason, idx, captains.Count, bytes > 0 ? bytes : null));
             await Task.Delay(200, ct);
         }
@@ -232,7 +235,7 @@ public class ImageStorageService
     }
 
     /// <summary>Streaming populate: yields progress (integrations) and results after each ship and captain.</summary>
-    public async IAsyncEnumerable<PopulateProgressEvent> PopulateAllStreamAsync(NavalArchiveDbContext db, [EnumeratorCancellation] CancellationToken ct = default, ImageSearchKeys? keys = null)
+    public async IAsyncEnumerable<PopulateProgressEvent> PopulateAllStreamAsync(NavalArchiveDbContext db, [EnumeratorCancellation] CancellationToken ct = default, ImageSearchKeys? keys = null, PopulateOptions? options = null)
     {
         if (_imageSearch != null)
         {
@@ -254,7 +257,7 @@ public class ImageStorageService
         foreach (var ship in ships)
         {
             idx++;
-            var (stored, reason, bytes) = await PopulateShipImageAsync(db, ship.Id, ct, keys, onProgress);
+            var (stored, reason, bytes) = await PopulateShipImageAsync(db, ship.Id, ct, keys, onProgress, options);
             while (progressQueue.TryDequeue(out var msg))
                 yield return new PopulateProgressEvent("progress", msg);
             var item = new PopulateItemResult(ship.Id, ship.Name ?? "Ship " + ship.Id, stored ? "ok" : "fail", reason, idx, ships.Count, bytes > 0 ? bytes : null);
@@ -266,7 +269,7 @@ public class ImageStorageService
         foreach (var captain in captains)
         {
             idx++;
-            var (stored, reason, bytes) = await PopulateCaptainImageAsync(db, captain.Id, ct, keys, usedCaptainUrls, usedCaptainHashes, onProgress);
+            var (stored, reason, bytes) = await PopulateCaptainImageAsync(db, captain.Id, ct, keys, usedCaptainUrls, usedCaptainHashes, onProgress, options);
             while (progressQueue.TryDequeue(out var msg))
                 yield return new PopulateProgressEvent("progress", msg);
             var item = new PopulateItemResult(captain.Id, captain.Name ?? "Captain " + captain.Id, stored ? "ok" : "fail", reason, idx, captains.Count, bytes > 0 ? bytes : null);
@@ -312,6 +315,13 @@ public class ImageStorageService
 public record ImageAuditResult(EntityAudit Ships, EntityAudit Captains);
 public record EntityAudit(int Total, int WithImageUrl, int WithImageData, List<MissingItem> MissingUrl, List<MissingItem> MissingCachedData);
 public record MissingItem(int Id, string Name);
+/// <summary>Options for populate: search prefixes (entity name + prefix = query).</summary>
+public record PopulateOptions(string? ShipSearchPrefix, string? CaptainSearchPrefix, IReadOnlyList<ImageSourceConfig>? ImageSources = null)
+{
+    public string ShipPrefix => string.IsNullOrWhiteSpace(ShipSearchPrefix) ? "battleship" : ShipSearchPrefix.Trim();
+    public string CaptainPrefix => string.IsNullOrWhiteSpace(CaptainSearchPrefix) ? "captain" : CaptainSearchPrefix.Trim();
+}
+
 public record PopulateResult(int ShipsStored, int CaptainsStored, List<PopulateItemResult> ShipResults, List<PopulateItemResult> CaptainResults);
 public record PopulateItemResult(int Id, string Name, string Status, string? Reason, int Index, int Total, int? BytesStored = null);
 public record PopulateProgressEvent(string Type, object? Data);

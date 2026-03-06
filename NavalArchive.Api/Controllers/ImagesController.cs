@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
+using NavalArchive.Api.Models;
 using NavalArchive.Data;
 using NavalArchive.Api.Services;
 
@@ -79,21 +80,35 @@ public class ImagesController : ControllerBase
     [HttpPost("test-keys")]
     public async Task<ActionResult<List<KeyTestResult>>> TestKeys([FromBody] PopulateRequest? request = null, CancellationToken ct = default)
     {
-        var keys = request != null && (request.PexelsApiKey != null || request.PixabayApiKey != null || request.UnsplashAccessKey != null || request.GoogleApiKey != null)
-            ? new ImageSearchKeys(request.PexelsApiKey, request.PixabayApiKey, request.UnsplashAccessKey, request.GoogleApiKey, request.GoogleCseId)
-            : null;
+        var keys = BuildImageSearchKeys(request);
         var results = await _imageSearch.TestKeysAsync(keys, ct);
         return Ok(results);
+    }
+
+    private static ImageSearchKeys? BuildImageSearchKeys(PopulateRequest? request)
+    {
+        if (request == null) return null;
+        var hasKeys = (request.PexelsApiKey != null || request.PixabayApiKey != null || request.UnsplashAccessKey != null || request.GoogleApiKey != null) ||
+            (request.CustomKeys != null && request.CustomKeys.Count > 0);
+        if (!hasKeys) return null;
+        return new ImageSearchKeys(request.PexelsApiKey, request.PixabayApiKey, request.UnsplashAccessKey, request.GoogleApiKey, request.GoogleCseId, request.CustomKeys);
+    }
+
+    private static PopulateOptions? BuildPopulateOptions(PopulateRequest? request)
+    {
+        if (request == null) return null;
+        var hasOpts = request.ShipSearchPrefix != null || request.CaptainSearchPrefix != null || (request.ImageSources != null && request.ImageSources.Count > 0);
+        if (!hasOpts) return null;
+        return new PopulateOptions(request.ShipSearchPrefix, request.CaptainSearchPrefix, request.ImageSources);
     }
 
     /// <summary>Populate all images from ImageUrl into ImageData. Optional API keys for image search fallback.</summary>
     [HttpPost("populate")]
     public async Task<ActionResult<PopulateResult>> PopulateAll([FromBody] PopulateRequest? request = null)
     {
-        var keys = request != null && (request.PexelsApiKey != null || request.PixabayApiKey != null || request.UnsplashAccessKey != null || request.GoogleApiKey != null)
-            ? new ImageSearchKeys(request.PexelsApiKey, request.PixabayApiKey, request.UnsplashAccessKey, request.GoogleApiKey, request.GoogleCseId)
-            : null;
-        var result = await _storage.PopulateAllAsync(_db, default, keys);
+        var keys = BuildImageSearchKeys(request);
+        var options = BuildPopulateOptions(request);
+        var result = await _storage.PopulateAllAsync(_db, default, keys, options);
         return Ok(result);
     }
 
@@ -103,11 +118,10 @@ public class ImagesController : ControllerBase
     {
         Response.ContentType = "text/event-stream";
         Response.Headers.CacheControl = "no-cache";
-        var keys = request != null && (request.PexelsApiKey != null || request.PixabayApiKey != null || request.UnsplashAccessKey != null || request.GoogleApiKey != null)
-            ? new ImageSearchKeys(request.PexelsApiKey, request.PixabayApiKey, request.UnsplashAccessKey, request.GoogleApiKey, request.GoogleCseId)
-            : null;
+        var keys = BuildImageSearchKeys(request);
+        var options = BuildPopulateOptions(request);
         var jsonOpts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
-        await foreach (var evt in _storage.PopulateAllStreamAsync(_db, ct, keys))
+        await foreach (var evt in _storage.PopulateAllStreamAsync(_db, ct, keys, options))
         {
             var json = JsonSerializer.Serialize(new { evt.Type, evt.Data }, jsonOpts);
             await Response.WriteAsync($"data: {json}\n\n", ct);
@@ -232,8 +246,19 @@ public class ImagesController : ControllerBase
     }
 }
 
-/// <summary>Request body for populate endpoint. Optional API keys for image search (not persisted).</summary>
-public record PopulateRequest(string? PexelsApiKey, string? PixabayApiKey, string? UnsplashAccessKey, string? GoogleApiKey, string? GoogleCseId);
+/// <summary>Request body for populate endpoint. Optional API keys, search prefixes, and configurable image sources.</summary>
+public class PopulateRequest
+{
+    public string? PexelsApiKey { get; set; }
+    public string? PixabayApiKey { get; set; }
+    public string? UnsplashAccessKey { get; set; }
+    public string? GoogleApiKey { get; set; }
+    public string? GoogleCseId { get; set; }
+    public string? ShipSearchPrefix { get; set; }
+    public string? CaptainSearchPrefix { get; set; }
+    public List<ImageSourceConfig>? ImageSources { get; set; }
+    public Dictionary<string, string>? CustomKeys { get; set; }
+}
 
 /// <summary>Image search request.</summary>
 public record ImageSearchRequest(string? Query, int? MaxCount, string? Provider, string? PexelsApiKey, string? PixabayApiKey, string? UnsplashAccessKey, string? GoogleApiKey, string? GoogleCseId);

@@ -1,9 +1,10 @@
 using System.Text.Json;
+using NavalArchive.Api.Models;
 
 namespace NavalArchive.Api.Services;
 
 /// <summary>Optional API keys for image search (passed from UI, not persisted).</summary>
-public record ImageSearchKeys(string? PexelsApiKey, string? PixabayApiKey, string? UnsplashAccessKey, string? GoogleApiKey, string? GoogleCseId);
+public record ImageSearchKeys(string? PexelsApiKey, string? PixabayApiKey, string? UnsplashAccessKey, string? GoogleApiKey, string? GoogleCseId, IReadOnlyDictionary<string, string>? CustomKeys = null);
 
 /// <summary>
 /// Unified image search with fallback chain: Pexels (best) → Pixabay → Unsplash → Google (last).
@@ -20,16 +21,20 @@ public class ImageSearchService
         _config = config;
     }
 
-    private string? GetKey(string name, ImageSearchKeys? keys) =>
-        name switch
+    private string? GetKey(string name, ImageSearchKeys? keys)
+    {
+        if (keys?.CustomKeys != null && keys.CustomKeys.TryGetValue(name, out var customVal) && !string.IsNullOrWhiteSpace(customVal))
+            return customVal;
+        return name switch
         {
             "PEXELS_API_KEY" => keys?.PexelsApiKey ?? _config[name] ?? Environment.GetEnvironmentVariable(name),
             "PIXABAY_API_KEY" => keys?.PixabayApiKey ?? _config[name] ?? Environment.GetEnvironmentVariable(name),
             "UNSPLASH_ACCESS_KEY" => keys?.UnsplashAccessKey ?? _config[name] ?? Environment.GetEnvironmentVariable(name),
             "GOOGLE_API_KEY" => keys?.GoogleApiKey ?? _config[name] ?? Environment.GetEnvironmentVariable(name),
             "GOOGLE_CSE_ID" => keys?.GoogleCseId ?? _config[name] ?? Environment.GetEnvironmentVariable(name),
-            _ => _config[name] ?? Environment.GetEnvironmentVariable(name)
+            _ => keys?.CustomKeys != null && keys.CustomKeys.TryGetValue(name, out var v) ? v : _config[name] ?? Environment.GetEnvironmentVariable(name)
         };
+    }
 
     private bool IsConfiguredWith(ImageSearchKeys? keys) =>
         !string.IsNullOrWhiteSpace(GetKey("PEXELS_API_KEY", keys)) ||
@@ -39,9 +44,12 @@ public class ImageSearchService
 
     public bool IsConfigured => IsConfiguredWith(null);
 
-    /// <summary>Search images. Tries Pexels (best) → Pixabay → Unsplash → Google (worst), or only the specified provider if provider is set.</summary>
-    public async Task<List<string>> FindImageUrlsAsync(string query, int maxCount = 5, CancellationToken ct = default, ImageSearchKeys? keys = null, Action<string>? onProgress = null, string? provider = null)
+    /// <summary>Search images. Uses sources config if provided (with retry); otherwise fallback chain: Pexels → Pixabay → Unsplash → Google.</summary>
+    public async Task<List<string>> FindImageUrlsAsync(string query, int maxCount = 5, CancellationToken ct = default, ImageSearchKeys? keys = null, Action<string>? onProgress = null, string? provider = null, IReadOnlyList<ImageSourceConfig>? sources = null)
     {
+        if (sources != null && sources.Count > 0)
+            return await FindImageUrlsWithSourcesAsync(query, maxCount, ct, keys, onProgress, provider, sources);
+
         if (!IsConfiguredWith(keys)) return new List<string>();
 
         var providers = string.IsNullOrWhiteSpace(provider)
@@ -50,37 +58,56 @@ public class ImageSearchService
 
         foreach (var p in providers)
         {
-            var pLower = p.ToLowerInvariant();
-            if (pLower == "pexels" && !string.IsNullOrWhiteSpace(GetKey("PEXELS_API_KEY", keys)))
+            var urls = await TryProviderAsync(p, query, maxCount, 1, ct, keys, onProgress);
+            if (urls.Count > 0) return urls;
+        }
+
+        return new List<string>();
+    }
+
+    /// <summary>Search using configurable sources with per-source retry count.</summary>
+    private async Task<List<string>> FindImageUrlsWithSourcesAsync(string query, int maxCount, CancellationToken ct, ImageSearchKeys? keys, Action<string>? onProgress, string? providerFilter, IReadOnlyList<ImageSourceConfig> sources)
+    {
+        var ordered = sources.Where(s => s.Enabled).OrderBy(s => s.SortOrder).ToList();
+        if (ordered.Count == 0) return new List<string>();
+
+        foreach (var src in ordered)
+        {
+            if (!string.IsNullOrWhiteSpace(providerFilter) && !string.Equals(src.ProviderType, providerFilter, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var hasKey = string.IsNullOrWhiteSpace(src.AuthKeyRef) || !string.IsNullOrWhiteSpace(GetKey(src.AuthKeyRef, keys));
+            if (src.ProviderType == "Google" && hasKey && !string.IsNullOrWhiteSpace(src.AuthKeyRef))
+                hasKey = !string.IsNullOrWhiteSpace(GetKey("GOOGLE_CSE_ID", keys));
+            if (!hasKey) { onProgress?.Invoke($"[{src.Name}] nokey"); continue; }
+
+            var retries = Math.Max(1, Math.Min(src.RetryCount, 5));
+            for (var attempt = 0; attempt < retries; attempt++)
             {
-                onProgress?.Invoke("Trying Pexels...");
-                var urls = await TryPexelsAsync(query, maxCount, ct, keys);
-                if (urls.Count > 0) { onProgress?.Invoke($"Pexels: {urls.Count} results"); return urls; }
-                onProgress?.Invoke("Pexels: no results");
-            }
-            else if (pLower == "pixabay" && !string.IsNullOrWhiteSpace(GetKey("PIXABAY_API_KEY", keys)))
-            {
-                onProgress?.Invoke("Trying Pixabay...");
-                var urls = await TryPixabayAsync(query, maxCount, ct, keys);
-                if (urls.Count > 0) { onProgress?.Invoke($"Pixabay: {urls.Count} results"); return urls; }
-                onProgress?.Invoke("Pixabay: no results");
-            }
-            else if (pLower == "unsplash" && !string.IsNullOrWhiteSpace(GetKey("UNSPLASH_ACCESS_KEY", keys)))
-            {
-                onProgress?.Invoke("Trying Unsplash...");
-                var urls = await TryUnsplashAsync(query, maxCount, ct, keys);
-                if (urls.Count > 0) { onProgress?.Invoke($"Unsplash: {urls.Count} results"); return urls; }
-                onProgress?.Invoke("Unsplash: no results");
-            }
-            else if (pLower == "google" && !string.IsNullOrWhiteSpace(GetKey("GOOGLE_API_KEY", keys)) && !string.IsNullOrWhiteSpace(GetKey("GOOGLE_CSE_ID", keys)))
-            {
-                onProgress?.Invoke("Trying Google...");
-                var urls = await TryGoogleAsync(query, maxCount, ct, keys);
-                if (urls.Count > 0) { onProgress?.Invoke($"Google: {urls.Count} results"); return urls; }
-                onProgress?.Invoke("Google: no results");
+                onProgress?.Invoke(retries > 1 ? $"Trying {src.Name} (attempt {attempt + 1}/{retries})..." : $"Trying {src.Name}...");
+                var urls = await TryProviderAsync(src.ProviderType, query, maxCount, 1, ct, keys, onProgress, src);
+                if (urls.Count > 0) { onProgress?.Invoke($"{src.Name}: {urls.Count} results"); return urls; }
+                onProgress?.Invoke($"{src.Name}: no results");
+                if (attempt < retries - 1) await Task.Delay(500, ct);
             }
         }
 
+        return new List<string>();
+    }
+
+    private async Task<List<string>> TryProviderAsync(string providerType, string query, int maxCount, int retries, CancellationToken ct, ImageSearchKeys? keys, Action<string>? onProgress, ImageSourceConfig? config = null)
+    {
+        var p = providerType.ToLowerInvariant();
+        if (p == "pexels" && !string.IsNullOrWhiteSpace(GetKey("PEXELS_API_KEY", keys)))
+            return await TryPexelsAsync(query, maxCount, ct, keys);
+        if (p == "pixabay" && !string.IsNullOrWhiteSpace(GetKey("PIXABAY_API_KEY", keys)))
+            return await TryPixabayAsync(query, maxCount, ct, keys);
+        if (p == "unsplash" && !string.IsNullOrWhiteSpace(GetKey("UNSPLASH_ACCESS_KEY", keys)))
+            return await TryUnsplashAsync(query, maxCount, ct, keys);
+        if (p == "google" && !string.IsNullOrWhiteSpace(GetKey("GOOGLE_API_KEY", keys)) && !string.IsNullOrWhiteSpace(GetKey("GOOGLE_CSE_ID", keys)))
+            return await TryGoogleAsync(query, maxCount, ct, keys);
+        if (p == "custom" && config?.CustomConfig != null)
+            return await TryCustomApiAsync(query, maxCount, ct, keys, config);
         return new List<string>();
     }
 
@@ -203,6 +230,63 @@ public class ImageSearchService
         }
         catch { }
         return result;
+    }
+
+    private async Task<List<string>> TryCustomApiAsync(string query, int maxCount, CancellationToken ct, ImageSearchKeys? keys, ImageSourceConfig config)
+    {
+        var c = config.CustomConfig!;
+        var result = new List<string>();
+        try
+        {
+            var url = c.BaseUrl.TrimEnd('?', '&');
+            var sep = url.Contains('?') ? '&' : '?';
+            url += $"{sep}{Uri.EscapeDataString(c.QueryParam)}={Uri.EscapeDataString(query)}";
+            if (c.AuthType.Equals("query", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(c.AuthQueryParam) && !string.IsNullOrWhiteSpace(c.AuthValueFromKey))
+            {
+                var authVal = GetKey(c.AuthValueFromKey, keys);
+                if (!string.IsNullOrWhiteSpace(authVal)) url += $"&{Uri.EscapeDataString(c.AuthQueryParam)}={Uri.EscapeDataString(authVal)}";
+            }
+
+            var client = _http.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(15);
+            if (c.AuthType.Equals("header", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(c.AuthHeaderName) && !string.IsNullOrWhiteSpace(c.AuthValueFromKey))
+            {
+                var authVal = GetKey(c.AuthValueFromKey, keys);
+                if (!string.IsNullOrWhiteSpace(authVal)) client.DefaultRequestHeaders.Add(c.AuthHeaderName.Trim(), authVal);
+            }
+
+            var res = await client.GetAsync(url, ct);
+            if (!res.IsSuccessStatusCode) return result;
+
+            var json = await res.Content.ReadAsStringAsync(ct);
+            using var doc = JsonDocument.Parse(json);
+            var items = doc.RootElement;
+            foreach (var seg in (c.ResponsePath ?? "results").Split('.'))
+            {
+                if (items.ValueKind == JsonValueKind.Null || items.ValueKind == JsonValueKind.Undefined) return result;
+                if (!items.TryGetProperty(seg, out items)) return result;
+            }
+            if (items.ValueKind != JsonValueKind.Array) return result;
+
+            for (var i = 0; i < items.GetArrayLength() && result.Count < maxCount; i++)
+            {
+                var item = items[i];
+                var link = GetNestedString(item, c.ImageUrlPath);
+                if (IsValidUrl(link)) result.Add(link!);
+            }
+        }
+        catch { }
+        return result;
+    }
+
+    private static string? GetNestedString(JsonElement el, string path)
+    {
+        foreach (var seg in path.Split('.'))
+        {
+            if (el.ValueKind != JsonValueKind.Object || !el.TryGetProperty(seg, out el))
+                return null;
+        }
+        return el.ValueKind == JsonValueKind.String ? el.GetString() : null;
     }
 
     private static bool IsValidUrl(string? url) =>

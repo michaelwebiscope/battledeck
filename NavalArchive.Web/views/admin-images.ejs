@@ -83,6 +83,20 @@
               <div class="col-md-6"><input type="password" id="googleCseId" class="form-control form-control-sm" placeholder="Google CSE ID" autocomplete="off"></div>
             </div>
           </details>
+          <details class="mb-3" id="imageSourcesDetails">
+            <summary class="text-muted small" style="cursor: pointer">Image Sources: order, retry count, custom APIs</summary>
+            <div class="mt-2">
+              <p class="small text-muted mb-2">Drag to reorder. Set retries per source. Add custom APIs with the + button.</p>
+              <ul id="imageSourcesList" class="list-group list-group-flush mb-2" style="max-height: 280px; overflow-y: auto;"></ul>
+              <div id="customKeysSection" class="mb-2" style="display:none">
+                <label class="small text-muted">Custom API keys (for custom sources)</label>
+                <div id="customKeysInputs" class="row g-2"></div>
+              </div>
+              <button type="button" id="addCustomSourceBtn" class="btn btn-sm btn-outline-light">+ Add Custom API</button>
+              <button type="button" id="saveSourcesBtn" class="btn btn-sm btn-modern ms-2">Save Sources</button>
+              <span id="sourcesSaveStatus" class="ms-2 small"></span>
+            </div>
+          </details>
           <button id="syncBtn" class="btn btn-outline-secondary" title="Fetch ship data and captain ImageUrls from Wikipedia only (no image search)">Sync from Wikipedia</button>
           <button id="populateBtn" class="btn btn-modern">Populate All Images (sync + fetch → store)</button>
           <button id="testTerminalBtn" class="btn btn-outline-secondary ms-2" title="Test that the terminal updates in real-time">Test Terminal</button>
@@ -156,6 +170,62 @@
         <div class="alert alert-warning">No audit data. Ensure the API is running.</div>
       <% } %>
 
+      <div id="customSourceModal" class="modal fade" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+          <div class="modal-content bg-dark text-light">
+            <div class="modal-header">
+              <h5 class="modal-title">Add Custom API Source</h5>
+              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+              <div class="mb-2">
+                <label class="form-label small">Name</label>
+                <input type="text" id="customSourceName" class="form-control form-control-sm" placeholder="My API">
+              </div>
+              <div class="mb-2">
+                <label class="form-label small">Base URL</label>
+                <input type="text" id="customSourceBaseUrl" class="form-control form-control-sm" placeholder="https://api.example.com/search">
+              </div>
+              <div class="mb-2">
+                <label class="form-label small">Query parameter name</label>
+                <input type="text" id="customSourceQueryParam" class="form-control form-control-sm" placeholder="q" value="q">
+              </div>
+              <div class="mb-2">
+                <label class="form-label small">Auth type</label>
+                <select id="customSourceAuthType" class="form-select form-select-sm">
+                  <option value="none">None</option>
+                  <option value="header">Header</option>
+                  <option value="query">Query param</option>
+                </select>
+              </div>
+              <div class="mb-2" id="customAuthHeaderRow" style="display:none">
+                <label class="form-label small">Auth header name</label>
+                <input type="text" id="customSourceAuthHeaderName" class="form-control form-control-sm" placeholder="Authorization">
+              </div>
+              <div class="mb-2" id="customAuthQueryRow" style="display:none">
+                <label class="form-label small">Auth query param name</label>
+                <input type="text" id="customSourceAuthQueryParam" class="form-control form-control-sm" placeholder="key">
+              </div>
+              <div class="mb-2" id="customAuthKeyRefRow" style="display:none">
+                <label class="form-label small">Auth value from key (e.g. CUSTOM_API_KEY)</label>
+                <input type="text" id="customSourceAuthValueFromKey" class="form-control form-control-sm" placeholder="CUSTOM_API_KEY">
+              </div>
+              <div class="mb-2">
+                <label class="form-label small">Response path to results array (e.g. photos, hits, data.results)</label>
+                <input type="text" id="customSourceResponsePath" class="form-control form-control-sm" placeholder="photos">
+              </div>
+              <div class="mb-2">
+                <label class="form-label small">Image URL path in each item (e.g. src.large, urls.regular)</label>
+                <input type="text" id="customSourceImageUrlPath" class="form-control form-control-sm" placeholder="src.large">
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+              <button type="button" id="customSourceSaveBtn" class="btn btn-modern">Add Source</button>
+            </div>
+          </div>
+        </div>
+      </div>
       <div id="editImageModal" class="modal fade" tabindex="-1">
         <div class="modal-dialog modal-lg">
           <div class="modal-content bg-dark text-light">
@@ -187,6 +257,148 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   <% if (audit) { %>
   <script>
+    var imageSources = <%- JSON.stringify(Array.isArray(imageSources) ? imageSources : []) %>;
+    var customKeys = {};
+
+    function updateCustomKeysFromInputs() {
+      customKeys = {};
+      document.querySelectorAll('#customKeysInputs input[data-key-name]').forEach(function(inp) {
+        var v = inp.value?.trim();
+        if (v) customKeys[inp.dataset.keyName] = v;
+      });
+    }
+
+    function renderCustomKeysSection() {
+      var section = document.getElementById('customKeysSection');
+      var container = document.getElementById('customKeysInputs');
+      if (!section || !container) return;
+      var keys = [];
+      imageSources.forEach(function(s) {
+        if (s.providerType === 'Custom' && s.customConfig?.authValueFromKey) keys.push(s.customConfig.authValueFromKey);
+      });
+      keys = [...new Set(keys)];
+      if (keys.length === 0) { section.style.display = 'none'; return; }
+      section.style.display = 'block';
+      container.innerHTML = '';
+      keys.forEach(function(k) {
+        var div = document.createElement('div');
+        div.className = 'col-md-6';
+        div.innerHTML = '<label class="small">' + k + '</label><input type="password" class="form-control form-control-sm" data-key-name="' + k + '" placeholder="API key" autocomplete="off">';
+        container.appendChild(div);
+      });
+    }
+
+    function renderImageSourcesList() {
+      var list = document.getElementById('imageSourcesList');
+      if (!list) return;
+      list.innerHTML = '';
+      var sorted = imageSources.slice().sort(function(a,b){ return (a.sortOrder||0) - (b.sortOrder||0); });
+      sorted.forEach(function(s, i) {
+        s.sortOrder = i;
+        var li = document.createElement('li');
+        li.className = 'list-group-item bg-dark text-light d-flex align-items-center gap-2 py-2';
+        li.dataset.id = s.id;
+        li.draggable = true;
+        li.innerHTML = '<span class="drag-handle text-muted" style="cursor:grab">⋮⋮</span>' +
+          '<span class="flex-grow-1">' + (s.name || s.id) + '</span>' +
+          '<label class="small mb-0">Retries:</label>' +
+          '<input type="number" class="form-control form-control-sm" style="width:60px" min="1" max="5" value="' + (s.retryCount||2) + '" data-source-id="' + s.id + '" data-field="retryCount">' +
+          (s.providerType === 'Custom' ? '<button type="button" class="btn btn-sm btn-outline-danger remove-source-btn" data-id="' + s.id + '">Remove</button>' : '');
+        list.appendChild(li);
+      });
+      list.querySelectorAll('input[data-field="retryCount"]').forEach(function(inp) {
+        inp.onchange = function() {
+          var src = imageSources.find(function(s){ return s.id === inp.dataset.sourceId; });
+          if (src) src.retryCount = parseInt(inp.value, 10) || 2;
+        };
+      });
+      list.querySelectorAll('.remove-source-btn').forEach(function(btn) {
+        btn.onclick = function() {
+          imageSources = imageSources.filter(function(s){ return s.id !== btn.dataset.id; });
+          renderImageSourcesList();
+        };
+      });
+      renderCustomKeysSection();
+      list.querySelectorAll('li').forEach(function(li, idx) {
+        li.ondragstart = function(e) { e.dataTransfer.setData('text/plain', idx); };
+        li.ondragover = function(e) { e.preventDefault(); li.classList.add('border-primary'); };
+        li.ondragleave = function() { li.classList.remove('border-primary'); };
+        li.ondrop = function(e) {
+          e.preventDefault();
+          li.classList.remove('border-primary');
+          var from = parseInt(e.dataTransfer.getData('text/plain'), 10);
+          if (isNaN(from)) return;
+          var arr = imageSources.slice().sort(function(a,b){ return (a.sortOrder||0) - (b.sortOrder||0); });
+          var item = arr.splice(from, 1)[0];
+          if (!item) return;
+          arr.splice(idx, 0, item);
+          arr.forEach(function(s, i){ s.sortOrder = i; });
+          imageSources = arr;
+          renderImageSourcesList();
+        };
+      });
+    }
+
+    document.getElementById('customSourceAuthType').onchange = function() {
+      var v = this.value;
+      document.getElementById('customAuthHeaderRow').style.display = v === 'header' ? 'block' : 'none';
+      document.getElementById('customAuthQueryRow').style.display = v === 'query' ? 'block' : 'none';
+      document.getElementById('customAuthKeyRefRow').style.display = (v === 'header' || v === 'query') ? 'block' : 'none';
+    };
+
+    document.getElementById('addCustomSourceBtn').onclick = function() {
+      document.getElementById('customSourceName').value = '';
+      document.getElementById('customSourceBaseUrl').value = '';
+      document.getElementById('customSourceQueryParam').value = 'q';
+      document.getElementById('customSourceAuthType').value = 'none';
+      document.getElementById('customSourceAuthHeaderName').value = 'Authorization';
+      document.getElementById('customSourceAuthQueryParam').value = 'key';
+      document.getElementById('customSourceAuthValueFromKey').value = 'CUSTOM_API_KEY';
+      document.getElementById('customSourceResponsePath').value = 'photos';
+      document.getElementById('customSourceImageUrlPath').value = 'src.large';
+      document.getElementById('customAuthHeaderRow').style.display = 'none';
+      document.getElementById('customAuthQueryRow').style.display = 'none';
+      document.getElementById('customAuthKeyRefRow').style.display = 'none';
+      new bootstrap.Modal(document.getElementById('customSourceModal')).show();
+    };
+
+    document.getElementById('customSourceSaveBtn').onclick = function() {
+      var name = document.getElementById('customSourceName').value.trim() || 'Custom';
+      var baseUrl = document.getElementById('customSourceBaseUrl').value.trim();
+      var authType = document.getElementById('customSourceAuthType').value;
+      if (!baseUrl) { alert('Base URL is required'); return; }
+      var id = 'custom-' + Date.now();
+      var src = {
+        id: id, name: name, providerType: 'Custom', retryCount: 2, sortOrder: imageSources.length,
+        enabled: true, authKeyRef: null, customConfig: {
+          baseUrl: baseUrl,
+          queryParam: document.getElementById('customSourceQueryParam').value.trim() || 'q',
+          authType: authType,
+          authHeaderName: authType === 'header' ? (document.getElementById('customSourceAuthHeaderName').value.trim() || 'Authorization') : null,
+          authQueryParam: authType === 'query' ? (document.getElementById('customSourceAuthQueryParam').value.trim() || 'key') : null,
+          authValueFromKey: (authType === 'header' || authType === 'query') ? (document.getElementById('customSourceAuthValueFromKey').value.trim() || 'CUSTOM_API_KEY') : null,
+          responsePath: document.getElementById('customSourceResponsePath').value.trim() || 'results',
+          imageUrlPath: document.getElementById('customSourceImageUrlPath').value.trim() || 'url'
+        }
+      };
+      if (src.customConfig.authValueFromKey) src.authKeyRef = src.customConfig.authValueFromKey;
+      imageSources.push(src);
+      renderImageSourcesList();
+      bootstrap.Modal.getInstance(document.getElementById('customSourceModal')).hide();
+    };
+
+    document.getElementById('saveSourcesBtn').onclick = function() {
+      var btn = this, status = document.getElementById('sourcesSaveStatus');
+      btn.disabled = true;
+      status.textContent = 'Saving...';
+      fetch('/admin/images/sources', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(imageSources) })
+        .then(function(r) { return r.json(); })
+        .then(function() { status.textContent = 'Saved.'; btn.disabled = false; setTimeout(function(){ status.textContent = ''; }, 2000); })
+        .catch(function(e) { status.textContent = 'Error: ' + e.message; btn.disabled = false; });
+    };
+
+    if (document.getElementById('imageSourcesList')) renderImageSourcesList();
+
     function showTerminal(lines, showPanel) {
       var pre = document.getElementById('terminalPre');
       var content = document.getElementById('terminalContent');
@@ -381,6 +593,12 @@
       if (unsplash) body.unsplashAccessKey = unsplash;
       if (googleKey) body.googleApiKey = googleKey;
       if (googleCse) body.googleCseId = googleCse;
+      var searchPrefixes = <%- JSON.stringify(typeof imageSearchPrefix !== 'undefined' && imageSearchPrefix ? imageSearchPrefix : { ship: 'battleship', captain: 'captain' }) %>;
+      body.shipSearchPrefix = searchPrefixes.ship || 'battleship';
+      body.captainSearchPrefix = searchPrefixes.captain || 'captain';
+      updateCustomKeysFromInputs();
+      if (imageSources && imageSources.length > 0) body.imageSources = imageSources;
+      if (Object.keys(customKeys).length > 0) body.customKeys = customKeys;
       fetch('/admin/images/populate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
         .then(function(r) { return r.json(); })
         .then(function(d) {

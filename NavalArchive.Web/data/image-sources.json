@@ -1,0 +1,42 @@
+[
+  {
+    "id": "pexels",
+    "name": "Pexels",
+    "providerType": "Pexels",
+    "retryCount": 2,
+    "sortOrder": 0,
+    "enabled": true,
+    "authKeyRef": "PEXELS_API_KEY",
+    "customConfig": null
+  },
+  {
+    "id": "pixabay",
+    "name": "Pixabay",
+    "providerType": "Pixabay",
+    "retryCount": 2,
+    "sortOrder": 1,
+    "enabled": true,
+    "authKeyRef": "PIXABAY_API_KEY",
+    "customConfig": null
+  },
+  {
+    "id": "unsplash",
+    "name": "Unsplash",
+    "providerType": "Unsplash",
+    "retryCount": 2,
+    "sortOrder": 2,
+    "enabled": true,
+    "authKeyRef": "UNSPLASH_ACCESS_KEY",
+    "customConfig": null
+  },
+  {
+    "id": "google",
+    "name": "Google",
+    "providerType": "Google",
+    "retryCount": 1,
+    "sortOrder": 3,
+    "enabled": true,
+    "authKeyRef": "GOOGLE_API_KEY",
+    "customConfig": null
+  }
+]

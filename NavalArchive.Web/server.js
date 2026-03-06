@@ -1,6 +1,7 @@
 const express = require('express');
 const axios = require('axios');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -626,11 +627,12 @@ app.get('/admin/images', async (req, res) => {
       title: 'Image Audit',
       audit: auditRes.data,
       ships: shipsData.items || [],
-      captains: captainsRes.data || []
+      captains: captainsRes.data || [],
+      imageSources: loadImageSources()
     });
   } catch (err) {
     console.error('Image audit error:', err.message);
-    res.render('admin-images', { title: 'Image Audit', audit: null, ships: [], captains: [], error: err.message });
+    res.render('admin-images', { title: 'Image Audit', audit: null, ships: [], captains: [], imageSources: [], error: err.message });
   }
 });
 
@@ -641,6 +643,42 @@ app.get('/admin/images/search-frame', (req, res) => {
     entityId: req.query.id || '',
     query: req.query.q || ''
   });
+});
+
+const IMAGE_SOURCES_PATH = path.join(__dirname, 'data', 'image-sources.json');
+
+function loadImageSources() {
+  try {
+    const raw = fs.readFileSync(IMAGE_SOURCES_PATH, 'utf8');
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveImageSources(sources) {
+  const dir = path.dirname(IMAGE_SOURCES_PATH);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(IMAGE_SOURCES_PATH, JSON.stringify(sources, null, 2), 'utf8');
+}
+
+app.get('/admin/images/sources', (req, res) => {
+  try {
+    res.json(loadImageSources());
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/admin/images/sources', (req, res) => {
+  try {
+    const sources = Array.isArray(req.body) ? req.body : (req.body?.sources || []);
+    saveImageSources(sources);
+    res.json({ ok: true, sources });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // In-memory job store for polling-based populate progress
@@ -665,6 +703,10 @@ app.post('/admin/images/populate', async (req, res) => {
     if (req.body?.unsplashAccessKey) keys.unsplashAccessKey = req.body.unsplashAccessKey;
     if (req.body?.googleApiKey) keys.googleApiKey = req.body.googleApiKey;
     if (req.body?.googleCseId) keys.googleCseId = req.body.googleCseId;
+    if (req.body?.shipSearchPrefix) keys.shipSearchPrefix = req.body.shipSearchPrefix;
+    if (req.body?.captainSearchPrefix) keys.captainSearchPrefix = req.body.captainSearchPrefix;
+    if (Array.isArray(req.body?.imageSources) && req.body.imageSources.length > 0) keys.imageSources = req.body.imageSources;
+    if (req.body?.customKeys && typeof req.body.customKeys === 'object') keys.customKeys = req.body.customKeys;
 
     if (usePolling) {
       const jobId = 'populate-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
@@ -687,7 +729,7 @@ app.post('/admin/images/populate', async (req, res) => {
           const streamRes = await axios({
             method: 'post',
             url: `${API_BASE}/api/images/populate/stream`,
-            data: keys,
+            data: { ...keys },
             responseType: 'stream',
             timeout: 300000,
             headers: { 'Content-Type': 'application/json' }
@@ -736,7 +778,7 @@ app.post('/admin/images/populate', async (req, res) => {
         logLines.push('[Sync] Error: ' + (syncErr.response?.data?.message || syncErr.message));
       }
     }
-    const response = await api.post('/api/images/populate', { ...keys }, { timeout: 300000 });
+    const response = await api.post('/api/images/populate', keys, { timeout: 300000 });
     const data = response.data || {};
     data.logLines = logLines;
     res.json(data);
