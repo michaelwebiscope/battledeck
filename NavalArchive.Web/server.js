@@ -82,6 +82,7 @@ app.use(async (req, res, next) => {
   }
   res.locals.currentPath = req.path;
   res.locals.toEntity = toEntity;
+  res.locals.imageSearchPrefix = { ship: 'battleship', captain: 'captain' };
   next();
 });
 

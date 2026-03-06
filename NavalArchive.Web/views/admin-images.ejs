@@ -543,7 +543,9 @@
         googleCseId: document.getElementById('googleCseId')?.value?.trim() || null
       };
       sessionStorage.setItem('adminImageKeys', JSON.stringify(keys));
-      var q = encodeURIComponent(currentEdit.name + (currentEdit.entity === 'ship' ? ' battleship' : ' portrait'));
+      var searchPrefixes = <%- JSON.stringify(typeof imageSearchPrefix !== 'undefined' && imageSearchPrefix ? imageSearchPrefix : { ship: 'battleship', captain: 'captain' }) %>;
+      var prefix = searchPrefixes[currentEdit.entity] || (currentEdit.entity === 'ship' ? 'battleship' : 'captain');
+      var q = encodeURIComponent(currentEdit.name + ' ' + prefix);
       editSearchFrame.src = '/admin/images/search-frame?entity=' + currentEdit.entity + '&id=' + currentEdit.id + '&q=' + q;
       editImagePane.style.display = 'none';
       editSearchPane.style.display = 'block';

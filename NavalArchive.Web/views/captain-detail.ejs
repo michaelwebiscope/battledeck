@@ -119,7 +119,7 @@
     document.getElementById('captainEditImageBtn').addEventListener('click', function() {
       formPane.style.display = 'none';
       searchPane.style.display = 'block';
-      var q = encodeURIComponent((document.getElementById('captainEditName').value || 'admiral') + ' portrait');
+      var q = encodeURIComponent((document.getElementById('captainEditName').value || 'admiral') + ' <%= (imageSearchPrefix && imageSearchPrefix.captain) || "captain" %>');
       frame.src = '/admin/images/search-frame?entity=captain&id=' + captainId + '&q=' + q;
     });
 

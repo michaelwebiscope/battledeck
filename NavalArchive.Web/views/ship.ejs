@@ -136,7 +136,7 @@
     document.getElementById('shipEditImageBtn').addEventListener('click', function() {
       formPane.style.display = 'none';
       searchPane.style.display = 'block';
-      var q = encodeURIComponent((document.getElementById('shipEditName').value || 'battleship') + ' battleship');
+      var q = encodeURIComponent((document.getElementById('shipEditName').value || 'battleship') + ' <%= (imageSearchPrefix && imageSearchPrefix.ship) || "battleship" %>');
       frame.src = '/admin/images/search-frame?entity=ship&id=' + shipId + '&q=' + q;
     });
 
