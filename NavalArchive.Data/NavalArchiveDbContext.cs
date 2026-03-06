@@ -11,6 +11,7 @@ public class NavalArchiveDbContext : DbContext
     public DbSet<Ship> Ships => Set<Ship>();
     public DbSet<ShipClass> ShipClasses => Set<ShipClass>();
     public DbSet<Captain> Captains => Set<Captain>();
+    public DbSet<ImageSource> ImageSources => Set<ImageSource>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

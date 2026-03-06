@@ -62,6 +62,54 @@ using (var scope = app.Services.CreateScope())
     try { db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_Ships_CaptainId ON Ships(CaptainId)"); } catch { }
     try { db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_Ships_YearCommissioned ON Ships(YearCommissioned)"); } catch { }
     try { db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_Ships_Name ON Ships(Name)"); } catch { }
+    // ImageSources table (entity for image search sources)
+    try
+    {
+        if (db.Database.IsSqlite())
+        {
+            db.Database.ExecuteSqlRaw(@"
+                CREATE TABLE IF NOT EXISTS ImageSources (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    SourceId TEXT NOT NULL,
+                    Name TEXT NOT NULL,
+                    ProviderType TEXT NOT NULL,
+                    RetryCount INTEGER DEFAULT 2,
+                    SortOrder INTEGER DEFAULT 0,
+                    Enabled INTEGER DEFAULT 1,
+                    AuthKeyRef TEXT,
+                    CustomConfigJson TEXT
+                )");
+        }
+        else
+        {
+            db.Database.ExecuteSqlRaw(@"
+                IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'ImageSources')
+                CREATE TABLE ImageSources (
+                    Id INT IDENTITY(1,1) PRIMARY KEY,
+                    SourceId NVARCHAR(64) NOT NULL,
+                    Name NVARCHAR(128) NOT NULL,
+                    ProviderType NVARCHAR(32) NOT NULL,
+                    RetryCount INT DEFAULT 2,
+                    SortOrder INT DEFAULT 0,
+                    Enabled BIT DEFAULT 1,
+                    AuthKeyRef NVARCHAR(64),
+                    CustomConfigJson NVARCHAR(MAX)
+                )");
+        }
+        if (!db.ImageSources.Any())
+        {
+            foreach (var s in new[] {
+                new NavalArchive.Data.Models.ImageSource { SourceId = "wikipedia", Name = "Wikipedia", ProviderType = "Wikipedia", RetryCount = 2, SortOrder = 0, Enabled = true },
+                new NavalArchive.Data.Models.ImageSource { SourceId = "pexels", Name = "Pexels", ProviderType = "Pexels", RetryCount = 2, SortOrder = 1, AuthKeyRef = "PEXELS_API_KEY", Enabled = true },
+                new NavalArchive.Data.Models.ImageSource { SourceId = "pixabay", Name = "Pixabay", ProviderType = "Pixabay", RetryCount = 2, SortOrder = 2, AuthKeyRef = "PIXABAY_API_KEY", Enabled = true },
+                new NavalArchive.Data.Models.ImageSource { SourceId = "unsplash", Name = "Unsplash", ProviderType = "Unsplash", RetryCount = 2, SortOrder = 3, AuthKeyRef = "UNSPLASH_ACCESS_KEY", Enabled = true },
+                new NavalArchive.Data.Models.ImageSource { SourceId = "google", Name = "Google", ProviderType = "Google", RetryCount = 1, SortOrder = 4, AuthKeyRef = "GOOGLE_API_KEY", Enabled = true },
+            })
+                db.ImageSources.Add(s);
+            db.SaveChanges();
+        }
+    }
+    catch { /* table exists or migration pending */ }
     }
 }
 

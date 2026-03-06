@@ -618,10 +618,11 @@ app.post('/admin/images/test-keys', async (req, res) => {
 
 app.get('/admin/images', async (req, res) => {
   try {
-    const [auditRes, shipsRes, captainsRes] = await Promise.all([
+    const [auditRes, shipsRes, captainsRes, sourcesRes] = await Promise.all([
       api.get('/api/images/audit'),
       api.get('/api/ships', { params: { page: 1, pageSize: 500 } }).catch(() => ({ data: {} })),
-      api.get('/api/captains').catch(() => ({ data: [] }))
+      api.get('/api/captains').catch(() => ({ data: [] })),
+      api.get('/api/image-sources').catch(() => ({ data: [] }))
     ]);
     const shipsData = shipsRes.data || {};
     res.render('admin-images', {
@@ -629,7 +630,7 @@ app.get('/admin/images', async (req, res) => {
       audit: auditRes.data,
       ships: shipsData.items || [],
       captains: captainsRes.data || [],
-      imageSources: loadImageSources()
+      imageSources: Array.isArray(sourcesRes.data) ? sourcesRes.data : []
     });
   } catch (err) {
     console.error('Image audit error:', err.message);
@@ -637,48 +638,47 @@ app.get('/admin/images', async (req, res) => {
   }
 });
 
-app.get('/admin/images/search-frame', (req, res) => {
+app.get('/admin/images/search-frame', async (req, res) => {
+  let imageSources = [];
+  try {
+    const r = await api.get('/api/image-sources');
+    imageSources = Array.isArray(r.data) ? r.data : [];
+  } catch (e) { /* use empty, fallback to All */ }
   res.render('admin-images-search-frame', {
     title: 'Search Image',
     entity: req.query.entity || 'ship',
     entityId: req.query.id || '',
-    query: req.query.q || ''
+    query: req.query.q || '',
+    imageSources
   });
 });
 
-const IMAGE_SOURCES_PATH = path.join(__dirname, 'data', 'image-sources.json');
-
-function loadImageSources() {
+// Image sources: proxy to API (sources are entity, stored in DB)
+app.get('/admin/images/sources', async (req, res) => {
   try {
-    const raw = fs.readFileSync(IMAGE_SOURCES_PATH, 'utf8');
-    const arr = JSON.parse(raw);
-    return Array.isArray(arr) ? arr : [];
-  } catch (e) {
-    return [];
-  }
-}
-
-function saveImageSources(sources) {
-  const dir = path.dirname(IMAGE_SOURCES_PATH);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(IMAGE_SOURCES_PATH, JSON.stringify(sources, null, 2), 'utf8');
-}
-
-app.get('/admin/images/sources', (req, res) => {
-  try {
-    res.json(loadImageSources());
+    const r = await api.get('/api/image-sources');
+    res.json(r.data || []);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-app.post('/admin/images/sources', (req, res) => {
+app.put('/admin/images/sources', async (req, res) => {
   try {
     const sources = Array.isArray(req.body) ? req.body : (req.body?.sources || []);
-    saveImageSources(sources);
-    res.json({ ok: true, sources });
+    const r = await api.put('/api/image-sources', sources);
+    res.json(r.data || []);
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete('/admin/images/sources/:id', async (req, res) => {
+  try {
+    await api.delete('/api/image-sources/' + encodeURIComponent(req.params.id));
+    res.status(204).send();
+  } catch (e) {
+    res.status(e.response?.status || 500).json({ error: e.message });
   }
 });
 

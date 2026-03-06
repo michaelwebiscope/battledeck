@@ -23,11 +23,9 @@
     <input type="text" id="queryInput" placeholder="Search images (e.g. Bismarck battleship)" value="<%= query %>" autofocus>
     <select id="providerSelect" title="Search provider">
       <option value="">All (fallback)</option>
-      <option value="Wikipedia">Wikipedia</option>
-      <option value="Pexels">Pexels</option>
-      <option value="Pixabay">Pixabay</option>
-      <option value="Unsplash">Unsplash</option>
-      <option value="Google">Google</option>
+      <% (imageSources || []).forEach(function(s) { %>
+      <option value="<%= s.providerType || s.ProviderType || s.name %>"><%= s.name || s.Name || s.providerType %></option>
+      <% }); %>
     </select>
     <button id="searchBtn">Search</button>
   </div>

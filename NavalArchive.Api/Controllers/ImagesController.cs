@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using NavalArchive.Api.Models;
 using NavalArchive.Data;
 using NavalArchive.Api.Services;
@@ -94,20 +95,26 @@ public class ImagesController : ControllerBase
         return new ImageSearchKeys(request.PexelsApiKey, request.PixabayApiKey, request.UnsplashAccessKey, request.GoogleApiKey, request.GoogleCseId, request.CustomKeys);
     }
 
-    private static PopulateOptions? BuildPopulateOptions(PopulateRequest? request)
+    private async Task<PopulateOptions?> BuildPopulateOptionsAsync(PopulateRequest? request, CancellationToken ct = default)
     {
         if (request == null) return null;
-        var hasOpts = request.ShipSearchPrefix != null || request.CaptainSearchPrefix != null || (request.ImageSources != null && request.ImageSources.Count > 0);
+        var sources = request.ImageSources;
+        if (sources == null || sources.Count == 0)
+        {
+            var dbSources = await _db.ImageSources.OrderBy(s => s.SortOrder).ToListAsync(ct);
+            sources = dbSources.Select(ImageSourcesController.ToConfig).ToList();
+        }
+        var hasOpts = request.ShipSearchPrefix != null || request.CaptainSearchPrefix != null || (sources != null && sources.Count > 0);
         if (!hasOpts) return null;
-        return new PopulateOptions(request.ShipSearchPrefix, request.CaptainSearchPrefix, request.ImageSources);
+        return new PopulateOptions(request.ShipSearchPrefix, request.CaptainSearchPrefix, sources);
     }
 
-    /// <summary>Populate all images from ImageUrl into ImageData. Optional API keys for image search fallback.</summary>
+    /// <summary>Populate all images from ImageUrl into ImageData. Uses image sources entity from DB when not in request.</summary>
     [HttpPost("populate")]
-    public async Task<ActionResult<PopulateResult>> PopulateAll([FromBody] PopulateRequest? request = null)
+    public async Task<ActionResult<PopulateResult>> PopulateAll([FromBody] PopulateRequest? request = null, CancellationToken ct = default)
     {
         var keys = BuildImageSearchKeys(request);
-        var options = BuildPopulateOptions(request);
+        var options = await BuildPopulateOptionsAsync(request, ct);
         var result = await _storage.PopulateAllAsync(_db, default, keys, options);
         return Ok(result);
     }
@@ -119,7 +126,7 @@ public class ImagesController : ControllerBase
         Response.ContentType = "text/event-stream";
         Response.Headers.CacheControl = "no-cache";
         var keys = BuildImageSearchKeys(request);
-        var options = BuildPopulateOptions(request);
+        var options = await BuildPopulateOptionsAsync(request, ct);
         var jsonOpts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
         await foreach (var evt in _storage.PopulateAllStreamAsync(_db, ct, keys, options))
         {
