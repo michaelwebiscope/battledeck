@@ -73,26 +73,12 @@
           </div>
         </div>
         <div class="mb-4">
-          <details class="mb-3">
-            <summary class="text-muted small" style="cursor: pointer">Optional: API keys for image search (Pexels, Pixabay, Unsplash, Google)</summary>
-            <div class="mt-2 row g-2">
-              <div class="col-md-6"><input type="password" id="pexelsApiKey" class="form-control form-control-sm" placeholder="Pexels API key" autocomplete="off"></div>
-              <div class="col-md-6"><input type="password" id="pixabayApiKey" class="form-control form-control-sm" placeholder="Pixabay API key" autocomplete="off"></div>
-              <div class="col-md-6"><input type="password" id="unsplashAccessKey" class="form-control form-control-sm" placeholder="Unsplash Access key" autocomplete="off"></div>
-              <div class="col-md-6"><input type="password" id="googleApiKey" class="form-control form-control-sm" placeholder="Google API key" autocomplete="off"></div>
-              <div class="col-md-6"><input type="password" id="googleCseId" class="form-control form-control-sm" placeholder="Google CSE ID" autocomplete="off"></div>
-            </div>
-          </details>
-          <details class="mb-3" id="imageSourcesDetails">
-            <summary class="text-muted small" style="cursor: pointer">Image Sources: order, retry count, custom APIs</summary>
+          <details class="mb-3" id="imageSourcesDetails" open>
+            <summary class="text-muted small" style="cursor: pointer">Image Sources: order, retry count, API keys, custom APIs</summary>
             <div class="mt-2">
-              <p class="small text-muted mb-2">Drag to reorder. Set retries per source. Add custom APIs with the + button.</p>
-              <ul id="imageSourcesList" class="list-group list-group-flush mb-2" style="max-height: 280px; overflow-y: auto;"></ul>
-              <div id="customKeysSection" class="mb-2" style="display:none">
-                <label class="small text-muted">Custom API keys (for custom sources)</label>
-                <div id="customKeysInputs" class="row g-2"></div>
-              </div>
-              <button type="button" id="addCustomSourceBtn" class="btn btn-sm btn-outline-light">+ Add Custom API</button>
+              <p class="small text-muted mb-2">Drag to reorder. Set retries and API keys per source. Delete with ×. Add custom APIs with +.</p>
+              <ul id="imageSourcesList" class="list-group list-group-flush mb-2" style="max-height: 360px; overflow-y: auto;"></ul>
+              <button type="button" id="addCustomSourceBtn" class="btn btn-sm btn-modern">+ Add Custom API</button>
               <button type="button" id="saveSourcesBtn" class="btn btn-sm btn-modern ms-2">Save Sources</button>
               <span id="sourcesSaveStatus" class="ms-2 small"></span>
             </div>
@@ -258,34 +244,34 @@
   <% if (audit) { %>
   <script>
     var imageSources = <%- JSON.stringify(Array.isArray(imageSources) ? imageSources : []) %>;
-    var customKeys = {};
 
-    function updateCustomKeysFromInputs() {
-      customKeys = {};
-      document.querySelectorAll('#customKeysInputs input[data-key-name]').forEach(function(inp) {
-        var v = inp.value?.trim();
-        if (v) customKeys[inp.dataset.keyName] = v;
-      });
+    function getKeyInputsForSource(s) {
+      var html = '';
+      if (s.providerType === 'Google') {
+        html += '<input type="password" class="form-control form-control-sm source-key-input" style="width:100px" data-key="GOOGLE_API_KEY" placeholder="API key" autocomplete="off">';
+        html += '<input type="password" class="form-control form-control-sm source-key-input" style="width:90px" data-key="GOOGLE_CSE_ID" placeholder="CSE ID" autocomplete="off">';
+      } else if (s.authKeyRef) {
+        var ph = (s.authKeyRef || '').replace(/_/g, ' ').toLowerCase();
+        html += '<input type="password" class="form-control form-control-sm source-key-input" style="width:120px" data-key="' + s.authKeyRef + '" placeholder="' + ph + '" autocomplete="off">';
+      }
+      return html;
     }
 
-    function renderCustomKeysSection() {
-      var section = document.getElementById('customKeysSection');
-      var container = document.getElementById('customKeysInputs');
-      if (!section || !container) return;
-      var keys = [];
-      imageSources.forEach(function(s) {
-        if (s.providerType === 'Custom' && s.customConfig?.authValueFromKey) keys.push(s.customConfig.authValueFromKey);
+    function collectKeysFromSources() {
+      var keys = { pexelsApiKey: null, pixabayApiKey: null, unsplashAccessKey: null, googleApiKey: null, googleCseId: null };
+      var custom = {};
+      document.querySelectorAll('.source-key-input').forEach(function(inp) {
+        var k = inp.dataset.key;
+        var v = inp.value?.trim();
+        if (!v) return;
+        if (k === 'PEXELS_API_KEY') keys.pexelsApiKey = v;
+        else if (k === 'PIXABAY_API_KEY') keys.pixabayApiKey = v;
+        else if (k === 'UNSPLASH_ACCESS_KEY') keys.unsplashAccessKey = v;
+        else if (k === 'GOOGLE_API_KEY') keys.googleApiKey = v;
+        else if (k === 'GOOGLE_CSE_ID') keys.googleCseId = v;
+        else custom[k] = v;
       });
-      keys = [...new Set(keys)];
-      if (keys.length === 0) { section.style.display = 'none'; return; }
-      section.style.display = 'block';
-      container.innerHTML = '';
-      keys.forEach(function(k) {
-        var div = document.createElement('div');
-        div.className = 'col-md-6';
-        div.innerHTML = '<label class="small">' + k + '</label><input type="password" class="form-control form-control-sm" data-key-name="' + k + '" placeholder="API key" autocomplete="off">';
-        container.appendChild(div);
-      });
+      return { keys: keys, customKeys: custom };
     }
 
     function renderImageSourcesList() {
@@ -296,14 +282,16 @@
       sorted.forEach(function(s, i) {
         s.sortOrder = i;
         var li = document.createElement('li');
-        li.className = 'list-group-item bg-dark text-light d-flex align-items-center gap-2 py-2';
+        li.className = 'list-group-item bg-dark text-light d-flex flex-wrap align-items-center gap-2 py-2';
         li.dataset.id = s.id;
         li.draggable = true;
+        var keyInputs = getKeyInputsForSource(s);
         li.innerHTML = '<span class="drag-handle text-muted" style="cursor:grab">⋮⋮</span>' +
-          '<span class="flex-grow-1">' + (s.name || s.id) + '</span>' +
+          '<span style="min-width:90px">' + (s.name || s.id) + '</span>' +
           '<label class="small mb-0">Retries:</label>' +
-          '<input type="number" class="form-control form-control-sm" style="width:60px" min="1" max="5" value="' + (s.retryCount||2) + '" data-source-id="' + s.id + '" data-field="retryCount">' +
-          (s.providerType === 'Custom' ? '<button type="button" class="btn btn-sm btn-outline-danger remove-source-btn" data-id="' + s.id + '">Remove</button>' : '');
+          '<input type="number" class="form-control form-control-sm" style="width:50px" min="1" max="5" value="' + (s.retryCount||2) + '" data-source-id="' + s.id + '" data-field="retryCount">' +
+          (keyInputs ? '<span class="d-flex gap-1 align-items-center">' + keyInputs + '</span>' : '') +
+          '<button type="button" class="btn btn-sm btn-outline-danger remove-source-btn ms-auto" data-id="' + s.id + '" title="Delete source">×</button>';
         list.appendChild(li);
       });
       list.querySelectorAll('input[data-field="retryCount"]').forEach(function(inp) {
@@ -314,11 +302,11 @@
       });
       list.querySelectorAll('.remove-source-btn').forEach(function(btn) {
         btn.onclick = function() {
+          if (!confirm('Delete this source?')) return;
           imageSources = imageSources.filter(function(s){ return s.id !== btn.dataset.id; });
           renderImageSourcesList();
         };
       });
-      renderCustomKeysSection();
       list.querySelectorAll('li').forEach(function(li, idx) {
         li.ondragstart = function(e) { e.dataTransfer.setData('text/plain', idx); };
         li.ondragover = function(e) { e.preventDefault(); li.classList.add('border-primary'); };
@@ -512,15 +500,11 @@
     document.getElementById('testKeysBtn').onclick = function() {
       var btn = this;
       btn.disabled = true;
-      var keys = {
-        pexelsApiKey: document.getElementById('pexelsApiKey')?.value?.trim() || null,
-        pixabayApiKey: document.getElementById('pixabayApiKey')?.value?.trim() || null,
-        unsplashAccessKey: document.getElementById('unsplashAccessKey')?.value?.trim() || null,
-        googleApiKey: document.getElementById('googleApiKey')?.value?.trim() || null,
-        googleCseId: document.getElementById('googleCseId')?.value?.trim() || null
-      };
+      var collected = collectKeysFromSources();
+      var body = Object.assign({}, collected.keys);
+      if (Object.keys(collected.customKeys).length > 0) body.customKeys = collected.customKeys;
       showTerminal('[Test Keys] ' + new Date().toISOString() + '\n[Test Keys] Validating API keys...', true);
-      fetch('/admin/images/test-keys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(keys) })
+      fetch('/admin/images/test-keys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
         .then(function(r) { return r.json(); })
         .then(function(results) {
           var lines = ['[Test Keys] ' + new Date().toISOString(), ''];
@@ -583,22 +567,13 @@
       var startTime = Date.now();
       showTerminal('[Populate] ' + new Date().toISOString() + '\n[Populate] Step 1: Running Wikipedia sync to fetch captain ImageUrls...\n[Populate] This may take several minutes.', true);
       var body = { runSyncFirst: true, usePolling: true };
-      var pexels = document.getElementById('pexelsApiKey')?.value?.trim();
-      var pixabay = document.getElementById('pixabayApiKey')?.value?.trim();
-      var unsplash = document.getElementById('unsplashAccessKey')?.value?.trim();
-      var googleKey = document.getElementById('googleApiKey')?.value?.trim();
-      var googleCse = document.getElementById('googleCseId')?.value?.trim();
-      if (pexels) body.pexelsApiKey = pexels;
-      if (pixabay) body.pixabayApiKey = pixabay;
-      if (unsplash) body.unsplashAccessKey = unsplash;
-      if (googleKey) body.googleApiKey = googleKey;
-      if (googleCse) body.googleCseId = googleCse;
+      var collected = collectKeysFromSources();
+      Object.assign(body, collected.keys);
+      if (Object.keys(collected.customKeys).length > 0) body.customKeys = collected.customKeys;
       var searchPrefixes = <%- JSON.stringify(typeof imageSearchPrefix !== 'undefined' && imageSearchPrefix ? imageSearchPrefix : { ship: 'battleship', captain: 'captain' }) %>;
       body.shipSearchPrefix = searchPrefixes.ship || 'battleship';
       body.captainSearchPrefix = searchPrefixes.captain || 'captain';
-      updateCustomKeysFromInputs();
       if (imageSources && imageSources.length > 0) body.imageSources = imageSources;
-      if (Object.keys(customKeys).length > 0) body.customKeys = customKeys;
       fetch('/admin/images/populate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
         .then(function(r) { return r.json(); })
         .then(function(d) {
@@ -753,13 +728,8 @@
 
     document.getElementById('editSearchBtn').onclick = function() {
       if (!currentEdit.entity || !currentEdit.id) return;
-      var keys = {
-        pexelsApiKey: document.getElementById('pexelsApiKey')?.value?.trim() || null,
-        pixabayApiKey: document.getElementById('pixabayApiKey')?.value?.trim() || null,
-        unsplashAccessKey: document.getElementById('unsplashAccessKey')?.value?.trim() || null,
-        googleApiKey: document.getElementById('googleApiKey')?.value?.trim() || null,
-        googleCseId: document.getElementById('googleCseId')?.value?.trim() || null
-      };
+      var collected = collectKeysFromSources();
+      var keys = Object.assign({}, collected.keys, collected.customKeys);
       sessionStorage.setItem('adminImageKeys', JSON.stringify(keys));
       var searchPrefixes = <%- JSON.stringify(typeof imageSearchPrefix !== 'undefined' && imageSearchPrefix ? imageSearchPrefix : { ship: 'battleship', captain: 'captain' }) %>;
       var prefix = searchPrefixes[currentEdit.entity] || (currentEdit.entity === 'ship' ? 'battleship' : 'captain');

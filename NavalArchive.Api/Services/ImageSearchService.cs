@@ -14,11 +14,13 @@ public class ImageSearchService
 {
     private readonly IHttpClientFactory _http;
     private readonly IConfiguration _config;
+    private readonly WikipediaDataFetcher _wikipedia;
 
-    public ImageSearchService(IHttpClientFactory http, IConfiguration config)
+    public ImageSearchService(IHttpClientFactory http, IConfiguration config, WikipediaDataFetcher wikipedia)
     {
         _http = http;
         _config = config;
+        _wikipedia = wikipedia;
     }
 
     private string? GetKey(string name, ImageSearchKeys? keys)
@@ -50,11 +52,12 @@ public class ImageSearchService
         if (sources != null && sources.Count > 0)
             return await FindImageUrlsWithSourcesAsync(query, maxCount, ct, keys, onProgress, provider, sources);
 
-        if (!IsConfiguredWith(keys)) return new List<string>();
-
         var providers = string.IsNullOrWhiteSpace(provider)
-            ? new[] { "Pexels", "Pixabay", "Unsplash", "Google" }
+            ? new[] { "Wikipedia", "Pexels", "Pixabay", "Unsplash", "Google" }
             : new[] { provider.Trim() };
+
+        var needsKeys = providers.Any(p => !string.Equals(p, "Wikipedia", StringComparison.OrdinalIgnoreCase));
+        if (needsKeys && !IsConfiguredWith(keys)) return new List<string>();
 
         foreach (var p in providers)
         {
@@ -76,10 +79,17 @@ public class ImageSearchService
             if (!string.IsNullOrWhiteSpace(providerFilter) && !string.Equals(src.ProviderType, providerFilter, StringComparison.OrdinalIgnoreCase))
                 continue;
 
-            var hasKey = string.IsNullOrWhiteSpace(src.AuthKeyRef) || !string.IsNullOrWhiteSpace(GetKey(src.AuthKeyRef, keys));
-            if (src.ProviderType == "Google" && hasKey && !string.IsNullOrWhiteSpace(src.AuthKeyRef))
-                hasKey = !string.IsNullOrWhiteSpace(GetKey("GOOGLE_CSE_ID", keys));
-            if (!hasKey) { onProgress?.Invoke($"[{src.Name}] nokey"); continue; }
+            if (string.Equals(src.ProviderType, "Wikipedia", StringComparison.OrdinalIgnoreCase))
+            {
+                // Wikipedia needs no API key
+            }
+            else
+            {
+                var hasKey = string.IsNullOrWhiteSpace(src.AuthKeyRef) || !string.IsNullOrWhiteSpace(GetKey(src.AuthKeyRef, keys));
+                if (src.ProviderType == "Google" && hasKey && !string.IsNullOrWhiteSpace(src.AuthKeyRef))
+                    hasKey = !string.IsNullOrWhiteSpace(GetKey("GOOGLE_CSE_ID", keys));
+                if (!hasKey) { onProgress?.Invoke($"[{src.Name}] nokey"); continue; }
+            }
 
             var retries = Math.Max(1, Math.Min(src.RetryCount, 5));
             for (var attempt = 0; attempt < retries; attempt++)
@@ -98,6 +108,8 @@ public class ImageSearchService
     private async Task<List<string>> TryProviderAsync(string providerType, string query, int maxCount, int retries, CancellationToken ct, ImageSearchKeys? keys, Action<string>? onProgress, ImageSourceConfig? config = null)
     {
         var p = providerType.ToLowerInvariant();
+        if (p == "wikipedia")
+            return await TryWikipediaAsync(query, maxCount, ct);
         if (p == "pexels" && !string.IsNullOrWhiteSpace(GetKey("PEXELS_API_KEY", keys)))
             return await TryPexelsAsync(query, maxCount, ct, keys);
         if (p == "pixabay" && !string.IsNullOrWhiteSpace(GetKey("PIXABAY_API_KEY", keys)))
@@ -226,6 +238,25 @@ public class ImageSearchService
             {
                 var link = items[i].TryGetProperty("link", out var l) ? l.GetString() : null;
                 if (IsValidUrl(link)) result.Add(link!);
+            }
+        }
+        catch { }
+        return result;
+    }
+
+    private async Task<List<string>> TryWikipediaAsync(string query, int maxCount, CancellationToken ct)
+    {
+        var result = new List<string>();
+        try
+        {
+            var searchResults = await _wikipedia.SearchAsync(query, Math.Min(maxCount, 10), ct);
+            foreach (var r in searchResults)
+            {
+                if (result.Count >= maxCount) break;
+                var imageUrl = await _wikipedia.FetchImageFromPageAsync(r.Title, ct);
+                if (!string.IsNullOrEmpty(imageUrl) && IsValidUrl(imageUrl))
+                    result.Add(imageUrl);
+                await Task.Delay(150, ct); // Be nice to Wikipedia
             }
         }
         catch { }

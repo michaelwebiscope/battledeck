@@ -602,13 +602,14 @@ app.get('/admin/images/debug', async (req, res) => {
 
 app.post('/admin/images/test-keys', async (req, res) => {
   try {
-    const keys = {};
-    if (req.body?.pexelsApiKey) keys.pexelsApiKey = req.body.pexelsApiKey;
-    if (req.body?.pixabayApiKey) keys.pixabayApiKey = req.body.pixabayApiKey;
-    if (req.body?.unsplashAccessKey) keys.unsplashAccessKey = req.body.unsplashAccessKey;
-    if (req.body?.googleApiKey) keys.googleApiKey = req.body.googleApiKey;
-    if (req.body?.googleCseId) keys.googleCseId = req.body.googleCseId;
-    const response = await api.post('/api/images/test-keys', keys);
+    const body = {};
+    if (req.body?.pexelsApiKey) body.pexelsApiKey = req.body.pexelsApiKey;
+    if (req.body?.pixabayApiKey) body.pixabayApiKey = req.body.pixabayApiKey;
+    if (req.body?.unsplashAccessKey) body.unsplashAccessKey = req.body.unsplashAccessKey;
+    if (req.body?.googleApiKey) body.googleApiKey = req.body.googleApiKey;
+    if (req.body?.googleCseId) body.googleCseId = req.body.googleCseId;
+    if (req.body?.customKeys && typeof req.body.customKeys === 'object') body.customKeys = req.body.customKeys;
+    const response = await api.post('/api/images/test-keys', body);
     res.json(response.data);
   } catch (err) {
     res.status(500).json({ error: err.message });
