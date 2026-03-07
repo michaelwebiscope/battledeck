@@ -18,16 +18,16 @@ public class PaymentsController : ControllerBase
     [HttpPost("simulate")]
     public async Task<IActionResult> Simulate([FromBody] SimulateRequest request)
     {
-        var cartUrl = _config["CartService:Url"] ?? "http://localhost:5003";
+        var paymentUrl = _config["PaymentService:Url"] ?? "http://localhost:5001";
         var client = _httpClientFactory.CreateClient();
-        var response = await client.PostAsJsonAsync($"{cartUrl}/api/cart/simulate-payment", new
+        var response = await client.PostAsJsonAsync($"{paymentUrl}/api/payment/simulate", new
         {
             amount = request.Amount,
             currency = request.Currency ?? "USD",
             description = request.Description ?? "Donation"
         });
         if (!response.IsSuccessStatusCode)
-            return StatusCode(502, new { error = "Payment chain unavailable" });
+            return StatusCode(502, new { error = "Payment service unavailable", message = "Ensure PaymentSimulation is running on port 5001." });
         var result = await response.Content.ReadFromJsonAsync<object>();
         return Ok(result);
     }

@@ -48,9 +48,13 @@
           body: JSON.stringify({ amount: parseFloat(amount), currency: 'USD', description })
         });
         const data = await res.json();
-        resultEl.innerHTML = data.approved
-          ? '<div class="alert alert-success">✓ ' + data.message + ' (Transaction: ' + data.transactionId + ')</div>'
-          : '<div class="alert alert-warning">' + data.message + '</div>';
+        if (!res.ok) {
+          resultEl.innerHTML = '<div class="alert alert-danger">' + (data.message || data.error || 'Payment failed') + '</div>';
+        } else if (data.approved) {
+          resultEl.innerHTML = '<div class="alert alert-success">✓ ' + (data.message || 'Payment approved') + (data.transactionId ? ' (Transaction: ' + data.transactionId + ')' : '') + '</div>';
+        } else {
+          resultEl.innerHTML = '<div class="alert alert-warning">' + (data.message || 'Payment declined') + '</div>';
+        }
       } catch (err) {
         resultEl.innerHTML = '<div class="alert alert-danger">Payment chain unavailable. Ensure API and chain (API→Cart→Card→Payment) are running.</div>';
       }
