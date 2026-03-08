@@ -182,7 +182,7 @@ public class ImagesController : ControllerBase
         return Ok(new { deleted = true });
     }
 
-    /// <summary>Search images by query. Returns list of image URLs. Optional provider: Pexels, Pixabay, Unsplash, Google (or empty for fallback chain).</summary>
+    /// <summary>Search images by query. Uses configured image sources (All = try all enabled sources). Provider filters to one source.</summary>
     [HttpPost("search")]
     public async Task<ActionResult<List<string>>> SearchImages([FromBody] ImageSearchRequest? request = null, CancellationToken ct = default)
     {
@@ -190,7 +190,9 @@ public class ImagesController : ControllerBase
         var keys = request != null && (request.PexelsApiKey != null || request.PixabayApiKey != null || request.UnsplashAccessKey != null || request.GoogleApiKey != null)
             ? new ImageSearchKeys(request.PexelsApiKey, request.PixabayApiKey, request.UnsplashAccessKey, request.GoogleApiKey, request.GoogleCseId)
             : null;
-        var urls = await _imageSearch.FindImageUrlsAsync(q, request?.MaxCount ?? 12, ct, keys, null, request?.Provider);
+        var sources = await _db.ImageSources.AsNoTracking().OrderBy(s => s.SortOrder).ToListAsync(ct);
+        var sourceConfigs = sources.Select(ImageSourcesController.ToConfig).ToList();
+        var urls = await _imageSearch.FindImageUrlsAsync(q, request?.MaxCount ?? 12, ct, keys, null, request?.Provider, sourceConfigs);
         return Ok(urls);
     }
 

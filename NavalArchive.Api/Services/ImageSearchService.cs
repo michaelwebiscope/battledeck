@@ -46,24 +46,11 @@ public class ImageSearchService
 
     public bool IsConfigured => IsConfiguredWith(null);
 
-    /// <summary>Search images. Uses sources config if provided (with retry); otherwise fallback chain: Pexels → Pixabay → Unsplash → Google.</summary>
+    /// <summary>Search images. Uses configured sources only (no hardcoded fallback). Empty sources = no results.</summary>
     public async Task<List<string>> FindImageUrlsAsync(string query, int maxCount = 5, CancellationToken ct = default, ImageSearchKeys? keys = null, Action<string>? onProgress = null, string? provider = null, IReadOnlyList<ImageSourceConfig>? sources = null)
     {
         if (sources != null && sources.Count > 0)
             return await FindImageUrlsWithSourcesAsync(query, maxCount, ct, keys, onProgress, provider, sources);
-
-        var providers = string.IsNullOrWhiteSpace(provider)
-            ? new[] { "Wikipedia", "Pexels", "Pixabay", "Unsplash", "Google" }
-            : new[] { provider.Trim() };
-
-        var needsKeys = providers.Any(p => !string.Equals(p, "Wikipedia", StringComparison.OrdinalIgnoreCase));
-        if (needsKeys && !IsConfiguredWith(keys)) return new List<string>();
-
-        foreach (var p in providers)
-        {
-            var urls = await TryProviderAsync(p, query, maxCount, 1, ct, keys, onProgress);
-            if (urls.Count > 0) return urls;
-        }
 
         return new List<string>();
     }
