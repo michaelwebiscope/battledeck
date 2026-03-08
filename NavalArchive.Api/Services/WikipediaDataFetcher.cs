@@ -247,7 +247,7 @@ public class WikipediaDataFetcher
         return null;
     }
 
-    /// <summary>Search Wikipedia by query. Returns page titles and snippets.</summary>
+    /// <summary>Search Wikipedia by query. Returns page titles, snippets, and main image URLs.</summary>
     public async Task<List<WikipediaSearchResult>> SearchAsync(string query, int limit = 10, CancellationToken ct = default)
     {
         var results = new List<WikipediaSearchResult>();
@@ -260,12 +260,23 @@ public class WikipediaDataFetcher
             if (!doc.RootElement.TryGetProperty("query", out var queryEl) ||
                 !queryEl.TryGetProperty("search", out var searchEl))
                 return results;
+            var titles = new List<string>();
             foreach (var item in searchEl.EnumerateArray())
             {
                 var title = item.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "";
                 var snippet = item.TryGetProperty("snippet", out var s) ? s.GetString() ?? "" : "";
                 if (!string.IsNullOrEmpty(title))
-                    results.Add(new WikipediaSearchResult(title, snippet));
+                {
+                    titles.Add(title);
+                    results.Add(new WikipediaSearchResult(title, snippet, null));
+                }
+            }
+            // Fetch thumbnails for all results in batch
+            var thumbnails = await FetchThumbnailsForTitlesAsync(titles, ct);
+            for (var i = 0; i < results.Count; i++)
+            {
+                if (i < titles.Count && thumbnails.TryGetValue(titles[i], out var imgUrl) && !string.IsNullOrEmpty(imgUrl))
+                    results[i] = results[i] with { ImageUrl = imgUrl };
             }
         }
         catch (Exception ex)
@@ -273,6 +284,44 @@ public class WikipediaDataFetcher
             Console.WriteLine($"Wikipedia search failed: {ex.Message}");
         }
         return results;
+    }
+
+    /// <summary>Fetch main image URL for multiple page titles. Returns title -> imageUrl.</summary>
+    private async Task<Dictionary<string, string>> FetchThumbnailsForTitlesAsync(List<string> titles, CancellationToken ct)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (titles.Count == 0) return result;
+        var batchSize = 10;
+        for (var i = 0; i < titles.Count; i += batchSize)
+        {
+            var batch = titles.Skip(i).Take(batchSize).ToList();
+            var titleParam = string.Join("|", batch.Select(t => t.Replace(" ", "_")));
+            try
+            {
+                var url = $"{ApiBase}?action=query&titles={Uri.EscapeDataString(titleParam)}" +
+                          "&prop=pageimages&pithumbsize=200&format=json";
+                var json = await FetchWithRetryAsync(url, ct);
+                var doc = JsonDocument.Parse(json);
+                var pages = doc.RootElement.GetProperty("query").GetProperty("pages");
+                foreach (var page in pages.EnumerateObject())
+                {
+                    if (page.Name == "-1") continue;
+                    var title = page.Value.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "";
+                    if (page.Value.TryGetProperty("thumbnail", out var thumb) && thumb.TryGetProperty("source", out var src))
+                    {
+                        var imgUrl = src.GetString();
+                        if (!string.IsNullOrEmpty(title) && !string.IsNullOrEmpty(imgUrl))
+                            result[title] = imgUrl;
+                    }
+                }
+                await Task.Delay(300, ct);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Wikipedia thumbnails batch failed: {ex.Message}");
+            }
+        }
+        return result;
     }
 
     /// <summary>Fetch image URL from a Wikipedia page by title.</summary>
@@ -343,4 +392,4 @@ public class WikipediaDataFetcher
 
 public record FetchedShipData(string Name, string Description, string ImageUrl);
 public record FetchedCaptainData(string Name, string ImageUrl);
-public record WikipediaSearchResult(string Title, string Snippet);
+public record WikipediaSearchResult(string Title, string Snippet, string? ImageUrl = null);

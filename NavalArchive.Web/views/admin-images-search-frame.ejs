@@ -70,20 +70,28 @@
               status.className = 'status';
               pages.forEach(function(p) {
                 var title = p.title || p.Title || '';
-                var snippet = (p.snippet || p.Snippet || '').replace(/<[^>]+>/g, '');
+                var imageUrl = p.imageUrl || p.ImageUrl || '';
                 var div = document.createElement('div');
                 div.className = 'grid-item';
-                div.style = 'display: flex; flex-direction: column; padding: 8px; min-height: 80px;';
+                div.style = 'display: flex; flex-direction: column; padding: 8px;';
                 var titleEl = document.createElement('div');
                 titleEl.className = 'small fw-bold';
                 titleEl.textContent = title;
-                titleEl.style = 'margin-bottom: 4px; line-height: 1.2;';
-                var snipEl = document.createElement('div');
-                snipEl.className = 'small text-muted';
-                snipEl.textContent = snippet.length > 80 ? snippet.substring(0, 80) + '…' : snippet;
-                snipEl.style = 'font-size: 11px; line-height: 1.2;';
+                titleEl.style = 'margin-bottom: 6px; line-height: 1.2; flex-shrink: 0;';
                 div.appendChild(titleEl);
-                div.appendChild(snipEl);
+                if (imageUrl) {
+                  var imgEl = document.createElement('img');
+                  imgEl.src = imageUrl;
+                  imgEl.alt = title;
+                  imgEl.style = 'width: 100%; height: 100px; object-fit: cover; border-radius: 4px;';
+                  imgEl.onerror = function() { this.style.display = 'none'; };
+                  div.appendChild(imgEl);
+                } else {
+                  var placeholder = document.createElement('div');
+                  placeholder.style = 'width: 100%; height: 100px; background: #2a2a4a; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #666;';
+                  placeholder.textContent = 'No image';
+                  div.appendChild(placeholder);
+                }
                 div.onclick = function() {
                   status.textContent = 'Fetching image for ' + title + '...';
                   fetch('/api/wikipedia/image?title=' + encodeURIComponent(title))

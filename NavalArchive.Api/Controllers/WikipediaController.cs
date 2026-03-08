@@ -18,7 +18,7 @@ public class WikipediaController : ControllerBase
         var entityPart = ExtractEntityPart(query);
         var ordered = results
             .OrderByDescending(r => ScoreMatch(r.Title, entityPart))
-            .Select(r => new { title = r.Title, snippet = r.Snippet })
+            .Select(r => new { title = r.Title, snippet = r.Snippet, imageUrl = r.ImageUrl })
             .ToList();
         return Ok(ordered);
     }
