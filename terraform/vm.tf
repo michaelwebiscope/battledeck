@@ -196,8 +196,11 @@ resource "azurerm_virtual_machine_extension" "bootstrap" {
 
 # Website refresh - runs on every terraform apply -auto-approve (~5-7 min)
 # Pushes NavalArchive.Web to GitHub first so VM gets latest code
+# Waits for bootstrap to finish so IIS app pool/site exist before refresh
 resource "null_resource" "refresh_web" {
   count = var.use_app_service ? 0 : 1
+
+  depends_on = [azurerm_virtual_machine_extension.bootstrap]
 
   triggers = {
     run = timestamp()

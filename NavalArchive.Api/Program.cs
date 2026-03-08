@@ -1,6 +1,9 @@
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using NavalArchive.Data;
 using NavalArchive.Api.Services;
+using NavalArchive.Api.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -8,6 +11,41 @@ builder.Services.AddControllers();
 builder.Services.AddHttpClient();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+// Session: create on first visit, required for API access
+builder.Services.AddDistributedMemoryCache();
+builder.Services.AddSession(options =>
+{
+    options.IdleTimeout = TimeSpan.FromMinutes(30);
+    options.Cookie.HttpOnly = true;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+    options.Cookie.SameSite = SameSiteMode.Lax;
+    options.Cookie.IsEssential = true;
+});
+
+// Rate limiting: per-session (or per-IP when no session)
+var rateLimitPermit = builder.Configuration.GetValue<int>("RateLimit:PermitLimit");
+var rateLimitWindow = TimeSpan.FromSeconds(builder.Configuration.GetValue<int>("RateLimit:WindowSeconds"));
+if (rateLimitPermit <= 0) rateLimitPermit = 200;
+if (rateLimitWindow.TotalSeconds <= 0) rateLimitWindow = TimeSpan.FromMinutes(1);
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = 429;
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+    {
+        var config = context.RequestServices.GetRequiredService<IConfiguration>();
+        var cookieName = config["SessionGate:SessionCookieName"] ?? ".AspNetCore.Session";
+        var partitionKey = context.Request.Cookies.TryGetValue(cookieName, out var sid) && !string.IsNullOrEmpty(sid)
+            ? sid
+            : context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = rateLimitPermit,
+            Window = rateLimitWindow
+        });
+    });
+});
 
 var mainConn = builder.Configuration.GetConnectionString("NavalArchiveDb") ?? builder.Configuration["ConnectionStrings:NavalArchiveDb"];
 var provider = builder.Configuration["DatabaseProvider"] ?? "";
@@ -38,6 +76,12 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+// Session gate: blocklist, require session for API, rate limit
+app.UseRouting();
+app.UseSession();
+app.UseMiddleware<SessionGateMiddleware>();
+app.UseRateLimiter();
 
 // Reverse proxy: frontend only reachable through API. Non-API routes proxy to Web (localhost).
 var webUrl = app.Configuration["WebService:Url"] ?? "http://127.0.0.1:3000";
@@ -197,6 +241,23 @@ app.MapGet("api/trace", async (IHttpClientFactory http, IConfiguration config) =
     if (!res.IsSuccessStatusCode)
         return Results.Json(new { error = "Trace chain unavailable" }, statusCode: 502);
     return Results.Content(body, "application/json");
+});
+
+// Video streaming proxy: API -> Video service (5020). All frontend traffic goes through API.
+app.MapGet("api/videos/{shipId}", async (string shipId, HttpContext ctx, IHttpClientFactory http, IConfiguration config) =>
+{
+    var videoUrl = config["VideoService:Url"] ?? "http://localhost:5020";
+    var client = http.CreateClient();
+    var req = new HttpRequestMessage(HttpMethod.Get, $"{videoUrl.TrimEnd('/')}/api/videos/{shipId}");
+    if (ctx.Request.Headers.TryGetValue("Range", out var range))
+        req.Headers.TryAddWithoutValidation("Range", (string?)range);
+    var res = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ctx.RequestAborted);
+    ctx.Response.StatusCode = (int)res.StatusCode;
+    foreach (var h in res.Headers)
+        ctx.Response.Headers[h.Key] = h.Value.ToArray();
+    foreach (var h in res.Content.Headers)
+        ctx.Response.Headers[h.Key] = h.Value.ToArray();
+    await res.Content.CopyToAsync(ctx.Response.Body, ctx.RequestAborted);
 });
 
 // Idempotency: prevent same transaction from being paid multiple times

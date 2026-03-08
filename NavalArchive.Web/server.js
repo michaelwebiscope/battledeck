@@ -6,8 +6,7 @@ const fs = require('fs');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const API_BASE = process.env.API_URL || 'http://localhost:5000';
-const GATEWAY_URL = process.env.GATEWAY_URL || 'http://localhost:5010';
-const VIDEO_SERVICE_URL = process.env.VIDEO_SERVICE_URL || 'http://localhost:5020';
+// All backend communication goes through API (Gateway, Video, etc.)
 const MENU_URL = process.env.MENU_URL || 'https://raw.githubusercontent.com/michaelwebiscope/battledeck/main/NavalArchive.Web/public/menu.json';
 
 // Fallback menu: flat list or grouped { label, items: [{ href, label }] }
@@ -117,25 +116,25 @@ function toEntity(item, type = 'ship') {
   };
 }
 
-// Trace chain: Web -> Gateway (5010) -> Auth -> User -> ... -> Notification
+// Trace: Web -> API -> Gateway. All backend calls go through API.
 app.get('/api/trace', async (req, res) => {
   try {
-    const r = await axios.get(`${GATEWAY_URL}/trace`, { timeout: 15000, validateStatus: () => true });
+    const r = await axios.get(`${API_BASE}/api/trace`, { timeout: 15000, validateStatus: () => true });
     res.json(r.data ?? { error: 'No response' });
   } catch (err) {
     console.error('Trace error:', err.message);
-    res.status(502).json({ error: 'Trace chain unavailable. Ensure Gateway (port 5010) is running.' });
+    res.status(502).json({ error: 'Trace chain unavailable. Ensure API is running.' });
   }
 });
 
-// Video streaming: proxy to Java service (port 5020) with stream response
+// Video streaming: Web -> API -> Video service. All backend calls go through API.
 app.get('/api/videos/:shipId', async (req, res) => {
   try {
     const headers = {};
     if (req.headers.range) headers.Range = req.headers.range;
     const r = await axios({
       method: 'GET',
-      url: `${VIDEO_SERVICE_URL}/api/videos/${req.params.shipId}`,
+      url: `${API_BASE}/api/videos/${req.params.shipId}`,
       headers,
       responseType: 'stream',
       validateStatus: () => true
