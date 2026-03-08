@@ -727,53 +727,86 @@ app.post('/admin/images/populate', async (req, res) => {
         const job = populateJobs.get(jobId);
         if (!job) return;
         const add = (evt) => { job.events.push(evt); job.updatedAt = Date.now(); };
+        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+        const maxRetries = 3;
+        const retryDelayMs = 10000;
+
         try {
           if (runSyncFirst) {
-            try {
-              const syncRes = await api.post('/api/admin/sync?force=true', {}, { timeout: 120000 });
-              add({ type: 'sync', message: syncRes.data?.message || 'Completed' });
-            } catch (syncErr) {
-              add({ type: 'sync', error: syncErr.response?.data?.message || syncErr.message });
-            }
-          }
-          const streamRes = await axios({
-            method: 'post',
-            url: `${API_BASE}/api/images/populate/stream`,
-            data: { ...keys },
-            responseType: 'stream',
-            timeout: 300000,
-            headers: { 'Content-Type': 'application/json' }
-          });
-          let buf = '';
-          streamRes.data.on('data', (chunk) => {
-            buf += chunk.toString();
-            const parts = buf.split(/\r?\n\r?\n+/);
-            buf = parts.pop() || '';
-            for (const p of parts) {
-              const m = p.match(/^data:\s*(.+)/s);
-              if (m) {
-                try {
-                  const evt = JSON.parse(m[1].trim());
-                  if (evt && (evt.type || evt.Type)) add(evt);
-                } catch (e) { /* skip malformed */ }
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+              try {
+                const syncRes = await api.post('/api/admin/sync?force=true', {}, { timeout: 120000 });
+                add({ type: 'sync', message: syncRes.data?.message || 'Completed' });
+                break;
+              } catch (syncErr) {
+                const msg = syncErr.response?.data?.message || syncErr.message;
+                const is429 = syncErr.response?.status === 429;
+                add({ type: 'sync', error: msg });
+                if (attempt < maxRetries) {
+                  add({ type: 'info', data: `Retry ${attempt}/${maxRetries - 1} in ${retryDelayMs / 1000}s${is429 ? ' (429 rate limit)' : ''}...` });
+                  await sleep(retryDelayMs);
+                } else {
+                  add({ type: 'info', data: 'Continuing with cached data (sync failed).' });
+                  break;
+                }
               }
             }
-          });
-          streamRes.data.on('end', () => {
-            if (buf.trim()) {
-              const m = buf.match(/^data:\s*(.+)/s);
-              if (m) try { const evt = JSON.parse(m[1].trim()); if (evt && (evt.type || evt.Type)) add(evt); } catch (e) {}
+          }
+
+          for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+              const streamRes = await axios({
+                method: 'post',
+                url: `${API_BASE}/api/images/populate/stream`,
+                data: { ...keys },
+                responseType: 'stream',
+                timeout: 300000,
+                headers: { 'Content-Type': 'application/json' }
+              });
+              let buf = '';
+              await new Promise((resolve, reject) => {
+                streamRes.data.on('data', (chunk) => {
+                  buf += chunk.toString();
+                  const parts = buf.split(/\r?\n\r?\n+/);
+                  buf = parts.pop() || '';
+                  for (const p of parts) {
+                    const m = p.match(/^data:\s*(.+)/s);
+                    if (m) {
+                      try {
+                        const evt = JSON.parse(m[1].trim());
+                        if (evt && (evt.type || evt.Type)) add(evt);
+                      } catch (e) { /* skip malformed */ }
+                    }
+                  }
+                });
+                streamRes.data.on('end', () => {
+                  if (buf.trim()) {
+                    const m = buf.match(/^data:\s*(.+)/s);
+                    if (m) try { const evt = JSON.parse(m[1].trim()); if (evt && (evt.type || evt.Type)) add(evt); } catch (e) {}
+                  }
+                  resolve();
+                });
+                streamRes.data.on('error', reject);
+              });
+              break;
+            } catch (streamErr) {
+              const msg = streamErr.response?.data?.message || streamErr.message;
+              const is429 = streamErr.response?.status === 429;
+              add({ type: 'error', error: msg });
+              if (attempt < maxRetries) {
+                add({ type: 'info', data: `Retry ${attempt}/${maxRetries - 1} in ${retryDelayMs / 1000}s${is429 ? ' (429 rate limit)' : ''}...` });
+                await sleep(retryDelayMs);
+              } else {
+                break;
+              }
             }
-            job.done = true;
-            job.updatedAt = Date.now();
-          });
-          streamRes.data.on('error', (err) => {
-            add({ type: 'error', error: err.message });
-            job.done = true;
-          });
+          }
+          job.done = true;
+          job.updatedAt = Date.now();
         } catch (err) {
           add({ type: 'error', error: err.message });
           job.done = true;
+          job.updatedAt = Date.now();
         }
       })();
       return;
