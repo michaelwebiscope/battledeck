@@ -61,9 +61,10 @@ public class SessionGateMiddleware
         var sessionCookieName = _config["SessionGate:SessionCookieName"] ?? ".AspNetCore.Session";
         var hasSessionCookie = context.Request.Cookies.ContainsKey(sessionCookieName);
 
-        if (requireSession && path.StartsWith("/api", StringComparison.OrdinalIgnoreCase))
+        var isLocalhost = ip is "127.0.0.1" or "::1" or "localhost";
+        if (requireSession && path.StartsWith("/api", StringComparison.OrdinalIgnoreCase) && !isLocalhost)
         {
-            // API calls must have session cookie (obtained by visiting the website first)
+            // API calls must have session cookie (obtained by visiting the website first). Localhost bypasses for ImagePopulator etc.
             if (!hasSessionCookie)
             {
                 context.Response.StatusCode = 401;

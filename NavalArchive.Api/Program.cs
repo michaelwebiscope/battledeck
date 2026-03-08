@@ -121,6 +121,20 @@ app.Use(async (context, next) =>
             context.Response.Headers[h.Key] = h.Value.ToArray();
         foreach (var h in res.Content.Headers)
             context.Response.Headers[h.Key] = h.Value.ToArray();
+        // Ensure session cookie is sent when proxying (session middleware may not run before we write)
+        await context.Session.CommitAsync(context.RequestAborted);
+        if (context.Session.IsAvailable && !string.IsNullOrEmpty(context.Session.Id))
+        {
+            var cookieName = context.RequestServices.GetRequiredService<IConfiguration>()["SessionGate:SessionCookieName"] ?? ".AspNetCore.Session";
+            context.Response.Cookies.Append(cookieName, context.Session.Id, new CookieOptions
+            {
+                HttpOnly = true,
+                SameSite = SameSiteMode.Lax,
+                Secure = context.Request.IsHttps,
+                IsEssential = true,
+                Path = "/"
+            });
+        }
         await res.Content.CopyToAsync(context.Response.Body, context.RequestAborted);
     }
     catch (Exception ex)
