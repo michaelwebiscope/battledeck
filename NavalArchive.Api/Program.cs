@@ -39,6 +39,53 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// Reverse proxy: frontend only reachable through API. Non-API routes proxy to Web (localhost).
+var webUrl = app.Configuration["WebService:Url"] ?? "http://127.0.0.1:3000";
+var proxyEnabled = app.Configuration.GetValue<bool>("ApiAsGateway");
+app.Use(async (context, next) =>
+{
+    if (!proxyEnabled)
+    {
+        await next();
+        return;
+    }
+    var path = context.Request.Path.Value ?? "";
+    if (path.StartsWith("/api", StringComparison.OrdinalIgnoreCase) ||
+        path.StartsWith("/swagger", StringComparison.OrdinalIgnoreCase) ||
+        path.Equals("/trace", StringComparison.OrdinalIgnoreCase) ||
+        path.Equals("/health", StringComparison.OrdinalIgnoreCase))
+    {
+        await next();
+        return;
+    }
+    try
+    {
+        var client = context.RequestServices.GetRequiredService<IHttpClientFactory>().CreateClient();
+        var url = $"{webUrl}{path}{context.Request.QueryString}";
+        using var req = new HttpRequestMessage(new HttpMethod(context.Request.Method), url);
+        foreach (var h in context.Request.Headers.Where(x => !string.Equals(x.Key, "Host", StringComparison.OrdinalIgnoreCase)))
+            req.Headers.TryAddWithoutValidation(h.Key, h.Value.ToArray());
+        if (context.Request.ContentLength > 0 && context.Request.Body.CanRead)
+        {
+            req.Content = new StreamContent(context.Request.Body);
+            if (context.Request.ContentType != null)
+                req.Content.Headers.ContentType = System.Net.Http.Headers.MediaTypeHeaderValue.Parse(context.Request.ContentType);
+        }
+        var res = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, context.RequestAborted);
+        context.Response.StatusCode = (int)res.StatusCode;
+        foreach (var h in res.Headers)
+            context.Response.Headers[h.Key] = h.Value.ToArray();
+        foreach (var h in res.Content.Headers)
+            context.Response.Headers[h.Key] = h.Value.ToArray();
+        await res.Content.CopyToAsync(context.Response.Body, context.RequestAborted);
+    }
+    catch (Exception ex)
+    {
+        context.Response.StatusCode = 502;
+        await context.Response.WriteAsJsonAsync(new { error = "Frontend unavailable", message = ex.Message });
+    }
+});
+
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<NavalArchiveDbContext>();
@@ -118,6 +165,7 @@ using (var scope = app.Services.CreateScope())
 app.UseSwagger();
 app.UseSwaggerUI();
 app.UseCors();
+app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "api" }));
 app.MapControllers();
 
 // Trace page (served when /trace goes through API)

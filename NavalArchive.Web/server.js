@@ -990,8 +990,10 @@ app.use((err, req, res, next) => {
 });
 
 // --- Start Server ---
+// BIND_HOST=127.0.0.1 or API_AS_GATEWAY=true: only localhost can reach (API proxies to us). Frontend not directly exposed.
+const BIND_HOST = process.env.BIND_HOST || (process.env.API_AS_GATEWAY === 'true' ? '127.0.0.1' : '0.0.0.0');
 
-app.listen(PORT, () => {
-  console.log(`Naval Archive Web running at http://localhost:${PORT}`);
+app.listen(PORT, BIND_HOST, () => {
+  console.log(`Naval Archive Web running at http://${BIND_HOST}:${PORT}`);
   console.log(`API proxy target: ${API_BASE}`);
 });
