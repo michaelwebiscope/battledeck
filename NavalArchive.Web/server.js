@@ -7,7 +7,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const API_BASE = process.env.API_URL || 'http://localhost:5000';
 // All backend communication goes through API (Gateway, Video, etc.)
-const MENU_URL = process.env.MENU_URL || 'https://raw.githubusercontent.com/michaelwebiscope/battledeck/main/NavalArchive.Web/public/menu.json';
+// Menu: use local file (no GitHub fetch). Override with MENU_URL for remote JSON.
+const MENU_PATH = path.join(__dirname, 'public', 'menu.json');
 
 // Fallback menu: flat list or grouped { label, items: [{ href, label }] }
 const defaultNavItems = [
@@ -50,16 +51,25 @@ function isValidNavItem(i) {
 
 async function fetchNavItems() {
   if (cachedNavItems && Date.now() < cacheExpiry) return cachedNavItems;
+  const menuUrl = process.env.MENU_URL;
   try {
-    const r = await axios.get(MENU_URL, { timeout: 5000, validateStatus: (s) => s === 200 });
-    const items = Array.isArray(r.data) ? r.data : (r.data?.items || r.data?.menu || []);
+    let data;
+    if (menuUrl) {
+      const r = await axios.get(menuUrl, { timeout: 5000, validateStatus: (s) => s === 200 });
+      data = r.data;
+    } else if (fs.existsSync(MENU_PATH)) {
+      data = JSON.parse(fs.readFileSync(MENU_PATH, 'utf8'));
+    } else {
+      return defaultNavItems;
+    }
+    const items = Array.isArray(data) ? data : (data?.items || data?.menu || []);
     if (items.length > 0 && items.every(isValidNavItem)) {
       cachedNavItems = items;
       cacheExpiry = Date.now() + MENU_CACHE_MS;
       return cachedNavItems;
     }
   } catch (err) {
-    console.error('Menu fetch failed:', err.message);
+    console.error('Menu load failed:', err.message);
   }
   return defaultNavItems;
 }
@@ -73,7 +83,7 @@ app.use(express.urlencoded({ extended: true }));
 // Health check - no dependencies, before nav middleware
 app.get('/health', (req, res) => res.status(200).send('OK'));
 
-// Dynamic nav menu from online (MENU_URL), cached 5 min
+// Dynamic nav menu from local menu.json (or MENU_URL if set), cached 5 min
 app.use(async (req, res, next) => {
   try {
     res.locals.navItems = await fetchNavItems();

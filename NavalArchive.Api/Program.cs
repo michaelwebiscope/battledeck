@@ -35,6 +35,13 @@ builder.Services.AddRateLimiter(options =>
     options.RejectionStatusCode = 429;
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
     {
+        var path = context.Request.Path.Value ?? "";
+        // Admin sync/populate: long-running, manual - exempt from rate limit to avoid 429 during populate
+        if (path.StartsWith("/api/admin", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("/api/images/populate", StringComparison.OrdinalIgnoreCase))
+        {
+            return RateLimitPartition.GetNoLimiter("admin");
+        }
         var config = context.RequestServices.GetRequiredService<IConfiguration>();
         var cookieName = config["SessionGate:SessionCookieName"] ?? ".AspNetCore.Session";
         var partitionKey = context.Request.Cookies.TryGetValue(cookieName, out var sid) && !string.IsNullOrEmpty(sid)

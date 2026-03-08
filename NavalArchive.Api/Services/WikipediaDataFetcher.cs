@@ -7,14 +7,35 @@ namespace NavalArchive.Api.Services;
 public class WikipediaDataFetcher
 {
     private readonly HttpClient _http;
+    private const int MaxRetries = 4;
+    private const int BaseDelayMs = 2000;
 
     public WikipediaDataFetcher()
     {
-        _http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+        _http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         _http.DefaultRequestHeaders.Add("User-Agent", "NavalArchive/1.0 (https://github.com/navalarchive; contact@example.com)");
     }
 
     private const string ApiBase = "https://en.wikipedia.org/w/api.php";
+
+    /// <summary>Fetch URL with retry on 429 (rate limit). Exponential backoff: 2s, 4s, 8s, 16s.</summary>
+    private async Task<string> FetchWithRetryAsync(string url, CancellationToken ct)
+    {
+        for (var attempt = 0; attempt < MaxRetries; attempt++)
+        {
+            var res = await _http.GetAsync(url, ct);
+            if (res.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+            {
+                var delay = BaseDelayMs * (1 << attempt);
+                Console.WriteLine($"Wikipedia 429 rate limit. Waiting {delay}ms before retry {attempt + 1}/{MaxRetries}...");
+                await Task.Delay(delay, ct);
+                continue;
+            }
+            res.EnsureSuccessStatusCode();
+            return await res.Content.ReadAsStringAsync(ct);
+        }
+        throw new HttpRequestException("Wikipedia rate limit (429) - too many retries.");
+    }
 
     // Ship name -> Wikipedia page title
     private static readonly Dictionary<string, string> ShipTitles = new()
@@ -124,7 +145,7 @@ public class WikipediaDataFetcher
 
             try
             {
-                var json = await _http.GetStringAsync(url, ct);
+                var json = await FetchWithRetryAsync(url, ct);
                 var doc = JsonDocument.Parse(json);
                 var pages = doc.RootElement.GetProperty("query").GetProperty("pages");
 
@@ -143,7 +164,7 @@ public class WikipediaDataFetcher
                     results.Add(new FetchedShipData(shipName, extract, imageUrl));
                 }
 
-                await Task.Delay(200, ct); // Be nice to Wikipedia
+                await Task.Delay(800, ct); // Be nice to Wikipedia (avoid 429)
             }
             catch (Exception ex)
             {
@@ -170,7 +191,7 @@ public class WikipediaDataFetcher
 
             try
             {
-                var json = await _http.GetStringAsync(url, ct);
+                var json = await FetchWithRetryAsync(url, ct);
                 var doc = JsonDocument.Parse(json);
                 var pages = doc.RootElement.GetProperty("query").GetProperty("pages");
 
@@ -187,7 +208,10 @@ public class WikipediaDataFetcher
                     {
                         var portraitFile = GetFirstPortraitImage(images);
                         if (!string.IsNullOrEmpty(portraitFile))
+                        {
+                            await Task.Delay(400, ct); // Extra delay before secondary fetch
                             imageUrl = await FetchImageUrlFromFileAsync(portraitFile, ct) ?? "";
+                        }
                     }
 
                     var captainName = batch.FirstOrDefault(x =>
@@ -195,7 +219,7 @@ public class WikipediaDataFetcher
                     results.Add(new FetchedCaptainData(captainName, imageUrl));
                 }
 
-                await Task.Delay(200, ct);
+                await Task.Delay(800, ct);
             }
             catch (Exception ex)
             {
@@ -231,7 +255,7 @@ public class WikipediaDataFetcher
         try
         {
             var url = $"{ApiBase}?action=query&list=search&srsearch={Uri.EscapeDataString(query)}&srlimit={Math.Min(limit, 50)}&format=json";
-            var json = await _http.GetStringAsync(url, ct);
+            var json = await FetchWithRetryAsync(url, ct);
             var doc = JsonDocument.Parse(json);
             if (!doc.RootElement.TryGetProperty("query", out var queryEl) ||
                 !queryEl.TryGetProperty("search", out var searchEl))
@@ -259,7 +283,7 @@ public class WikipediaDataFetcher
         {
             var url = $"{ApiBase}?action=query&titles={Uri.EscapeDataString(pageTitle)}" +
                       "&prop=pageimages|images&pithumbsize=400&imlimit=50&format=json";
-            var json = await _http.GetStringAsync(url, ct);
+            var json = await FetchWithRetryAsync(url, ct);
             var doc = JsonDocument.Parse(json);
             var pages = doc.RootElement.GetProperty("query").GetProperty("pages");
             foreach (var page in pages.EnumerateObject())
@@ -272,7 +296,10 @@ public class WikipediaDataFetcher
                 {
                     var portraitFile = GetFirstPortraitImage(images);
                     if (!string.IsNullOrEmpty(portraitFile))
+                    {
+                        await Task.Delay(400, ct);
                         imageUrl = await FetchImageUrlFromFileAsync(portraitFile, ct) ?? "";
+                    }
                 }
                 if (!string.IsNullOrEmpty(imageUrl)) return imageUrl;
             }
@@ -290,7 +317,7 @@ public class WikipediaDataFetcher
         {
             var url = $"{ApiBase}?action=query&titles={Uri.EscapeDataString(fileTitle)}" +
                       "&prop=imageinfo&iiprop=url&iiurlwidth=400&format=json";
-            var json = await _http.GetStringAsync(url, ct);
+            var json = await FetchWithRetryAsync(url, ct);
             var doc = JsonDocument.Parse(json);
             var pages = doc.RootElement.GetProperty("query").GetProperty("pages");
             foreach (var page in pages.EnumerateObject())

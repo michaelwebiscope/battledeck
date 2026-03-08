@@ -6,8 +6,33 @@ namespace NavalArchive.Api.Services;
 
 public class WikipediaLogsFetcher
 {
-    private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(20) };
+    private readonly HttpClient _http;
+
+    public WikipediaLogsFetcher()
+    {
+        _http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        _http.DefaultRequestHeaders.Add("User-Agent", "NavalArchive/1.0 (https://github.com/navalarchive; contact@example.com)");
+    }
+
     private const string ApiBase = "https://en.wikipedia.org/w/api.php";
+
+    private async Task<string> FetchWithRetryAsync(string url, CancellationToken ct)
+    {
+        for (var attempt = 0; attempt < 4; attempt++)
+        {
+            var res = await _http.GetAsync(url, ct);
+            if (res.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+            {
+                var delay = 2000 * (1 << attempt);
+                Console.WriteLine($"Wikipedia logs 429. Waiting {delay}ms before retry {attempt + 1}/4...");
+                await Task.Delay(delay, ct);
+                continue;
+            }
+            res.EnsureSuccessStatusCode();
+            return await res.Content.ReadAsStringAsync(ct);
+        }
+        throw new HttpRequestException("Wikipedia rate limit (429) - too many retries.");
+    }
 
     // Wikipedia articles for naval battles and events - real historical content
     private static readonly string[] ArticleTitles =
@@ -44,7 +69,7 @@ public class WikipediaLogsFetcher
 
             try
             {
-                var json = await _http.GetStringAsync(url, ct);
+                var json = await FetchWithRetryAsync(url, ct);
                 var doc = JsonDocument.Parse(json);
                 var pages = doc.RootElement.GetProperty("query").GetProperty("pages");
 
@@ -65,7 +90,7 @@ public class WikipediaLogsFetcher
                     }
                 }
 
-                await Task.Delay(300, ct);
+                await Task.Delay(800, ct);
             }
             catch (Exception ex)
             {
