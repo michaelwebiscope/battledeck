@@ -147,10 +147,31 @@ if ($populateJar) { Copy-Item $populateJar.FullName -Destination $populateDir -F
 $populateScriptSrc = Join-Path $srcDir "scripts\populate-images.js"
 if (Test-Path $populateScriptSrc -ErrorAction SilentlyContinue) { Copy-Item $populateScriptSrc -Destination $populateDir -Force -ErrorAction SilentlyContinue }
 
-# Ensure IIS serves NavalArchive-Web on 80/443 (not Default Web Site)
+# Ensure API is entry point on 443 (session gate, all traffic through API)
 $appcmd = "$env:windir\System32\inetsrv\appcmd.exe"
 if (Test-Path $appcmd) {
     & $appcmd stop site "Default Web Site" 2>$null
+    $cert = Get-ChildItem Cert:\LocalMachine\My -ErrorAction SilentlyContinue | Where-Object { $_.FriendlyName -eq "NavalArchive HTTPS" } | Select-Object -First 1
+    if ($cert) {
+        $apiHas443 = Get-WebBinding -Name "NavalArchive-API" -Protocol "https" -ErrorAction SilentlyContinue
+        if (-not $apiHas443) {
+            try {
+                Import-Module IISAdministration -ErrorAction SilentlyContinue
+                New-IISSiteBinding -Name "NavalArchive-API" -BindingInformation "*:443:" -CertificateThumbPrint $cert.Thumbprint -CertStoreLocation "Cert:\LocalMachine\My" -Protocol https -ErrorAction Stop
+                Write-Host "Added HTTPS (443) binding to NavalArchive-API" -ForegroundColor Green
+            } catch {
+                New-WebBinding -Name "NavalArchive-API" -Protocol https -Port 443 -ErrorAction SilentlyContinue
+                $hb = Get-WebBinding -Name "NavalArchive-API" -Protocol "https" -ErrorAction SilentlyContinue
+                if ($hb) { $hb.AddSslCertificate($cert.Thumbprint, "My") }
+            }
+        }
+        $web443 = Get-WebBinding -Name "NavalArchive-Web" -Protocol "https" -ErrorAction SilentlyContinue
+        if ($web443) {
+            Remove-WebBinding -Name "NavalArchive-Web" -Protocol "https" -BindingInformation "*:443:"
+            Write-Host "Removed HTTPS from NavalArchive-Web (API is now entry point)" -ForegroundColor Green
+        }
+    }
+    & $appcmd start site "NavalArchive-API" 2>$null
     & $appcmd start site "NavalArchive-Web" 2>$null
 }
 

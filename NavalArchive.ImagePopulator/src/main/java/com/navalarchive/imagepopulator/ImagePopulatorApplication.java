@@ -1,7 +1,6 @@
 package com.navalarchive.imagepopulator;
 
 import java.io.IOException;
-import java.lang.reflect.Type;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.List;
@@ -13,7 +12,6 @@ import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 
 import com.google.gson.Gson;
-import com.google.gson.reflect.TypeToken;
 
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -150,21 +148,26 @@ public class ImagePopulatorApplication {
         List<Map<String, Object>> all = new ArrayList<>();
         int page = 1;
         int pageSize = 500;
+        Gson gson = new Gson();
         while (true) {
             String url = base + "/api/ships?page=" + page + "&pageSize=" + pageSize;
             Request req = new Request.Builder().url(url).header("Accept", "application/json").get().build();
             try (Response res = client.newCall(req).execute()) {
                 if (!res.isSuccessful() || res.body() == null) break;
-                Map<String, Object> json = new Gson().fromJson(res.body().string(), new TypeToken<Map<String, Object>>(){}.getType());
-                List<Map<String, Object>> items = (List<Map<String, Object>>) json.get("items");
-                if (items == null || items.isEmpty()) break;
-                all.addAll(items);
-                Number total = (Number) json.get("total");
-                if (total == null || all.size() >= total.intValue()) break;
+                String body = res.body().string();
+                ShipsResponse parsed = gson.fromJson(body, ShipsResponse.class);
+                if (parsed == null || parsed.items == null || parsed.items.isEmpty()) break;
+                all.addAll(parsed.items);
+                if (parsed.total <= 0 || all.size() >= parsed.total) break;
                 page++;
             }
         }
         return all;
+    }
+
+    private static class ShipsResponse {
+        List<Map<String, Object>> items;
+        int total;
     }
 
     private static FetchResult fetchImageWithRetry(OkHttpClient client, String url, String name, int index, int total) throws IOException {

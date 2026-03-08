@@ -390,20 +390,20 @@ if ($appcmd) {
     & $appcmd add apppool /name:NavalArchive-API "/managedRuntimeVersion:"
     & $appcmd add site /name:NavalArchive-API "/physicalPath:$apiPath" "/bindings:http/*:5000:"
     & $appcmd set app "NavalArchive-API/" /applicationPool:NavalArchive-API
+    try {
+        Import-Module IISAdministration -ErrorAction SilentlyContinue
+        New-IISSiteBinding -Name "NavalArchive-API" -BindingInformation "*:443:" -CertificateThumbPrint $certThumbprint -CertStoreLocation "Cert:\LocalMachine\My" -Protocol https -ErrorAction SilentlyContinue
+    } catch {
+        New-WebBinding -Name "NavalArchive-API" -Protocol https -Port 443 -ErrorAction SilentlyContinue
+        $httpsBinding = Get-WebBinding -Name "NavalArchive-API" -Protocol "https" -ErrorAction SilentlyContinue
+        if ($httpsBinding) { $httpsBinding.AddSslCertificate($certThumbprint, "My") }
+    }
     $prevErr = $ErrorActionPreference
     $ErrorActionPreference = "SilentlyContinue"
     cmd /c "`"$appcmd`" delete site NavalArchive-Web >nul 2>&1"
     $ErrorActionPreference = $prevErr
     & $appcmd add site /name:NavalArchive-Web "/physicalPath:$webPath" "/bindings:http/*:80:"
     & $appcmd set app "NavalArchive-Web/" /applicationPool:DefaultAppPool 2>$null
-    try {
-        Import-Module IISAdministration -ErrorAction SilentlyContinue
-        New-IISSiteBinding -Name "NavalArchive-Web" -BindingInformation "*:443:" -CertificateThumbPrint $certThumbprint -CertStoreLocation "Cert:\LocalMachine\My" -Protocol https -ErrorAction SilentlyContinue
-    } catch {
-        New-WebBinding -Name "NavalArchive-Web" -Protocol https -Port 443 -ErrorAction SilentlyContinue
-        $httpsBinding = Get-WebBinding -Name "NavalArchive-Web" -Protocol "https" -ErrorAction SilentlyContinue
-        if ($httpsBinding) { $httpsBinding.AddSslCertificate($certThumbprint, "My") }
-    }
     & $appcmd start site NavalArchive-API
     & $appcmd start site NavalArchive-Web
     icacls $apiPath /grant "IIS AppPool\NavalArchive-API:(OI)(CI)M" /T 2>$null

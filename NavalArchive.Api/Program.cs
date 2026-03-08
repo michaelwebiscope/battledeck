@@ -1,4 +1,5 @@
 using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using NavalArchive.Data;
@@ -77,6 +78,14 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// Forwarded headers when behind IIS/ARR (X-Forwarded-For, X-Forwarded-Proto)
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+    KnownNetworks = { },
+    KnownProxies = { }
+});
+
 // Session gate: blocklist, require session for API, rate limit
 app.UseRouting();
 app.UseSession();
@@ -116,12 +125,7 @@ app.Use(async (context, next) =>
                 req.Content.Headers.ContentType = System.Net.Http.Headers.MediaTypeHeaderValue.Parse(context.Request.ContentType);
         }
         var res = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, context.RequestAborted);
-        context.Response.StatusCode = (int)res.StatusCode;
-        foreach (var h in res.Headers)
-            context.Response.Headers[h.Key] = h.Value.ToArray();
-        foreach (var h in res.Content.Headers)
-            context.Response.Headers[h.Key] = h.Value.ToArray();
-        // Ensure session cookie is sent when proxying (session middleware may not run before we write)
+        // Create session and add cookie BEFORE writing response (headers must be set before body)
         await context.Session.CommitAsync(context.RequestAborted);
         if (context.Session.IsAvailable && !string.IsNullOrEmpty(context.Session.Id))
         {
@@ -135,6 +139,13 @@ app.Use(async (context, next) =>
                 Path = "/"
             });
         }
+        context.Response.StatusCode = (int)res.StatusCode;
+        foreach (var h in res.Headers)
+            if (!string.Equals(h.Key, "Set-Cookie", StringComparison.OrdinalIgnoreCase))
+                context.Response.Headers[h.Key] = h.Value.ToArray();
+        foreach (var h in res.Content.Headers)
+            if (!string.Equals(h.Key, "Set-Cookie", StringComparison.OrdinalIgnoreCase))
+                context.Response.Headers[h.Key] = h.Value.ToArray();
         await res.Content.CopyToAsync(context.Response.Body, context.RequestAborted);
     }
     catch (Exception ex)
