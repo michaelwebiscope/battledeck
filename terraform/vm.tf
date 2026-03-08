@@ -104,15 +104,37 @@ resource "azurerm_network_security_group" "main" {
   location            = var.azure_region
   resource_group_name = local.rg_name
 
-  # Single rule: allow your IP to all ports. Deny all other inbound (Azure default).
+  # Only RDP, HTTP, HTTPS. All other ports closed (API, Payment, Card, Cart, etc. are internal).
   security_rule {
-    name                       = "AllowMyIP"
+    name                       = "AllowRDP"
     priority                   = 100
     direction                  = "Inbound"
     access                     = "Allow"
-    protocol                   = "*"
+    protocol                   = "Tcp"
     source_port_range          = "*"
-    destination_port_range     = "*"
+    destination_port_range     = "3389"
+    source_address_prefix      = local.vm_source_prefix
+    destination_address_prefix = "*"
+  }
+  security_rule {
+    name                       = "AllowHTTP"
+    priority                   = 110
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "80"
+    source_address_prefix      = local.vm_source_prefix
+    destination_address_prefix = "*"
+  }
+  security_rule {
+    name                       = "AllowHTTPS"
+    priority                   = 120
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "443"
     source_address_prefix      = local.vm_source_prefix
     destination_address_prefix = "*"
   }

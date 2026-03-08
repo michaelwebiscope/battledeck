@@ -90,7 +90,7 @@ if (Test-Path "$nodeDir\node.exe") { $env:Path = "$nodeDir;$env:Path" }
 $javaDir = "C:\Program Files\Eclipse Adoptium"
 $javaExists = (Test-Path $javaDir) -and (Get-ChildItem $javaDir -Directory -ErrorAction SilentlyContinue | Where-Object { Test-Path "$($_.FullName)\bin\java.exe" } | Select-Object -First 1)
 if (!$javaExists) {
-    $jdkZip = "$env:TEMP\openjdk17.zip"
+    $jdkZip = "$env:TEMP\openjdk17-$([Guid]::NewGuid().ToString('N').Substring(0,8)).zip"
     Invoke-WebRequest -Uri "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.13%2B11/OpenJDK17U-jdk_x64_windows_hotspot_17.0.13_11.zip" -OutFile $jdkZip -UseBasicParsing -TimeoutSec 120
     New-Item -ItemType Directory -Path $javaDir -Force | Out-Null
     Expand-Archive -Path $jdkZip -DestinationPath $javaDir -Force
@@ -98,7 +98,12 @@ if (!$javaExists) {
     if ($jdkFolder) {
         [System.Environment]::SetEnvironmentVariable("Path", "$($jdkFolder.FullName)\bin;" + [System.Environment]::GetEnvironmentVariable("Path","Machine"), "Machine")
     }
-    Remove-Item $jdkZip -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+    for ($i = 0; $i -lt 3; $i++) {
+        Remove-Item $jdkZip -Force -ErrorAction SilentlyContinue
+        if (-not (Test-Path $jdkZip)) { break }
+        Start-Sleep -Seconds 5
+    }
 }
 
 $ps64 = "$env:windir\System32\WindowsPowerShell\v1.0\powershell.exe"

@@ -93,6 +93,25 @@ To update the website without running the full bootstrap (which takes 45–60 mi
 
 Requires `az` CLI.
 
+### Deploy failed (bootstrap extension error)
+
+If `terraform apply` fails with "VM has reported a user failure" or "extension already exists":
+
+1. **Remove the failed extension** and re-run:
+
+   ```bash
+   az vm extension delete --resource-group NE-LAB --vm-name navalarchive-prod-vm --name NavalArchiveBootstrap
+   terraform apply -auto-approve
+   ```
+
+2. **Or import** if the extension exists in Azure but not in Terraform state:
+
+   ```bash
+   terraform import 'azurerm_virtual_machine_extension.bootstrap[0]' /subscriptions/e79a13ca-41c3-4495-b5c2-aa788f7062f8/resourceGroups/NE-LAB/providers/Microsoft.Compute/virtualMachines/navalarchive-prod-vm/extensions/NavalArchiveBootstrap
+   ```
+
+   (Replace subscription ID if different.)
+
 ---
 
 ## File Layout

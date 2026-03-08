@@ -86,8 +86,9 @@ Get-ChildItem -Path $webSrcDir -Exclude node_modules | Copy-Item -Destination $w
 "@ | Set-Content -Path "$webPath\web.config" -Encoding UTF8
 
 Write-Host "Running npm install..." -ForegroundColor Yellow
+$env:Path = "$nodeDir;$env:Path"
 Push-Location $webPath
-cmd /c "`"$nodeDir\npm.cmd`" install --omit=dev --no-audit --no-fund"
+& "$nodeDir\npm.cmd" install --omit=dev --no-audit --no-fund 2>&1
 Pop-Location
 
 Write-Host "Starting NavalArchiveWeb..." -ForegroundColor Yellow
@@ -109,11 +110,16 @@ if (-not $svcStarted) {
     $env:API_URL = "http://localhost:5000"
     $env:GATEWAY_URL = "http://localhost:5010"
     $env:PORT = "3000"
-    Start-Process -FilePath "$nodeDir\node.exe" -ArgumentList "server.js" -WorkingDirectory $webPath -WindowStyle Hidden
-    Start-Sleep -Seconds 10
+    $env:API_AS_GATEWAY = "true"
+    if (Test-Path "$nodeDir\node.exe") {
+        Start-Process -FilePath "$nodeDir\node.exe" -ArgumentList "server.js" -WorkingDirectory $webPath -WindowStyle Hidden
+        Start-Sleep -Seconds 10
+    } else {
+        Write-Host "Node.exe not found at $nodeDir - Web may not be running" -ForegroundColor Red
+    }
 }
 
-# Refresh API (serves images from DB)
+# Refresh API first (ImagePopulator needs it)
 $apiCsproj = Get-ChildItem -Path $srcDir -Filter "NavalArchive.Api.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($apiCsproj -and (Test-Path "$dotnetDir\dotnet.exe")) {
     Write-Host "Publishing NavalArchive.Api..." -ForegroundColor Yellow
@@ -123,6 +129,14 @@ if ($apiCsproj -and (Test-Path "$dotnetDir\dotnet.exe")) {
     & "$dotnetDir\dotnet.exe" publish -c Release -o $apiPath 2>&1
     Pop-Location
     if (Test-Path $appcmd) { & $appcmd start apppool /apppool.name:NavalArchive-API 2>$null }
+    Write-Host "Waiting for API to be ready..." -ForegroundColor Gray
+    for ($i = 1; $i -le 12; $i++) {
+        try {
+            $r = Invoke-WebRequest -Uri "http://localhost:5000/health" -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
+            if ($r.StatusCode -eq 200) { Write-Host "API ready." -ForegroundColor Green; break }
+        } catch { }
+        if ($i -lt 12) { Start-Sleep -Seconds 5 }
+    }
 }
 
 # Copy populate assets while extract is still valid (before cleanup)
@@ -149,7 +163,7 @@ if (Test-Path $adoptiumBase) {
 }
 if (-not $javaDir) {
     Write-Host "Installing Java 17..." -ForegroundColor Yellow
-    $jdkZip = "$env:TEMP\openjdk17.zip"
+    $jdkZip = "$env:TEMP\openjdk17-$([Guid]::NewGuid().ToString('N').Substring(0,8)).zip"
     $jdkExtract = "C:\Program Files\Eclipse Adoptium"
     try {
         Invoke-WebRequest -Uri "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.13%2B11/OpenJDK17U-jdk_x64_windows_hotspot_17.0.13_11.zip" -OutFile $jdkZip -UseBasicParsing -TimeoutSec 120
