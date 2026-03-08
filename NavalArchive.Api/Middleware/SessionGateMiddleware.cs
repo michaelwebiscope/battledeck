@@ -61,7 +61,8 @@ public class SessionGateMiddleware
         var sessionCookieName = _config["SessionGate:SessionCookieName"] ?? ".AspNetCore.Session";
         var hasSessionCookie = context.Request.Cookies.ContainsKey(sessionCookieName);
 
-        var isLocalhost = ip is "127.0.0.1" or "::1" or "localhost";
+        // Use client IP from X-Forwarded-For when behind proxy (IIS); connection IP may be 127.0.0.1
+        var isLocalhost = ip is "127.0.0.1" or "::1" or "localhost" && string.IsNullOrEmpty(context.Request.Headers["X-Forwarded-For"].FirstOrDefault());
         if (requireSession && path.StartsWith("/api", StringComparison.OrdinalIgnoreCase) && !isLocalhost)
         {
             // API calls must have session cookie (obtained by visiting the website first). Localhost bypasses for ImagePopulator etc.
