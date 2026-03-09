@@ -68,15 +68,23 @@ if (Test-Path "$nodeDir\npm.cmd" -ErrorAction SilentlyContinue) {
 
 # 3. Update start-web.cmd to use node -r newrelic (required per New Relic Node.js docs)
 # Docs: https://docs.newrelic.com/docs/apm/agents/nodejs-agent/installation-configuration/install-nodejs-agent
+# Set NEW_RELIC_* in batch so Node process gets them (NavalArchiveWeb may not be in service registry)
 $startWebPath = "$webPath\start-web.cmd"
 $nodeCmd = if ($LicenseKey) { "`"$nodeDir\node.exe`" -r newrelic server.js" } else { "`"$nodeDir\node.exe`" server.js" }
+$nodeFallback = if ($LicenseKey) { "`nif errorlevel 1 `"$nodeDir\node.exe`" server.js" } else { "" }
+$nrEnv = if ($LicenseKey) { @"
+set NEW_RELIC_LICENSE_KEY=$LicenseKey
+set NEW_RELIC_APP_NAME=NavalArchiveWeb
+"@ } else { "" }
 $startWebContent = @"
 @echo off
 cd /d $webPath
 set API_URL=http://localhost:5000
 set GATEWAY_URL=http://localhost:5010
 set PORT=3000
+$nrEnv
 $nodeCmd
+$nodeFallback
 "@
 Set-Content -Path $startWebPath -Value $startWebContent -Encoding ASCII -Force
 Write-Host "  [OK] Updated start-web.cmd (Node startup)" -ForegroundColor Green
@@ -152,6 +160,20 @@ if ($LicenseKey) {
     }
 } else {
     Write-Host "  [SKIP] No license key - config copied only (set NEW_RELIC_LICENSE_KEY or -LicenseKey)" -ForegroundColor Gray
+}
+
+# 7. Restart NavalArchiveWeb (Node) so it picks up updated start-web.cmd
+if ($LicenseKey) {
+    $webSvc = Get-Service -Name "NavalArchiveWeb" -ErrorAction SilentlyContinue
+    if ($webSvc) {
+        try {
+            Restart-Service -Name "NavalArchiveWeb" -Force -ErrorAction Stop
+            Write-Host "  [OK] NavalArchiveWeb restarted" -ForegroundColor Green
+        } catch {
+            Write-Host "  [WARN] NavalArchiveWeb restart failed: $_" -ForegroundColor Yellow
+            Write-Host "  Run manually: Restart-Service NavalArchiveWeb" -ForegroundColor Gray
+        }
+    }
 }
 
 Write-Host "`nNew Relic deploy done.`n" -ForegroundColor Cyan
