@@ -49,6 +49,7 @@
       <button type="button" id="setFromUrlBtn">Set from URL</button>
       <label for="uploadFileInput">Upload image</label>
       <input type="file" id="uploadFileInput" accept="image/*">
+      <button type="button" id="pasteFromClipboardBtn">Paste from clipboard</button>
       <button type="button" id="removeSelectedBtn" style="background:#6c757d">Remove selected</button>
     </div>
   </div>
@@ -82,6 +83,7 @@
       var customUrlInput = document.getElementById('customUrlInput');
       var setFromUrlBtn = document.getElementById('setFromUrlBtn');
       var uploadFileInput = document.getElementById('uploadFileInput');
+      var pasteFromClipboardBtn = document.getElementById('pasteFromClipboardBtn');
       var removeSelectedBtn = document.getElementById('removeSelectedBtn');
 
       function getKeys() {
@@ -96,6 +98,37 @@
           var name = path.split('/').pop() || url;
           return decodeURIComponent(name).slice(0, 40) || 'Image';
         } catch (e) { return 'Image'; }
+      }
+
+      function uploadFile(file) {
+        if (!file || !file.type.match(/^image\//)) {
+          status.textContent = 'Select an image file.';
+          status.className = 'status error';
+          return;
+        }
+        if (!entity || !entityId) {
+          status.textContent = 'Cannot upload: missing entity or id.';
+          status.className = 'status error';
+          return;
+        }
+        status.textContent = 'Uploading...';
+        status.className = 'status';
+        var uploadUrl = '/api/images/' + encodeURIComponent(entity) + '/' + encodeURIComponent(entityId) + '/upload';
+        fetch(uploadUrl, {
+          method: 'POST',
+          body: file,
+          headers: { 'Content-Type': file.type || 'image/jpeg' }
+        }).then(function(r) {
+          return r.json().then(function(data) {
+            if (!r.ok) throw new Error(data.error || data.message || 'Upload failed');
+            return data;
+          });
+        }).then(function() {
+          sendImageUploaded();
+        }).catch(function(e) {
+          status.textContent = 'Upload error: ' + e.message;
+          status.className = 'status error';
+        });
       }
 
       function sendImageToParent(url) {
@@ -271,30 +304,53 @@
 
       uploadFileInput.onchange = function() {
         var file = uploadFileInput.files && uploadFileInput.files[0];
-        if (!file || !file.type.match(/^image\//)) { status.textContent = 'Select an image file.'; status.className = 'status error'; return; }
-        if (!entity || !entityId) { status.textContent = 'Cannot upload: missing entity or id.'; status.className = 'status error'; return; }
-        status.textContent = 'Uploading...';
-        status.className = 'status';
-        var form = new FormData();
-        form.append('file', file);
-        var uploadUrl = '/api/images/' + encodeURIComponent(entity) + '/' + encodeURIComponent(entityId) + '/upload';
-        fetch(uploadUrl, {
-          method: 'POST',
-          body: file,
-          headers: { 'Content-Type': file.type || 'image/jpeg' }
-        }).then(function(r) {
-          return r.json().then(function(data) {
-            if (!r.ok) throw new Error(data.error || data.message || 'Upload failed');
-            return data;
-          });
-        })
-          .then(function() { sendImageUploaded(); })
-          .catch(function(e) {
-            status.textContent = 'Upload error: ' + e.message;
-            status.className = 'status error';
-          });
+        if (!file) return;
+        uploadFile(file);
         uploadFileInput.value = '';
       };
+
+      if (pasteFromClipboardBtn && navigator.clipboard && navigator.clipboard.read) {
+        pasteFromClipboardBtn.onclick = function() {
+          status.textContent = 'Reading image from clipboard...';
+          status.className = 'status';
+          navigator.clipboard.read().then(function(items) {
+            if (!items || !items.length) {
+              status.textContent = 'No clipboard items found.';
+              status.className = 'status error';
+              return;
+            }
+            var imgItem = null;
+            var imgType = null;
+            items.some(function(item) {
+              if (!item.types) return false;
+              var t = item.types.find(function(tp) { return /^image\\//i.test(tp); });
+              if (t) {
+                imgItem = item;
+                imgType = t;
+                return true;
+              }
+              return false;
+            });
+            if (!imgItem || !imgType) {
+              status.textContent = 'No image found in clipboard.';
+              status.className = 'status error';
+              return;
+            }
+            return imgItem.getType(imgType).then(function(blob) {
+              var file = new File([blob], 'clipboard-image.' + (imgType.split('/')[1] || 'png'), { type: imgType });
+              uploadFile(file);
+            });
+          }).catch(function(e) {
+            status.textContent = 'Clipboard error: ' + (e.message || e.toString());
+            status.className = 'status error';
+          });
+        };
+      } else if (pasteFromClipboardBtn) {
+        pasteFromClipboardBtn.onclick = function() {
+          status.textContent = 'Clipboard image paste not supported in this browser.';
+          status.className = 'status error';
+        };
+      }
 
       removeSelectedBtn.onclick = function() {
         var sel = grid.querySelectorAll('.grid-item.selected');

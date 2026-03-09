@@ -108,17 +108,17 @@ async function main() {
       }
     }
     const withImage = ships.filter((s) => s.imageUrl && String(s.imageUrl).startsWith('http'));
-    console.log('[populate-images] Connected. Ships:', ships.length, ', with image URLs:', withImage.length);
+    const withImageTotal = withImage.length;
+    console.log('[populate-images] Connected. Ships:', ships.length, ', with image URLs:', withImageTotal);
 
     let stored = 0;
-    const total = withImage.length;
     for (let i = 0; i < withImage.length; i++) {
       const ship = withImage[i];
       const index = i + 1;
       try {
-        const imgRes = await fetchImageWithRetry(ship.imageUrl, ship.name, index, total);
+        const imgRes = await fetchImageWithRetry(ship.imageUrl, ship.name, index, withImageTotal);
         if (imgRes.statusCode !== 200 || !imgRes.data || imgRes.data.length < 100) {
-          console.log(`  [${index}/${total}] Skip: ${ship.name} - fetch HTTP ${imgRes.statusCode}`);
+          console.log(`  [${index}/${withImageTotal}] Skip: ${ship.name} - fetch HTTP ${imgRes.statusCode}`);
           await new Promise((r) => setTimeout(r, DELAY_MS));
           continue;
         }
@@ -126,12 +126,12 @@ async function main() {
         const result = await uploadImage(API_BASE, ship.id, imgRes.data, ct);
         if (result.status >= 200 && result.status < 300) {
           stored++;
-          console.log(`  [${index}/${total}] OK: ${ship.name} (id ${ship.id})`);
+          console.log(`  [${index}/${withImageTotal}] OK: ${ship.name} (id ${ship.id})`);
         } else {
-          console.log(`  [${index}/${total}] Skip: ${ship.name} - upload HTTP ${result.status}`);
+          console.log(`  [${index}/${withImageTotal}] Skip: ${ship.name} - upload HTTP ${result.status}`);
         }
       } catch (err) {
-        console.log(`  [${index}/${total}] Fail: ${ship.name} - ${err.message}`);
+        console.log(`  [${index}/${withImageTotal}] Fail: ${ship.name} - ${err.message}`);
       }
       await new Promise((r) => setTimeout(r, DELAY_MS));
     }
