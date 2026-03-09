@@ -6,6 +6,29 @@ const fs = require('fs');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const API_BASE = process.env.API_URL || 'http://localhost:5000';
+
+function imageUploadHandler(entity) {
+  return async (req, res) => {
+    try {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      const body = Buffer.concat(chunks);
+      const r = await axios({
+        method: 'POST',
+        url: `${API_BASE}/api/images/${entity}/${req.params.id}/upload`,
+        data: body,
+        headers: { 'Content-Type': req.headers['content-type'] || 'image/jpeg' },
+        maxBodyLength: 10 * 1024 * 1024,
+        timeout: 120000,
+        validateStatus: () => true
+      });
+      res.status(r.status).json(r.data ?? {});
+    } catch (err) {
+      console.error('Image upload proxy error:', err.message);
+      res.status(502).json({ error: err.message });
+    }
+  };
+}
 // All backend communication goes through API (Gateway, Video, etc.)
 // Menu: use local file (no GitHub fetch). Override with MENU_URL for remote JSON.
 const MENU_PATH = path.join(__dirname, 'public', 'menu.json');
@@ -87,6 +110,11 @@ async function fetchNavItems() {
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Image upload routes MUST run before express.json/urlencoded so raw body is not consumed
+app.post('/api/images/ship/:id/upload', imageUploadHandler('ship'));
+app.post('/api/images/captain/:id/upload', imageUploadHandler('captain'));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -189,28 +217,6 @@ app.get('/api/videos/:shipId', async (req, res) => {
   }
 });
 
-// Image upload: stream raw body to API (bypass JSON proxy)
-async function proxyImageUpload(req, res, entity, id) {
-  try {
-    const chunks = [];
-    for await (const chunk of req) chunks.push(chunk);
-    const body = Buffer.concat(chunks);
-    const r = await axios({
-      method: 'POST',
-      url: `${API_BASE}/api/images/${entity}/${id}/upload`,
-      data: body,
-      headers: { 'Content-Type': req.headers['content-type'] || 'image/jpeg' },
-      maxBodyLength: 10 * 1024 * 1024,
-      validateStatus: () => true
-    });
-    res.status(r.status).json(r.data ?? {});
-  } catch (err) {
-    console.error('Image upload proxy error:', err.message);
-    res.status(502).json({ error: err.message });
-  }
-}
-app.post('/api/images/ship/:id/upload', (req, res) => proxyImageUpload(req, res, 'ship', req.params.id));
-app.post('/api/images/captain/:id/upload', (req, res) => proxyImageUpload(req, res, 'captain', req.params.id));
 
 // Explicit POST proxy for captain delete (workaround for 405 on DELETE from IIS/WebDAV)
 app.post('/api/captains/delete/:id', async (req, res) => {
