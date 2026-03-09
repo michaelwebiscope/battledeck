@@ -1,21 +1,70 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <script>
+    (function(){
+      function checkAdmin() {
+        if (localStorage.getItem('adminMode') !== 'true') location.replace('/');
+      }
+      checkAdmin();
+      window.addEventListener('adminModeChanged', function(e) {
+        if (!e.detail || !e.detail.enabled) location.replace('/');
+      });
+    })();
+  </script>
   <%- include('partials/head') %>
   <style>
-    .edit-card { width: 140px; border-radius: 8px; overflow: hidden; background: #1a1a2e; border: 1px solid #333; }
-    .edit-thumb { width: 100%; height: 90px; object-fit: cover; display: block; }
-    .edit-info { padding: 6px 8px; }
-    .edit-name { font-size: 0.8rem; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .edit-actions { display: flex; gap: 4px; }
+    .audit-page .card, .audit-page .card-header, .audit-page .card-body { color: var(--text); }
+    .edit-card {
+      width: 140px; border-radius: 10px; overflow: hidden;
+      background: white; border: 2px solid rgba(12, 74, 110, 0.2);
+      box-shadow: 0 2px 8px rgba(12, 74, 110, 0.1);
+      cursor: grab; transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease;
+    }
+    .edit-card:hover { transform: translateY(-4px); box-shadow: 0 8px 20px rgba(12, 74, 110, 0.18); }
+    .edit-card.dragging {
+      cursor: grabbing;
+      position: relative;
+      transform: scale(1.06) translateY(-14px) rotate(-1deg);
+      box-shadow: 0 16px 32px rgba(0,0,0,0.25), 0 0 0 1px rgba(2, 132, 199, 0.3);
+      z-index: 100;
+      transition: transform 0.15s ease-out, box-shadow 0.15s ease-out;
+    }
+    .edit-card.drag-over { outline: 2px dashed var(--blue); outline-offset: 4px; }
+    .edit-card.selected { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.4); }
+    .edit-card .img-wrap { width: 100%; height: 90px; overflow: hidden; border-radius: 8px 8px 0 0; background: #e9ecef; }
+    .edit-card .edit-thumb { width: 100%; height: 100%; object-fit: cover; display: block; vertical-align: top; }
+    .edit-info { padding: 8px 10px; background: #f8fafc; }
+    .edit-name { font-size: 0.85rem; font-weight: 500; color: var(--blue-deep); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .edit-actions { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+    .edit-card .entity-chk { margin-right: 4px; cursor: pointer; }
+    .edit-card .btn { font-size: 0.75rem; }
+    .bulk-bar {
+      padding: 14px; background: linear-gradient(135deg, rgba(12, 74, 110, 0.08) 0%, rgba(6, 182, 212, 0.06) 100%);
+      border-radius: 12px; border: 1px solid rgba(12, 74, 110, 0.2); margin-bottom: 12px;
+    }
+    .bulk-bar .form-control { max-width: 320px; display: inline-block; }
+    .bulk-bar input[type="file"] { display: none; }
+    .bulk-bar strong, .bulk-bar label { color: var(--text); }
+    .image-sources-details .list-group-item { color: var(--text); background: white; }
+    #imageSourcesList .list-group-item { background: #f8fafc; color: var(--blue-deep); }
+    .modal-content.bg-dark { background: linear-gradient(135deg, var(--blue-deep) 0%, var(--blue) 100%) !important; }
+    .modal-content.bg-dark .form-control { background: rgba(255,255,255,0.1); color: white; border-color: rgba(255,255,255,0.3); }
+    .modal-content.bg-dark .form-control::placeholder { color: rgba(255,255,255,0.5); }
+    .modal-content.bg-dark .form-label { color: rgba(255,255,255,0.9); }
+    #editImagePane .multi-edit-nav { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
   </style>
 </head>
 <body>
   <%- include('partials/header') %>
-  <main class="app-shell">
+  <main class="app-shell audit-page">
     <div class="container py-4">
+      <%
+        var shipType = typeof entityTypes !== 'undefined' && entityTypes.ship ? entityTypes.ship : { pluralName: 'Ships' };
+        var captainType = typeof entityTypes !== 'undefined' && entityTypes.captain ? entityTypes.captain : { pluralName: 'Captains' };
+      %>
       <h1 class="mb-4">Image Audit</h1>
-      <p class="text-muted mb-4">Index of ships and captains: which have ImageUrl, which have cached ImageData in the database, and which are missing. <strong>Sync</strong> fetches ship data and captain ImageUrls from Wikipedia only. <strong>Populate</strong> runs sync first, then fetches images (Pexels → Pixabay → Unsplash → Google). All operations are manual to save API calls. Use <strong>Wikipedia</strong> in the Search provider to manually pick a Wikipedia page and fetch its image.</p>
+      <p class="text-muted mb-4">Index of <%= (shipType.pluralName || 'ships').toLowerCase() %> and <%= (captainType.pluralName || 'captains').toLowerCase() %>: which have ImageUrl, which have cached ImageData in the database, and which are missing. <strong>Sync</strong> fetches data and ImageUrls from Wikipedia only. <strong>Populate</strong> runs sync first, then fetches images (Pexels → Pixabay → Unsplash → Google). All operations are manual to save API calls. Use <strong>Wikipedia</strong> in the Search provider to manually pick a Wikipedia page and fetch its image.</p>
 
       <% if (typeof error !== 'undefined' && error) { %>
         <div class="alert alert-danger"><%= error %></div>
@@ -25,7 +74,7 @@
         <div class="row g-4 mb-4" id="auditSection">
           <div class="col-md-6">
             <div class="card">
-              <div class="card-header">Ships</div>
+              <div class="card-header"><%= shipType.pluralName || 'Ships' %></div>
               <div class="card-body" id="auditShipsBody">
                 <p class="mb-1"><strong>Total:</strong> <span id="auditShipsTotal"><%= audit.ships?.total ?? 0 %></span></p>
                 <p class="mb-1"><strong>With ImageUrl:</strong> <span id="auditShipsWithUrl"><%= audit.ships?.withImageUrl ?? 0 %></span></p>
@@ -49,7 +98,7 @@
           </div>
           <div class="col-md-6">
             <div class="card">
-              <div class="card-header">Captains</div>
+              <div class="card-header"><%= captainType.pluralName || 'Captains' %></div>
               <div class="card-body" id="auditCaptainsBody">
                 <p class="mb-1"><strong>Total:</strong> <span id="auditCaptainsTotal"><%= audit.captains?.total ?? 0 %></span></p>
                 <p class="mb-1"><strong>With ImageUrl:</strong> <span id="auditCaptainsWithUrl"><%= audit.captains?.withImageUrl ?? 0 %></span></p>
@@ -95,18 +144,32 @@
         </div>
         <div class="mb-4">
           <h5 class="mb-3">Edit Images</h5>
-          <p class="text-muted small mb-3">Edit, delete, or search for a different image for each ship or captain.</p>
+          <p class="text-muted small mb-3">Select multiple items (Shift+click for range), then add an image (URL, upload, or search) to apply to all. Drag cards to reorder. Or click Edit for a single item.</p>
+          <div id="bulkBar" class="bulk-bar" style="display: none;">
+            <span class="me-2"><strong id="bulkCount">0</strong> selected</span>
+            <button type="button" class="btn btn-sm btn-link text-muted p-0 me-2" id="bulkDeselectAll">Deselect all</button>
+            <button type="button" class="btn btn-sm btn-modern me-2" id="bulkEditSelectedBtn">Edit selected</button>
+            <input type="text" id="bulkUrlInput" class="form-control form-control-sm me-2" placeholder="Paste image URL">
+            <button type="button" class="btn btn-sm btn-modern me-2" id="bulkApplyUrlBtn">Apply URL to selected</button>
+            <label class="btn btn-sm btn-outline-primary me-2 mb-0" for="bulkUploadInput" style="cursor:pointer">Upload & apply</label>
+            <input type="file" id="bulkUploadInput" accept="image/*">
+            <button type="button" class="btn btn-sm btn-outline-primary" id="bulkSearchBtn">Search & apply</button>
+            <span id="bulkStatus" class="ms-2 small"></span>
+          </div>
           <div class="row g-3">
             <div class="col-12">
-              <h6 class="text-muted mb-2">Ships</h6>
-              <div class="d-flex flex-wrap gap-2">
+              <h6 class="text-muted mb-2"><%= shipType.pluralName || 'Ships' %></h6>
+              <div class="d-flex flex-wrap gap-2" id="shipsEditGrid">
                 <% (ships || []).forEach(function(s) { %>
                   <div class="edit-card" data-entity="ship" data-id="<%= s.id || s.Id %>" data-name="<%= s.name || s.Name %>">
-                    <img src="/gallery/image/<%= s.id || s.Id %>?v=<%= s.imageVersion ?? s.ImageVersion ?? 0 %>" alt="" class="edit-thumb" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22120%22%3E%3Crect fill=%22%236c757d%22 width=%22200%22 height=%22120%22/%3E%3Ctext fill=%22%23fff%22 x=%22100%22 y=%2260%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-size=%2210%22%3ENo image%3C/text%3E%3C/svg%3E';">
+                    <div class="img-wrap">
+                      <img src="/gallery/image/<%= s.id || s.Id %>?v=<%= (s.imageVersion != null ? s.imageVersion : s.ImageVersion) || 0 %>" alt="" class="edit-thumb" loading="lazy" onerror="this.onerror=null;this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22140%22 height=%2290%22 viewBox=%220 0 140 90%22%3E%3Crect fill=%22%236c757d%22 width=%22140%22 height=%2290%22/%3E%3Ctext fill=%22%23fff%22 x=%2270%22 y=%2245%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-size=%2210%22%3ENo image%3C/text%3E%3C/svg%3E';">
+                    </div>
                     <div class="edit-info">
                       <span class="edit-name"><%= s.name || s.Name %></span>
                       <div class="edit-actions mt-1">
-                        <button type="button" class="btn btn-sm btn-outline-light edit-btn">Edit</button>
+                        <input type="checkbox" class="entity-chk form-check-input" title="Select for bulk edit">
+                        <button type="button" class="btn btn-sm btn-outline-primary edit-btn">Edit</button>
                       </div>
                     </div>
                   </div>
@@ -114,15 +177,18 @@
               </div>
             </div>
             <div class="col-12">
-              <h6 class="text-muted mb-2">Captains</h6>
-              <div class="d-flex flex-wrap gap-2">
+              <h6 class="text-muted mb-2"><%= captainType.pluralName || 'Captains' %></h6>
+              <div class="d-flex flex-wrap gap-2" id="captainsEditGrid">
                 <% (captains || []).forEach(function(c) { %>
                   <div class="edit-card" data-entity="captain" data-id="<%= c.id || c.Id %>" data-name="<%= c.name || c.Name %>">
-                    <img src="/gallery/captain/<%= c.id || c.Id %>?v=<%= c.imageVersion ?? c.ImageVersion ?? 0 %>" alt="" class="edit-thumb" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22120%22%3E%3Crect fill=%22%236c757d%22 width=%22200%22 height=%22120%22/%3E%3Ctext fill=%22%23fff%22 x=%22100%22 y=%2260%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-size=%2210%22%3ENo image%3C/text%3E%3C/svg%3E';">
+                    <div class="img-wrap">
+                      <img src="/gallery/captain/<%= c.id || c.Id %>?v=<%= (c.imageVersion != null ? c.imageVersion : c.ImageVersion) || 0 %>" alt="" class="edit-thumb" loading="lazy" onerror="this.onerror=null;this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22140%22 height=%2290%22 viewBox=%220 0 140 90%22%3E%3Crect fill=%22%236c757d%22 width=%22140%22 height=%2290%22/%3E%3Ctext fill=%22%23fff%22 x=%2270%22 y=%2245%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-size=%2210%22%3ENo image%3C/text%3E%3C/svg%3E';">
+                    </div>
                     <div class="edit-info">
                       <span class="edit-name"><%= c.name || c.Name %></span>
                       <div class="edit-actions mt-1">
-                        <button type="button" class="btn btn-sm btn-outline-light edit-btn">Edit</button>
+                        <input type="checkbox" class="entity-chk form-check-input" title="Select for bulk edit">
+                        <button type="button" class="btn btn-sm btn-outline-primary edit-btn">Edit</button>
                       </div>
                     </div>
                   </div>
@@ -221,6 +287,11 @@
             </div>
             <div class="modal-body">
               <div id="editImagePane">
+                <div id="editMultiNav" class="multi-edit-nav" style="display: none;">
+                  <button type="button" class="btn btn-sm btn-outline-light" id="editPrevBtn">← Prev</button>
+                  <span id="editMultiProgress" class="text-light">1 of 3</span>
+                  <button type="button" class="btn btn-sm btn-outline-light" id="editNextBtn">Next →</button>
+                </div>
                 <div class="mb-3">
                   <img id="editCurrentImg" src="" alt="" class="img-fluid rounded" style="max-height: 200px;">
                 </div>
@@ -673,12 +744,250 @@
     var editCurrentImg = document.getElementById('editCurrentImg');
     var editModalTitle = document.getElementById('editModalTitle');
     var currentEdit = { entity: null, id: null, card: null };
+    var bulkModeSelection = [];
+
+    function getSelectedItems() {
+      var items = [];
+      document.querySelectorAll('.edit-card.selected').forEach(function(card) {
+        items.push({ entity: card.dataset.entity, id: card.dataset.id, name: card.dataset.name, card: card });
+      });
+      return items;
+    }
+    function updateBulkBar() {
+      var sel = getSelectedItems();
+      var bar = document.getElementById('bulkBar');
+      var countEl = document.getElementById('bulkCount');
+      if (bar && countEl) {
+        countEl.textContent = sel.length;
+        bar.style.display = sel.length > 0 ? 'block' : 'none';
+      }
+    }
+    var lastClickedCardIndex = null;
+    function getAllEditCards() {
+      var cards = [];
+      document.querySelectorAll('#shipsEditGrid .edit-card, #captainsEditGrid .edit-card').forEach(function(c) { cards.push(c); });
+      return cards;
+    }
+    document.querySelectorAll('.edit-card').forEach(function(card) {
+      var chk = card.querySelector('.entity-chk');
+      if (chk) {
+        chk.onclick = function(e) {
+          e.stopPropagation();
+          var cards = getAllEditCards();
+          var idx = cards.indexOf(card);
+          if (e.shiftKey && lastClickedCardIndex !== null) {
+            var from = Math.min(lastClickedCardIndex, idx);
+            var to = Math.max(lastClickedCardIndex, idx);
+            for (var i = from; i <= to; i++) {
+              var c = cards[i];
+              var cb = c && c.querySelector('.entity-chk');
+              if (cb) { cb.checked = true; c.classList.add('selected'); }
+            }
+          } else {
+            card.classList.toggle('selected', chk.checked);
+            lastClickedCardIndex = idx;
+          }
+          updateBulkBar();
+        };
+      }
+    });
+
+    function setupDraggableCards() {
+      ['#shipsEditGrid', '#captainsEditGrid'].forEach(function(sel) {
+        var grid = document.querySelector(sel);
+        if (!grid) return;
+        var cards = Array.from(grid.querySelectorAll('.edit-card'));
+        cards.forEach(function(card) {
+          card.draggable = true;
+          card.ondragstart = function(e) {
+            card.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', (card.dataset.entity || '') + '|' + (card.dataset.id || ''));
+          };
+          card.ondragend = function() { card.classList.remove('dragging'); };
+        });
+        grid.ondragover = function(e) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          grid.querySelectorAll('.edit-card.drag-over').forEach(function(c) { c.classList.remove('drag-over'); });
+          var target = e.target.closest('.edit-card');
+          if (target && target.parentNode === grid && !target.classList.contains('dragging')) target.classList.add('drag-over');
+        };
+        grid.ondragleave = function(e) {
+          if (!grid.contains(e.relatedTarget)) grid.querySelectorAll('.edit-card.drag-over').forEach(function(c) { c.classList.remove('drag-over'); });
+        };
+        grid.ondrop = function(e) {
+          e.preventDefault();
+          grid.querySelectorAll('.edit-card.drag-over').forEach(function(c) { c.classList.remove('drag-over'); });
+          var key = e.dataTransfer.getData('text/plain');
+          if (!key) return;
+          var parts = key.split('|');
+          var fromCard = grid.querySelector('.edit-card[data-entity="' + (parts[0] || '') + '"][data-id="' + (parts[1] || '') + '"]');
+          var toCard = e.target.closest('.edit-card');
+          if (!fromCard || fromCard.parentNode !== grid) return;
+          if (!toCard || toCard.parentNode !== grid) {
+            grid.appendChild(fromCard);
+            return;
+          }
+          if (fromCard === toCard) return;
+          var cardsNow = Array.from(grid.querySelectorAll('.edit-card'));
+          var fromIdx = cardsNow.indexOf(fromCard);
+          var toIdx = cardsNow.indexOf(toCard);
+          if (fromIdx < 0 || toIdx < 0) return;
+          if (fromIdx < toIdx) grid.insertBefore(fromCard, toCard.nextSibling);
+          else grid.insertBefore(fromCard, toCard);
+        };
+      });
+    }
+    setupDraggableCards();
+
+    var multiEditItems = [];
+    var multiEditIdx = 0;
+    function showMultiEditItem() {
+      if (multiEditItems.length === 0) return;
+      var it = multiEditItems[multiEditIdx];
+      currentEdit = { entity: it.entity, id: it.id, name: it.name, card: it.card };
+      var img = document.getElementById('editCurrentImg');
+      img.src = (it.entity === 'ship' ? '/gallery/image/' : '/gallery/captain/') + it.id + '?v=' + Date.now();
+      editModalTitle.textContent = 'Edit: ' + it.name + ' (' + (multiEditIdx + 1) + ' of ' + multiEditItems.length + ')';
+      document.getElementById('editMultiProgress').textContent = (multiEditIdx + 1) + ' of ' + multiEditItems.length;
+      document.getElementById('editPrevBtn').disabled = multiEditIdx === 0;
+      document.getElementById('editNextBtn').disabled = multiEditIdx === multiEditItems.length - 1;
+    }
+    document.getElementById('bulkEditSelectedBtn').onclick = function() {
+      var items = getSelectedItems();
+      if (items.length === 0) return;
+      bulkModeSelection = [];
+      multiEditItems = items.slice();
+      multiEditIdx = 0;
+      document.getElementById('editMultiNav').style.display = multiEditItems.length > 1 ? 'flex' : 'none';
+      editImagePane.style.display = 'block';
+      editSearchPane.style.display = 'none';
+      showMultiEditItem();
+      new bootstrap.Modal(editModal).show();
+    };
+    document.getElementById('editPrevBtn').onclick = function() {
+      if (multiEditIdx > 0) { multiEditIdx--; showMultiEditItem(); }
+    };
+    document.getElementById('editNextBtn').onclick = function() {
+      if (multiEditIdx < multiEditItems.length - 1) { multiEditIdx++; showMultiEditItem(); }
+    };
+
+    document.getElementById('bulkApplyUrlBtn').onclick = function() {
+      var url = (document.getElementById('bulkUrlInput').value || '').trim();
+      if (!url) { document.getElementById('bulkStatus').textContent = 'Enter a URL.'; return; }
+      if (!/^https?:\/\//i.test(url)) { document.getElementById('bulkStatus').textContent = 'URL must start with http:// or https://'; return; }
+      var items = getSelectedItems();
+      if (items.length === 0) { document.getElementById('bulkStatus').textContent = 'Select at least one item.'; return; }
+      var statusEl = document.getElementById('bulkStatus');
+      statusEl.textContent = 'Applying to ' + items.length + ' items...';
+      var done = 0, failed = 0;
+      function next() {
+        if (done + failed >= items.length) {
+          statusEl.textContent = 'Done. Updated ' + done + (failed ? ', failed ' + failed : '') + '.';
+          document.querySelectorAll('.edit-card.selected .entity-chk').forEach(function(c) { c.checked = false; });
+          document.querySelectorAll('.edit-card.selected').forEach(function(c) { c.classList.remove('selected'); });
+          updateBulkBar();
+          refreshAudit();
+          return;
+        }
+        var it = items[done + failed];
+        fetch('/api/images/' + it.entity + '/' + it.id + '/from-url', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url }) })
+          .then(function(r) {
+            if (!r.ok) return r.json().then(function(j) { throw new Error(j.error || j.message || 'Failed'); });
+            return r.json();
+          })
+          .then(function() {
+            done++;
+            var thumb = it.card.querySelector('.edit-thumb');
+            if (thumb) thumb.src = (it.entity === 'ship' ? '/gallery/image/' : '/gallery/captain/') + it.id + '?v=' + Date.now();
+            next();
+          })
+          .catch(function(e) { failed++; statusEl.textContent = 'Error on ' + it.name + ': ' + e.message; next(); });
+      }
+      next();
+    };
+
+    document.getElementById('bulkUploadInput').onchange = function() {
+      var file = this.files && this.files[0];
+      if (!file || !file.type.match(/^image\//)) { document.getElementById('bulkStatus').textContent = 'Select an image file.'; return; }
+      var items = getSelectedItems();
+      if (items.length === 0) { document.getElementById('bulkStatus').textContent = 'Select at least one item.'; this.value = ''; return; }
+      var statusEl = document.getElementById('bulkStatus');
+      statusEl.textContent = 'Uploading to ' + items.length + ' items...';
+      var done = 0, failed = 0;
+      function next() {
+        if (done + failed >= items.length) {
+          statusEl.textContent = 'Done. Updated ' + done + (failed ? ', failed ' + failed : '') + '.';
+          document.querySelectorAll('.edit-card.selected .entity-chk').forEach(function(c) { c.checked = false; });
+          document.querySelectorAll('.edit-card.selected').forEach(function(c) { c.classList.remove('selected'); });
+          updateBulkBar();
+          refreshAudit();
+          document.getElementById('bulkUploadInput').value = '';
+          return;
+        }
+        var it = items[done + failed];
+        fetch('/api/images/' + it.entity + '/' + it.id + '/upload', { method: 'POST', body: file, headers: { 'Content-Type': file.type || 'image/jpeg' } })
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            if (data.error) throw new Error(data.error);
+            done++;
+            var thumb = it.card.querySelector('.edit-thumb');
+            if (thumb) thumb.src = (it.entity === 'ship' ? '/gallery/image/' : '/gallery/captain/') + it.id + '?v=' + Date.now();
+            next();
+          })
+          .catch(function(e) { failed++; statusEl.textContent = 'Error on ' + it.name + ': ' + e.message; next(); });
+      }
+      next();
+    };
+
+    document.getElementById('bulkDeselectAll').onclick = function() {
+      document.querySelectorAll('.edit-card.selected .entity-chk').forEach(function(c) { c.checked = false; });
+      document.querySelectorAll('.edit-card.selected').forEach(function(c) { c.classList.remove('selected'); });
+      updateBulkBar();
+    };
+
+    function openSearchFrame(url) {
+      editSearchFrame.src = url;
+      editSearchFrame.onload = function() {
+        try {
+          editSearchFrame.contentWindow.postMessage({ type: 'imageSources', sources: imageSources }, '*');
+        } catch (e) { /* cross-origin */ }
+      };
+    }
+
+    document.getElementById('bulkSearchBtn').onclick = function() {
+      var items = getSelectedItems();
+      if (items.length === 0) { document.getElementById('bulkStatus').textContent = 'Select at least one item.'; return; }
+      bulkModeSelection = items.slice();
+      var first = items[0];
+      currentEdit = { entity: first.entity, id: first.id, name: first.name, card: first.card };
+      editModalTitle.textContent = 'Search image (will apply to ' + items.length + ' selected)';
+      editImagePane.style.display = 'none';
+      editSearchPane.style.display = 'block';
+      var collected = collectKeysFromSources();
+      var keys = Object.assign({}, collected.keys, collected.customKeys);
+      sessionStorage.setItem('adminImageKeys', JSON.stringify(keys));
+      var searchPrefixes = <%- JSON.stringify(typeof imageSearchPrefix !== 'undefined' && imageSearchPrefix ? imageSearchPrefix : { ship: 'battleship', captain: 'captain' }) %>;
+      var prefix = searchPrefixes[first.entity] || (first.entity === 'ship' ? 'battleship' : 'captain');
+      var q = encodeURIComponent(first.name + ' ' + prefix);
+      openSearchFrame('/admin/images/search-frame?entity=' + first.entity + '&id=' + first.id + '&q=' + q);
+      new bootstrap.Modal(editModal).show();
+    };
 
     document.addEventListener('click', function(e) {
       var btn = e.target.closest('.edit-btn');
       if (!btn) return;
       var card = btn.closest('.edit-card');
       if (!card) return;
+      var sel = getSelectedItems();
+      if (sel.length > 1 && card.classList.contains('selected')) {
+        document.getElementById('bulkEditSelectedBtn').click();
+        return;
+      }
+      bulkModeSelection = [];
+      multiEditItems = [];
+      document.getElementById('editMultiNav').style.display = 'none';
       currentEdit.entity = card.dataset.entity;
       currentEdit.id = card.dataset.id;
       currentEdit.name = card.dataset.name;
@@ -694,30 +1003,56 @@
     var noImagePlaceholder = "data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22120%22%3E%3Crect fill=%22%236c757d%22 width=%22200%22 height=%22120%22/%3E%3Ctext fill=%22%23fff%22 x=%22100%22 y=%2260%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-size=%2210%22%3ENo image%3C/text%3E%3C/svg%3E";
     editModal.addEventListener('click', function(e) {
       if (!e.target.closest('#editDeleteBtn')) return;
-      if (!currentEdit.entity || !currentEdit.id) return;
-      if (!confirm('Delete cached image for ' + (currentEdit.name || 'this item') + '?')) return;
+      var itemsToDelete = multiEditItems.length > 0 ? multiEditItems : (currentEdit.entity && currentEdit.id ? [{ entity: currentEdit.entity, id: currentEdit.id, name: currentEdit.name, card: currentEdit.card }] : []);
+      if (itemsToDelete.length === 0) return;
+      var msg = itemsToDelete.length > 1
+        ? 'Delete cached images for all ' + itemsToDelete.length + ' selected items?'
+        : 'Delete cached image for ' + (itemsToDelete[0].name || 'this item') + '?';
+      if (!confirm(msg)) return;
       var btn = document.getElementById('editDeleteBtn');
       if (btn) { btn.disabled = true; btn.textContent = 'Deleting...'; }
-      var url = '/api/images/' + currentEdit.entity + '/' + currentEdit.id;
-      fetch(url, { method: 'DELETE' })
-        .then(function(r) {
-          if (!r.ok) return r.json().then(function(j) { throw new Error(j.error || j.message || 'Delete failed'); });
-          return r.json().catch(function() { return {}; });
-        })
-        .then(function() {
+      var done = 0, failed = 0;
+      function deleteNext() {
+        if (done + failed >= itemsToDelete.length) {
           var inst = bootstrap.Modal.getInstance(editModal);
           if (inst) inst.hide();
-          if (currentEdit.card) {
-            var thumb = currentEdit.card.querySelector('.edit-thumb');
-            if (thumb) thumb.src = noImagePlaceholder;
-          }
+          itemsToDelete.forEach(function(it) {
+            if (it.card) {
+              var thumb = it.card.querySelector('.edit-thumb');
+              if (thumb) thumb.src = noImagePlaceholder;
+            }
+          });
+          document.querySelectorAll('.edit-card.selected .entity-chk').forEach(function(c) { c.checked = false; });
+          document.querySelectorAll('.edit-card.selected').forEach(function(c) { c.classList.remove('selected'); });
+          updateBulkBar();
+          multiEditItems = [];
           editCurrentImg.src = noImagePlaceholder;
           refreshAudit();
-        })
-        .catch(function(e) {
           if (btn) { btn.disabled = false; btn.textContent = 'Delete'; }
-          alert('Delete failed: ' + e.message);
-        });
+          return;
+        }
+        var it = itemsToDelete[done + failed];
+        var url = '/api/images/' + it.entity + '/' + it.id;
+        fetch(url, { method: 'DELETE' })
+          .then(function(r) {
+            if (!r.ok) return r.json().then(function(j) { throw new Error(j.error || j.message || 'Delete failed'); });
+            return r.json().catch(function() { return {}; });
+          })
+          .then(function() {
+            done++;
+            if (it.card) {
+              var thumb = it.card.querySelector('.edit-thumb');
+              if (thumb) thumb.src = noImagePlaceholder;
+            }
+            deleteNext();
+          })
+          .catch(function(err) {
+            failed++;
+            if (btn) btn.textContent = 'Deleting... (' + done + ' done, ' + failed + ' failed)';
+            deleteNext();
+          });
+      }
+      deleteNext();
     });
 
     document.getElementById('editSearchBackBtn').onclick = function() {
@@ -734,7 +1069,7 @@
       var searchPrefixes = <%- JSON.stringify(typeof imageSearchPrefix !== 'undefined' && imageSearchPrefix ? imageSearchPrefix : { ship: 'battleship', captain: 'captain' }) %>;
       var prefix = searchPrefixes[currentEdit.entity] || (currentEdit.entity === 'ship' ? 'battleship' : 'captain');
       var q = encodeURIComponent(currentEdit.name + ' ' + prefix);
-      editSearchFrame.src = '/admin/images/search-frame?entity=' + currentEdit.entity + '&id=' + currentEdit.id + '&q=' + q;
+      openSearchFrame('/admin/images/search-frame?entity=' + currentEdit.entity + '&id=' + currentEdit.id + '&q=' + q);
       editImagePane.style.display = 'none';
       editSearchPane.style.display = 'block';
     };
@@ -772,36 +1107,87 @@
         .catch(function() {});
     }
 
+    function refreshEditImage(entity, entityId) {
+      var v = Date.now();
+      var imgUrl = (entity === 'ship' ? '/gallery/image/' : '/gallery/captain/') + entityId + '?v=' + v;
+      if (currentEdit.card) {
+        var thumb = currentEdit.card.querySelector('.edit-thumb');
+        if (thumb) thumb.src = imgUrl;
+      }
+      editCurrentImg.src = imgUrl;
+      editSearchFrame.src = 'about:blank';
+      editImagePane.style.display = 'block';
+      editSearchPane.style.display = 'none';
+      refreshAudit();
+      var inst = bootstrap.Modal.getInstance(editModal);
+      if (inst) inst.hide();
+    }
     window.addEventListener('message', function(e) {
-      if (!e.data || e.data.type !== 'imageSelected' || String(e.data.entityId) !== String(currentEdit.id)) return;
-      var entity = e.data.entity;
-      var entityId = e.data.entityId;
+      if (!e.data || (e.data.type !== 'imageSelected' && e.data.type !== 'imageUploaded')) return;
+      var items = bulkModeSelection.length > 0 ? bulkModeSelection : [currentEdit];
+      if (items.length === 0 || !items[0].entity) return;
+      if (bulkModeSelection.length === 0 && String(e.data.entityId) !== String(currentEdit.id)) return;
       var url = e.data.url;
-      fetch('/api/images/' + entity + '/' + entityId + '/from-url', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: url })
-      })
-        .then(function(r) {
-          if (!r.ok) return r.json().then(function(j) { throw new Error(j.error || j.message || 'Set image failed'); });
-          return r.json().catch(function() { return {}; });
-        })
-        .then(function() {
-          var v = Date.now();
-          var imgUrl = (entity === 'ship' ? '/gallery/image/' : '/gallery/captain/') + entityId + '?v=' + v;
-          if (currentEdit.card) {
-            var thumb = currentEdit.card.querySelector('.edit-thumb');
-            if (thumb) thumb.src = imgUrl;
-          }
-          editCurrentImg.src = imgUrl;
+      var isUpload = e.data.type === 'imageUploaded';
+      if (isUpload && bulkModeSelection.length > 0) {
+        var first = bulkModeSelection[0];
+        url = window.location.origin + (first.entity === 'ship' ? '/gallery/image/' : '/gallery/captain/') + first.id + '?v=' + Date.now();
+        var t0 = first.card && first.card.querySelector('.edit-thumb');
+        if (t0) t0.src = (first.entity === 'ship' ? '/gallery/image/' : '/gallery/captain/') + first.id + '?v=' + Date.now();
+      }
+      if (items.length === 1 && !isUpload) {
+        var it = items[0];
+        fetch('/api/images/' + it.entity + '/' + it.id + '/from-url', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url }) })
+          .then(function(r) {
+            if (!r.ok) return r.json().then(function(j) { throw new Error(j.error || j.message || 'Set image failed'); });
+            return r.json().catch(function() { return {}; });
+          })
+          .then(function() { refreshEditImage(it.entity, it.id); })
+          .catch(function(err) { alert('Set image failed: ' + err.message); });
+        return;
+      }
+      if (items.length === 1 && isUpload) {
+        refreshEditImage(items[0].entity, items[0].id);
+        bulkModeSelection = [];
+        return;
+      }
+      var statusEl = document.getElementById('bulkStatus');
+      if (statusEl) statusEl.textContent = 'Applying to ' + items.length + ' items...';
+      var done = 0, failed = 0;
+      function applyNext() {
+        if (done + failed >= items.length) {
           editSearchFrame.src = 'about:blank';
           editImagePane.style.display = 'block';
           editSearchPane.style.display = 'none';
+          bulkModeSelection.forEach(function(it) {
+            var thumb = it.card && it.card.querySelector('.edit-thumb');
+            if (thumb) thumb.src = (it.entity === 'ship' ? '/gallery/image/' : '/gallery/captain/') + it.id + '?v=' + Date.now();
+          });
+          document.querySelectorAll('.edit-card.selected .entity-chk').forEach(function(c) { c.checked = false; });
+          document.querySelectorAll('.edit-card.selected').forEach(function(c) { c.classList.remove('selected'); });
+          updateBulkBar();
+          bulkModeSelection = [];
           refreshAudit();
           var inst = bootstrap.Modal.getInstance(editModal);
           if (inst) inst.hide();
-        })
-        .catch(function(err) { alert('Set image failed: ' + err.message); });
+          if (statusEl) statusEl.textContent = 'Done. Updated ' + done + (failed ? ', failed ' + failed : '') + '.';
+          return;
+        }
+        var it = items[done + failed];
+        fetch('/api/images/' + it.entity + '/' + it.id + '/from-url', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url }) })
+          .then(function(r) {
+            if (!r.ok) return r.json().then(function(j) { throw new Error(j.error || j.message); });
+            return r.json();
+          })
+          .then(function() {
+            done++;
+            var thumb = it.card && it.card.querySelector('.edit-thumb');
+            if (thumb) thumb.src = (it.entity === 'ship' ? '/gallery/image/' : '/gallery/captain/') + it.id + '?v=' + Date.now();
+            applyNext();
+          })
+          .catch(function(err) { failed++; applyNext(); });
+      }
+      applyNext();
     });
 
     if (editModal) {
@@ -809,6 +1195,8 @@
         editSearchFrame.src = 'about:blank';
         editImagePane.style.display = 'block';
         editSearchPane.style.display = 'none';
+        document.getElementById('editMultiNav').style.display = 'none';
+        multiEditItems = [];
         var db = document.getElementById('editDeleteBtn');
         if (db) { db.disabled = false; db.textContent = 'Delete'; }
       });

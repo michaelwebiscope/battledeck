@@ -7,10 +7,18 @@
   <%- include('partials/header') %>
   <main class="app-shell">
     <div class="container py-4">
-      <h1 class="mb-4">Fleet Roster</h1>
+      <%
+        var shipType = typeof entityTypes !== 'undefined' && entityTypes.ship ? entityTypes.ship : {};
+        var listTitle = shipType.listTitle || 'Fleet Roster';
+        var listCardTitle = shipType.listCardTitle || 'Complete Registry';
+        var searchPlaceholder = shipType.searchPlaceholder || 'Search by name or description...';
+        var emptyMessage = shipType.emptyMessage || 'None loaded.';
+        var listColumns = shipType.listColumns || [];
+      %>
+      <h1 class="mb-4"><%= listTitle %></h1>
       <form action="/fleet/search" method="GET" class="mb-3">
         <div class="input-group">
-          <input type="text" name="q" class="form-control form-control-lg" placeholder="Search ships by name or description..." value="<%= typeof searchQuery !== 'undefined' ? searchQuery : '' %>">
+          <input type="text" name="q" class="form-control form-control-lg" placeholder="<%= searchPlaceholder %>" value="<%= typeof searchQuery !== 'undefined' ? searchQuery : '' %>">
           <button type="submit" class="btn btn-dark">Search</button>
         </div>
       </form>
@@ -57,30 +65,29 @@
       <% } %>
       <div class="card">
         <div class="card-header">
-          <h2 class="h5 mb-0">Complete Ship Registry</h2>
+          <h2 class="h5 mb-0"><%= listCardTitle %></h2>
         </div>
         <div class="card-body p-0">
           <div class="table-responsive">
-            <table class="table table-hover mb-0">
+            <style>body.admin-mode .fleet-table .fleet-chk-cell,body.admin-mode .fleet-table .fleet-edit-cell{display:table-cell!important}</style>
+            <table class="table table-hover mb-0 fleet-table">
               <thead class="table-light">
                 <tr>
-                  <th>Name</th>
-                  <th>Class</th>
-                  <th>Type</th>
-                  <th>Country</th>
-                  <th>Captain</th>
-                  <th>Rank</th>
-                  <th>Year</th>
-                  <th>Description</th>
-                  <th class="admin-only" style="width: 60px;"></th>
+                  <th class="admin-only fleet-chk-cell" style="width: 36px; vertical-align: middle;"><input type="checkbox" id="fleetSelectAll" class="form-check-input" title="Select all on page"></th>
+                  <% if (listColumns.length > 0) { listColumns.forEach(function(col) { %><th><%= col.label %></th><% }); } else { %>
+                  <th>Name</th><th>Class</th><th>Type</th><th>Country</th><th>Captain</th><th>Rank</th><th>Year</th><th>Description</th>
+                  <% } %>
+                  <th class="admin-only fleet-edit-cell" style="width: 60px; vertical-align: middle;"></th>
                 </tr>
               </thead>
               <tbody>
                 <% if (ships && ships.length > 0) { %>
                   <% ships.forEach(function(ship) {
                     var shipEntity = toEntity(ship, 'ship');
+                    var shipId = ship.id || ship.Id;
                   %>
-                    <tr>
+                    <tr data-ship-id="<%= shipId %>" data-ship-name="<%= (ship.name || '').replace(/"/g, '&quot;') %>">
+                      <td class="admin-only fleet-chk-cell" style="vertical-align: middle;"><input type="checkbox" class="form-check-input fleet-ship-chk" value="<%= shipId %>"></td>
                       <td>
                         <div class="d-flex align-items-center">
                           <span class="me-2 flex-shrink-0"><%- include('partials/entity-image', { entity: shipEntity, size: '48x32' }) %></span>
@@ -95,11 +102,11 @@
                       <td><%= ship.captain ? ship.captain.rank : '-' %></td>
                       <td><%= ship.yearCommissioned %></td>
                       <td class="small text-muted" style="max-width: 180px;" title="<%= (ship.description || '').replace(/"/g, '&quot;') %>"><%= (ship.description || '').length > 80 ? (ship.description || '').substring(0, 80) + '…' : (ship.description || '') %></td>
-                      <td class="admin-only"><a href="/ships/<%= ship.id || ship.Id %>" class="btn btn-outline-secondary btn-sm">Edit</a></td>
+                      <td class="admin-only fleet-edit-cell" style="vertical-align: middle;"><a href="/ships/<%= ship.id || ship.Id %>" class="btn btn-outline-secondary btn-sm">Edit</a></td>
                     </tr>
                   <% }); %>
                 <% } else { %>
-                  <tr><td colspan="9" class="text-center py-4 text-muted">No ships loaded.</td></tr>
+                  <tr><td colspan="10" class="text-center py-4 text-muted"><%= emptyMessage %></td></tr>
                 <% } %>
               </tbody>
             </table>
@@ -113,7 +120,7 @@
           <li class="page-item <%= page <= 1 ? 'disabled' : '' %>">
             <a class="page-link" href="<%= page <= 1 ? '#' : '/fleet?page=' + (page - 1) + (filters && filters.country ? '&country=' + encodeURIComponent(filters.country) : '') + (filters && filters.type ? '&type=' + encodeURIComponent(filters.type) : '') + (filters && filters.yearMin ? '&yearMin=' + filters.yearMin : '') + (filters && filters.yearMax ? '&yearMax=' + filters.yearMax : '') %>">Previous</a>
           </li>
-          <li class="page-item disabled"><span class="page-link">Page <%= page %> of <%= totalPages %> (<%= total %> ships)</span></li>
+          <li class="page-item disabled"><span class="page-link">Page <%= page %> of <%= totalPages %> (<%= total %> <%= shipType.pluralName ? shipType.pluralName.toLowerCase() : 'items' %>)</span></li>
           <li class="page-item <%= page >= totalPages ? 'disabled' : '' %>">
             <a class="page-link" href="<%= page >= totalPages ? '#' : '/fleet?page=' + (page + 1) + (filters && filters.country ? '&country=' + encodeURIComponent(filters.country) : '') + (filters && filters.type ? '&type=' + encodeURIComponent(filters.type) : '') + (filters && filters.yearMin ? '&yearMin=' + filters.yearMin : '') + (filters && filters.yearMax ? '&yearMax=' + filters.yearMax : '') %>">Next</a>
           </li>
@@ -123,6 +130,218 @@
     </div>
   </main>
   <%- include('partials/footer') %>
+  <style>#fleetBulkBar.fleet-bulk-hidden{display:none!important}</style>
+  <div id="fleetBulkBar" class="admin-only fleet-bulk-hidden" style="position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1050; box-shadow: 0 4px 20px rgba(0,0,0,0.15); border-radius: 8px; padding: 12px 20px; background: #fff; border: 1px solid #dee2e6;">
+    <span class="me-3"><strong id="fleetBulkCount">0</strong> selected</span>
+    <button type="button" class="btn btn-sm btn-outline-secondary me-2" id="fleetBulkDeselect">Deselect all</button>
+    <button type="button" class="btn btn-sm btn-outline-primary me-2" id="fleetBulkImages">Change images</button>
+    <button type="button" class="btn btn-sm btn-outline-danger" id="fleetBulkDelete">Delete from database</button>
+  </div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+  <div id="fleetBulkModal" class="modal fade" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Bulk actions</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body" id="fleetBulkModalBody">
+          <div id="fleetBulkImagesPane">
+            <p class="text-muted small">Apply the same image to all selected ships.</p>
+            <div class="mb-3">
+              <label class="form-label">Image URL</label>
+              <input type="url" id="fleetBulkImageUrl" class="form-control" placeholder="https://...">
+            </div>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+              <button type="button" class="btn btn-primary" id="fleetBulkApplyUrl">Apply URL</button>
+              <button type="button" class="btn btn-outline-primary" id="fleetBulkSearchBtn">Search & apply</button>
+              <span class="small" id="fleetBulkUrlStatus"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="fleetBulkSearchOverlay" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; z-index:9999; background:#fff;">
+    <div class="position-absolute top-0 end-0 p-2">
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="fleetBulkSearchClose" title="Close">✕</button>
+    </div>
+    <iframe id="fleetBulkSearchFrame" style="width:100%; height:100%; border:none;" title="Search image"></iframe>
+  </div>
+
+  <script>
+  (function() {
+    var bulkBar = document.getElementById('fleetBulkBar');
+    var bulkCount = document.getElementById('fleetBulkCount');
+    var bulkModal = document.getElementById('fleetBulkModal');
+    var bulkSearchOverlay = document.getElementById('fleetBulkSearchOverlay');
+    var bulkSearchFrame = document.getElementById('fleetBulkSearchFrame');
+    function getSelected() {
+      var ids = [];
+      document.querySelectorAll('.fleet-ship-chk:checked').forEach(function(c) { ids.push(parseInt(c.value, 10)); });
+      return ids;
+    }
+    function getSelectedRows() {
+      var rows = [];
+      document.querySelectorAll('.fleet-ship-chk:checked').forEach(function(c) {
+        var row = c.closest('tr');
+        if (row) rows.push({ id: parseInt(c.value, 10), name: row.dataset.shipName || '', row: row });
+      });
+      return rows;
+    }
+    function updateBulkBar() {
+      var ids = getSelected();
+      if (bulkBar && bulkCount) {
+        bulkCount.textContent = ids.length;
+        bulkBar.classList.toggle('fleet-bulk-hidden', ids.length === 0);
+      }
+    }
+    document.getElementById('fleetSelectAll')?.addEventListener('change', function() {
+      document.querySelectorAll('.fleet-ship-chk').forEach(function(c) { c.checked = this.checked; }.bind(this));
+      updateBulkBar();
+    });
+    document.querySelectorAll('.fleet-ship-chk').forEach(function(c) {
+      c.addEventListener('change', updateBulkBar);
+    });
+    document.getElementById('fleetBulkDeselect')?.addEventListener('click', function() {
+      document.querySelectorAll('.fleet-ship-chk').forEach(function(c) { c.checked = false; });
+      var sel = document.getElementById('fleetSelectAll');
+      if (sel) sel.checked = false;
+      updateBulkBar();
+    });
+    document.getElementById('fleetBulkDelete')?.addEventListener('click', function() {
+      var rows = getSelectedRows();
+      if (rows.length === 0) return;
+      if (!confirm('Delete ' + rows.length + ' ship(s) from the database? This cannot be undone.')) return;
+      var btn = this;
+      btn.disabled = true;
+      var done = 0, failed = 0;
+      var errMsg = '';
+      function deleteNext() {
+        if (done + failed >= rows.length) {
+          var deselect = document.getElementById('fleetBulkDeselect');
+          if (deselect) deselect.click();
+          btn.disabled = false;
+          if (failed > 0) {
+            alert('Delete failed for ' + failed + ' ship(s). ' + (errMsg ? errMsg : 'Check console. Restart the API if you see 405.'));
+          }
+          location.reload();
+          return;
+        }
+        var r = rows[done + failed];
+        fetch('/api/ships/' + r.id, { method: 'DELETE' })
+          .then(function(res) {
+            return res.json().catch(function() { return {}; }).then(function(data) {
+              if (!res.ok) {
+                errMsg = (data && data.error) ? data.error : ('HTTP ' + res.status);
+                if (res.status === 405) errMsg = 'API may need restart (405 Method Not Allowed).';
+                throw new Error(errMsg);
+              }
+              done++;
+              deleteNext();
+            });
+          })
+          .catch(function(e) {
+            failed++;
+            if (e && e.message) errMsg = e.message;
+            deleteNext();
+          });
+      }
+      deleteNext();
+    });
+    document.getElementById('fleetBulkImages')?.addEventListener('click', function() {
+      var ids = getSelected();
+      if (ids.length === 0) return;
+      new bootstrap.Modal(bulkModal).show();
+      document.getElementById('fleetBulkImageUrl').value = '';
+      document.getElementById('fleetBulkUrlStatus').textContent = '';
+    });
+    document.getElementById('fleetBulkSearchClose')?.addEventListener('click', function() {
+      bulkSearchOverlay.style.display = 'none';
+      bulkSearchFrame.src = 'about:blank';
+    });
+    document.getElementById('fleetBulkSearchBtn')?.addEventListener('click', function() {
+      var ids = getSelected();
+      if (ids.length === 0) return;
+      var firstId = ids[0];
+      var row = document.querySelector('tr[data-ship-id="' + firstId + '"]');
+      var name = row ? (row.dataset.shipName || '') : '';
+      bulkSearchOverlay.style.display = 'block';
+      bulkSearchFrame.src = '/admin/images/search-frame?entity=ship&id=' + firstId + '&q=' + encodeURIComponent(name + ' battleship');
+      bootstrap.Modal.getInstance(bulkModal).hide();
+    });
+    document.getElementById('fleetBulkApplyUrl')?.addEventListener('click', function() {
+      var url = document.getElementById('fleetBulkImageUrl').value.trim();
+      if (!url) { document.getElementById('fleetBulkUrlStatus').textContent = 'Enter a URL'; return; }
+      var ids = getSelected();
+      var btn = this;
+      var status = document.getElementById('fleetBulkUrlStatus');
+      btn.disabled = true;
+      status.textContent = 'Applying...';
+      var done = 0, failed = 0;
+      var lastError = '';
+      function applyNext() {
+        if (done + failed >= ids.length) {
+          status.textContent = 'Done. ' + done + ' updated, ' + failed + ' failed.' + (lastError ? ' (' + lastError + ')' : '');
+          btn.disabled = false;
+          setTimeout(function() {
+            bootstrap.Modal.getInstance(bulkModal).hide();
+            location.reload();
+          }, 1500);
+          return;
+        }
+        var id = ids[done + failed];
+        fetch('/api/images/ship/' + id + '/from-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: url })
+        }).then(function(res) {
+          return res.json().catch(function() { return {}; }).then(function(data) {
+            if (!res.ok) {
+              lastError = (data && data.error) ? data.error : ('HTTP ' + res.status);
+              throw new Error(lastError);
+            }
+            done++;
+            status.textContent = done + '/' + ids.length + '...';
+            applyNext();
+          });
+        }).catch(function(e) {
+          failed++;
+          if (e && e.message) lastError = e.message;
+          applyNext();
+        });
+      }
+      applyNext();
+    });
+    window.addEventListener('message', function(e) {
+      if (!e.data || e.data.type !== 'imageSelected' || e.data.entity !== 'ship') return;
+      var ids = getSelected();
+      if (ids.length === 0 || bulkSearchOverlay.style.display !== 'block') return;
+      var url = e.data.url;
+      if (!url) return;
+      bulkSearchOverlay.style.display = 'none';
+      bulkSearchFrame.src = 'about:blank';
+      var done = 0, failed = 0;
+      function applyNext() {
+        if (done + failed >= ids.length) {
+          location.reload();
+          return;
+        }
+        var id = ids[done + failed];
+        fetch('/api/images/ship/' + id + '/from-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: url })
+        }).then(function(res) {
+          if (!res.ok) throw new Error('Failed');
+          done++;
+          applyNext();
+        }).catch(function() { failed++; applyNext(); });
+      }
+      applyNext();
+    });
+  })();
+  </script>
 </body>
 </html>

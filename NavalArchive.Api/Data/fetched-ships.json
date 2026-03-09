@@ -106,7 +106,7 @@
   },
   "USS Baltimore": {
     "Name": "USS Baltimore",
-    "Description": "USS Baltimore (CA-68) was the lead ship of her class of heavy cruiser, the fifth ship of the United States Navy named after the city of Baltimore, Maryland.",
+    "Description": "USS Baltimore (CA-68) was the lead ship of her class of heavy cruiser, the fifth ship of the United States Navy named after the city of Baltimore, Maryland.\n\n",
     "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/92/USS_Baltimore_%28CA-68%29_off_the_Mare_Island_Naval_Shipyard_on_18_October_1944_%28NH_91462%29_%28cropped%29.jpg/960px-USS_Baltimore_%28CA-68%29_off_the_Mare_Island_Naval_Shipyard_on_18_October_1944_%28NH_91462%29_%28cropped%29.jpg"
   },
   "USS Fletcher": {
@@ -126,7 +126,7 @@
   },
   "HMS Cossack": {
     "Name": "HMS Cossack",
-    "Description": "HMS Cossack was a Tribal-class destroyer named after the Cossack people of the Eurasian steppe.  She became famous for the boarding of the German supply ship Altmark in Norwegian waters, and the associated rescue of sailors originally captured by the Admiral Graf Spee. She was torpedoed by the German submarine U-563 on 23 October 1941, and sank four days later.\n\n",
+    "Description": "HMS Cossack was a Tribal-class destroyer named after the Cossack people of the Eurasian steppe.  She became famous for the boarding of the German supply ship Altmark in Norwegian waters, and the associated rescue of sailors originally captured by the Admiral Graf Spee. She was torpedoed by the German submarine U-563 on 23 October 1941, and sank four days later.",
     "ImageUrl": "https://upload.wikimedia.org/wikipedia/commons/0/0f/HMS_Cossack.jpg"
   },
   "HMS Prince of Wales": {

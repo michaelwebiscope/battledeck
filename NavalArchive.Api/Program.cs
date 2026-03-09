@@ -8,7 +8,8 @@ using NavalArchive.Api.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(o => o.JsonSerializerOptions.PropertyNameCaseInsensitive = true);
 builder.Services.AddHttpClient();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -42,6 +43,12 @@ builder.Services.AddRateLimiter(options =>
         {
             return RateLimitPartition.GetNoLimiter("admin");
         }
+        // Localhost (dev): exempt from rate limit when all traffic comes through proxy from 127.0.0.1
+        var ip = context.Connection.RemoteIpAddress?.ToString();
+        if (ip is "127.0.0.1" or "::1" or "localhost")
+        {
+            return RateLimitPartition.GetNoLimiter("localhost");
+        }
         var config = context.RequestServices.GetRequiredService<IConfiguration>();
         var cookieName = config["SessionGate:SessionCookieName"] ?? ".AspNetCore.Session";
         var partitionKey = context.Request.Cookies.TryGetValue(cookieName, out var sid) && !string.IsNullOrEmpty(sid)
@@ -66,6 +73,8 @@ else
 
 builder.Services.AddDbContext<LogsDbContext>(options =>
     options.UseSqlite("Data Source=logs.db"));
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<CacheInvalidationService>();
 builder.Services.AddSingleton<DataSyncService>();
 builder.Services.AddSingleton<LogsDataService>();
 builder.Services.AddSingleton<GenuineLogsFetcher>();

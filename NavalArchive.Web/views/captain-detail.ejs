@@ -7,43 +7,77 @@
   <%- include('partials/header') %>
   <main class="app-shell">
     <div class="container py-4">
+      <%
+        var entityType = typeof entityTypes !== 'undefined' && entityTypes.captain ? entityTypes.captain : { listRoute: '/captains', displayName: 'Captain', pluralName: 'Captains' };
+        var shipsRel = (entityType.relationships || []).find(function(r){ return r.isCollection && r.key === 'ships'; });
+        var shipsLabel = shipsRel ? shipsRel.label : 'Ships Commanded';
+        var shipType = typeof entityTypes !== 'undefined' && entityTypes.ship ? entityTypes.ship : {};
+        var yearCol = (shipType.listColumns || []).find(function(c){ return c.field === 'yearCommissioned'; });
+        var yearLabel = yearCol ? yearCol.label : 'Year';
+        var shipsEmptyMsg = shipType.emptyMessage || 'None on record.';
+      %>
       <nav aria-label="breadcrumb">
         <ol class="breadcrumb">
           <li class="breadcrumb-item"><a href="/">Home</a></li>
-          <li class="breadcrumb-item"><a href="/captains">Captains</a></li>
+          <li class="breadcrumb-item"><a href="<%= entityType.listRoute %>"><%= entityType.pluralName %></a></li>
           <li class="breadcrumb-item active"><%= captain.name %></li>
         </ol>
       </nav>
       <%
         var captainEntity = toEntity(captain, 'captain');
+        var gallery = captainEntity.imageGallery || 'captain';
+        var imgPath = captainEntity.imageUrl || ('/gallery/' + gallery + '/' + (captain.id || captain.Id) + '?v=' + (captain.imageVersion ?? captain.ImageVersion ?? 0));
+        var imgAlt = (captain.name || '').replace(/"/g, '&quot;');
+        var placeholderSvg = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22400%22 height=%22300%22%3E%3Crect fill=%22%236c757d%22 width=%22400%22 height=%22300%22/%3E%3Ctext fill=%22%23fff%22 x=%22200%22 y=%22150%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-size=%2216%22%3ENo image%3C/text%3E%3C/svg%3E';
       %>
-      <%- include('partials/entity-detail', { entity: captainEntity, imageHeight: 280, editButtonId: 'captainEditBtn' }) %>
-      <h3 class="mb-3 mt-4">Ships Commanded</h3>
-      <div class="table-responsive">
-        <table class="table table-hover">
-          <thead class="table-light">
+      <div class="row align-items-start g-4">
+        <div class="col-auto" style="min-width: 140px;">
+          <div class="position-relative" style="min-width: 140px; min-height: 180px; max-width: 280px; cursor: pointer; background: #e9ecef; border-radius: 0.375rem;" role="button" data-image-url="<%= imgPath %>" data-image-title="<%= imgAlt %>" onclick="typeof showImageModal==='function'&&showImageModal(this.dataset.imageUrl, this.dataset.imageTitle)" title="Click to enlarge">
+            <img src="<%= imgPath %>" alt="<%= imgAlt %>" class="rounded" style="max-height: 360px; width: auto; max-width: 100%; object-fit: contain; display: block;" onerror="this.onerror=null;this.src='<%= placeholderSvg %>';">
+          </div>
+        </div>
+        <div class="col flex-grow-1 min-w-0">
+          <div class="d-flex align-items-start justify-content-between gap-2 mb-3">
+            <div>
+              <h1 class="mb-2"><%= captain.name || 'Unnamed' %></h1>
+              <% if (captainEntity.subtitle) { %><p class="text-muted mb-0"><%= captainEntity.subtitle %></p><% } %>
+            </div>
+            <div class="d-flex gap-2">
+              <button type="button" class="btn btn-outline-secondary btn-sm admin-only" id="entityEditBtn">Edit</button>
+              <button type="button" class="btn btn-outline-danger btn-sm admin-only" id="entityDeleteBtn">Delete</button>
+            </div>
+          </div>
+          <% if (captain.description) { %><p class="text-muted mb-3"><%= captain.description %></p><% } %>
+          <h3 class="mb-3"><%= shipsLabel %></h3>
+          <div class="table-responsive">
+            <table class="table table-hover mb-0">
+              <thead class="table-light">
                 <tr>
-                  <th>Ship</th>
-                  <th>Year Commissioned</th>
+                  <th><%= (typeof entityTypes !== 'undefined' && entityTypes.ship ? entityTypes.ship.displayName : 'Ship') %></th>
+                  <th><%= (typeof entityTypes !== 'undefined' && entityTypes['class'] ? entityTypes['class'].displayName : 'Class') %></th>
+                  <th><%= yearLabel %></th>
                   <th></th>
                   <th class="admin-only"></th>
                 </tr>
-          </thead>
-          <tbody>
-            <% if (captain.ships && captain.ships.length > 0) { %>
-              <% captain.ships.forEach(function(ship) { %>
-                <tr>
-                  <td><strong><%= ship.name %></strong></td>
-                  <td><%= ship.yearCommissioned %></td>
-                  <td><a href="/ships/<%= ship.id %>" class="btn btn-outline-dark btn-sm">Details</a></td>
-                  <td class="admin-only"><a href="/ships/<%= ship.id %>" class="btn btn-outline-secondary btn-sm">Edit</a></td>
-                </tr>
-              <% }); %>
-            <% } else { %>
-              <tr><td colspan="4" class="text-center text-muted py-3">No ships on record.</td></tr>
-            <% } %>
-          </tbody>
-        </table>
+              </thead>
+              <tbody>
+                <% if (captain.ships && captain.ships.length > 0) { %>
+                  <% captain.ships.forEach(function(ship) { %>
+                    <tr>
+                      <td><strong><%= ship.name %></strong></td>
+                      <td><% if (ship.class) { %><a href="/classes/<%= ship.class.id %>"><%= ship.class.name %></a><% } else { %><span class="text-muted">—</span><% } %></td>
+                      <td><%= ship.yearCommissioned %></td>
+                      <td><a href="/ships/<%= ship.id %>" class="btn btn-outline-dark btn-sm">Details</a></td>
+                      <td class="admin-only"><a href="/ships/<%= ship.id %>" class="btn btn-outline-secondary btn-sm">Edit</a></td>
+                    </tr>
+                  <% }); %>
+                <% } else { %>
+                  <tr><td colspan="5" class="text-center text-muted py-3"><%= shipsEmptyMsg %></td></tr>
+                <% } %>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
   </main>
@@ -51,35 +85,35 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   <%- include('partials/image-lightbox') %>
 
-  <div id="captainEditModal" class="modal fade" tabindex="-1">
+  <div id="entityEditModal" class="modal fade" tabindex="-1">
     <div class="modal-dialog">
       <div class="modal-content">
         <div class="modal-header">
-          <h5 class="modal-title">Edit Captain</h5>
+          <h5 class="modal-title">Edit <%= entityType.displayName %></h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body">
-          <div id="captainEditFormPane">
+          <div id="entityEditFormPane">
             <div class="mb-3">
               <label class="form-label">Name</label>
-              <input type="text" class="form-control" id="captainEditName" value="<%= captain.name || '' %>">
+              <input type="text" class="form-control" id="entityEditName" value="<%= captain.name || '' %>">
             </div>
             <div class="mb-3">
               <label class="form-label">Rank</label>
-              <input type="text" class="form-control" id="captainEditRank" value="<%= captain.rank || '' %>">
+              <input type="text" class="form-control" id="entityEditRank" value="<%= captain.rank || '' %>">
             </div>
             <div class="mb-3">
               <label class="form-label">Years of Service</label>
-              <input type="number" class="form-control" id="captainEditYears" value="<%= captain.serviceYears %>">
+              <input type="number" class="form-control" id="entityEditYears" value="<%= captain.serviceYears %>">
             </div>
             <div class="mb-3">
-              <button type="button" class="btn btn-outline-secondary" id="captainEditImageBtn">Change Image</button>
+              <button type="button" class="btn btn-outline-secondary" id="entityEditImageBtn">Change Image</button>
             </div>
-            <button type="button" class="btn btn-modern" id="captainEditSaveBtn">Save</button>
+            <button type="button" class="btn btn-modern" id="entityEditSaveBtn">Save</button>
           </div>
-          <div id="captainEditSearchPane" style="display: none;">
-            <button type="button" class="btn btn-outline-secondary btn-sm mb-2" id="captainEditSearchBack">← Back</button>
-            <iframe id="captainEditSearchFrame" style="width:100%; height: 400px; border: 1px solid #ddd; border-radius: 6px;"></iframe>
+          <div id="entityEditSearchPane" style="display: none;">
+            <button type="button" class="btn btn-outline-secondary btn-sm mb-2" id="entityEditSearchBack">← Back</button>
+            <iframe id="entityEditSearchFrame" style="width:100%; height: 400px; border: 1px solid #ddd; border-radius: 6px;"></iframe>
           </div>
         </div>
       </div>
@@ -88,21 +122,41 @@
 
   <script>
   (function() {
-    var captainId = <%= captain.id %>;
-    var modal = document.getElementById('captainEditModal');
-    var formPane = document.getElementById('captainEditFormPane');
-    var searchPane = document.getElementById('captainEditSearchPane');
-    var frame = document.getElementById('captainEditSearchFrame');
+    var captainId = <%= JSON.stringify(captain.id ?? captain.Id ?? null) %>;
+    var modal = document.getElementById('entityEditModal');
+    var formPane = document.getElementById('entityEditFormPane');
+    var searchPane = document.getElementById('entityEditSearchPane');
+    var frame = document.getElementById('entityEditSearchFrame');
     if (!modal) return;
 
-    document.getElementById('captainEditBtn').addEventListener('click', function() {
+    document.getElementById('entityEditBtn').addEventListener('click', function() {
       new bootstrap.Modal(modal).show();
     });
 
-    document.getElementById('captainEditSaveBtn').addEventListener('click', function() {
-      var name = document.getElementById('captainEditName').value.trim();
-      var rank = document.getElementById('captainEditRank').value.trim();
-      var years = parseInt(document.getElementById('captainEditYears').value, 10) || 0;
+    document.getElementById('entityDeleteBtn')?.addEventListener('click', function() {
+      if (!captainId || captainId === 'undefined') {
+        alert('Cannot delete: captain ID is missing.');
+        return;
+      }
+      if (!confirm('Delete this captain? This cannot be undone.')) return;
+      fetch('/api/captains/delete/' + captainId, { method: 'POST' })
+        .then(function(r) {
+          return r.json().catch(function() { return {}; }).then(function(data) {
+            if (!r.ok) throw new Error((data && data.error) || ('HTTP ' + r.status));
+            window.location.replace('/captains');
+          });
+        })
+        .catch(function(err) { alert('Delete failed: ' + err.message); });
+    });
+
+    document.getElementById('entityEditSaveBtn').addEventListener('click', function() {
+      if (!captainId || captainId === 'undefined') {
+        alert('Cannot save: captain ID is missing. Please refresh the page.');
+        return;
+      }
+      var name = document.getElementById('entityEditName').value.trim();
+      var rank = document.getElementById('entityEditRank').value.trim();
+      var years = parseInt(document.getElementById('entityEditYears').value, 10) || 0;
       fetch('/api/captains/' + captainId, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -116,14 +170,14 @@
       }).catch(function(err) { alert('Save failed: ' + err.message); });
     });
 
-    document.getElementById('captainEditImageBtn').addEventListener('click', function() {
+    document.getElementById('entityEditImageBtn').addEventListener('click', function() {
       formPane.style.display = 'none';
       searchPane.style.display = 'block';
-      var q = encodeURIComponent((document.getElementById('captainEditName').value || 'admiral') + ' <%= (imageSearchPrefix && imageSearchPrefix.captain) || "captain" %>');
+      var q = encodeURIComponent((document.getElementById('entityEditName').value || '') + ' <%= (imageSearchPrefix && imageSearchPrefix.captain) || "" %>');
       frame.src = '/admin/images/search-frame?entity=captain&id=' + captainId + '&q=' + q;
     });
 
-    document.getElementById('captainEditSearchBack').addEventListener('click', function() {
+    document.getElementById('entityEditSearchBack').addEventListener('click', function() {
       frame.src = 'about:blank';
       searchPane.style.display = 'none';
       formPane.style.display = 'block';

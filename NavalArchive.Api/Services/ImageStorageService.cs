@@ -68,7 +68,7 @@ public class ImageStorageService
         if (string.IsNullOrWhiteSpace(urlToTry) && _imageSearch != null && (keys != null || _imageSearch.IsConfigured))
         {
             onProgress?.Invoke($"[{ship.Name}] No ImageUrl, searching...");
-            var urls = await _imageSearch.FindImageUrlsAsync($"{ship.Name} {shipPrefix} ship photo", 5, ct, keys, onProgress, null, options?.ImageSources);
+            var (urls, _) = await _imageSearch.FindImageUrlsAsync($"{ship.Name} {shipPrefix} ship photo", 5, ct, keys, onProgress, null, options?.ImageSources);
             if (urls.Count > 0) { urlToTry = urls[0]; ship.ImageUrl = urlToTry; }
         }
         if (string.IsNullOrWhiteSpace(urlToTry)) return (false, "No ImageUrl", 0);
@@ -83,7 +83,7 @@ public class ImageStorageService
                 var queries = new[] { $"{ship.Name} {shipPrefix} ship", $"{ship.Name} warship", $"{ship.Name} naval" };
                 foreach (var q in queries)
                 {
-                    var urls = await _imageSearch.FindImageUrlsAsync(q, 5, ct, keys, onProgress, null, options?.ImageSources);
+                    var (urls, _) = await _imageSearch.FindImageUrlsAsync(q, 5, ct, keys, onProgress, null, options?.ImageSources);
                     foreach (var u in urls.Where(u => !triedUrls.Contains(u)))
                     {
                         triedUrls.Add(u);
@@ -128,7 +128,7 @@ public class ImageStorageService
         if (string.IsNullOrWhiteSpace(urlToTry) && _imageSearch != null && (keys != null || _imageSearch.IsConfigured))
         {
             onProgress?.Invoke($"[{captain.Name}] No ImageUrl, searching...");
-            var urls = await _imageSearch.FindImageUrlsAsync($"{captain.Name} {captainPrefix}", 8, ct, keys, onProgress, null, options?.ImageSources);
+            var (urls, _) = await _imageSearch.FindImageUrlsAsync($"{captain.Name} {captainPrefix}", 8, ct, keys, onProgress, null, options?.ImageSources);
             urlToTry = urls.FirstOrDefault(u => (usedCaptainUrls == null || !usedCaptainUrls.Contains(u)) && !triedUrls.Contains(u));
             if (urlToTry != null) captain.ImageUrl = urlToTry;
         }
@@ -144,7 +144,7 @@ public class ImageStorageService
                 var queries = new[] { $"{captain.Name} {captainPrefix}", $"{captain.Name} admiral portrait", $"{captain.Name} naval officer", $"{captain.Name} WWII admiral", $"{captain.Name} Kriegsmarine" };
                 foreach (var q in queries)
                 {
-                    var urls = await _imageSearch.FindImageUrlsAsync(q, 8, ct, keys, onProgress, null, options?.ImageSources);
+                    var (urls, _) = await _imageSearch.FindImageUrlsAsync(q, 8, ct, keys, onProgress, null, options?.ImageSources);
                     foreach (var u in urls.Where(u => !triedUrls.Contains(u) && (usedCaptainUrls == null || !usedCaptainUrls.Contains(u))))
                     {
                         triedUrls.Add(u);
@@ -239,7 +239,7 @@ public class ImageStorageService
     {
         if (_imageSearch != null)
         {
-            var keyResults = await _imageSearch.TestKeysForPopulateAsync(keys, ct);
+            var keyResults = await _imageSearch.TestKeysForPopulateAsync(keys, options?.ImageSources, ct);
             foreach (var r in keyResults)
                 yield return new PopulateProgressEvent("key", new { r.Provider, r.Ok, r.Message });
         }

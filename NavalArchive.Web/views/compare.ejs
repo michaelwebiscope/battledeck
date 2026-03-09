@@ -7,22 +7,28 @@
   <%- include('partials/header') %>
   <main class="app-shell">
     <div class="container py-4">
+      <%
+        var shipType = typeof entityTypes !== 'undefined' && entityTypes.ship ? entityTypes.ship : { listTitle: 'Fleet Roster', displayName: 'Ship', pluralName: 'Ships' };
+        var compareTitle = 'Compare ' + (shipType.pluralName || 'Items');
+        var selectLabel = 'Select two ' + (shipType.pluralName ? shipType.pluralName.toLowerCase() : 'items') + ' to compare';
+        var chooseLabel = 'Choose Different ' + (shipType.pluralName || 'Items');
+      %>
       <nav aria-label="breadcrumb">
         <ol class="breadcrumb">
           <li class="breadcrumb-item"><a href="/">Home</a></li>
-          <li class="breadcrumb-item"><a href="/fleet">Fleet Roster</a></li>
+          <li class="breadcrumb-item"><a href="/fleet"><%= shipType.listTitle %></a></li>
           <li class="breadcrumb-item active">Compare</li>
         </ol>
       </nav>
-      <h1 class="mb-4">Compare Ships</h1>
+      <h1 class="mb-4"><%= compareTitle %></h1>
       <% if (!ship1 || !ship2) { %>
         <div class="card mb-4">
           <div class="card-body">
-            <h5 class="card-title">Select two ships to compare</h5>
+            <h5 class="card-title"><%= selectLabel %></h5>
             <form action="/compare" method="GET" class="row g-2">
               <div class="col-md-5">
                 <select name="id1" class="form-select" required>
-                  <option value="">Ship 1...</option>
+                  <option value=""><%= shipType.displayName %> 1...</option>
                   <% (ships || []).forEach(function(s) { %>
                     <option value="<%= s.id %>" <%= (preselectedId == s.id) ? 'selected' : '' %>><%= s.name %></option>
                   <% }); %>
@@ -30,7 +36,7 @@
               </div>
               <div class="col-md-5">
                 <select name="id2" class="form-select" required>
-                  <option value="">Ship 2...</option>
+                  <option value=""><%= shipType.displayName %> 2...</option>
                   <% (ships || []).forEach(function(s) { %>
                     <option value="<%= s.id %>" <%= (preselectedId == s.id) ? 'disabled' : '' %>><%= s.name %></option>
                   <% }); %>
@@ -43,7 +49,7 @@
           </div>
         </div>
         <% if (ship1) { %>
-        <div class="alert alert-info">Select a second ship above to compare with <strong><%= ship1.name %></strong>.</div>
+        <div class="alert alert-info">Select a second <%= shipType.displayName.toLowerCase() %> above to compare with <strong><%= ship1.name %></strong>.</div>
         <% } %>
       <% } %>
       <% if (ship1 && ship2) {
@@ -59,7 +65,7 @@
         </div>
       </div>
       <div class="mt-4">
-        <a href="/compare" class="btn btn-outline-dark">Choose Different Ships</a>
+        <a href="/compare" class="btn btn-outline-dark"><%= chooseLabel %></a>
       </div>
       <% } %>
     </div>

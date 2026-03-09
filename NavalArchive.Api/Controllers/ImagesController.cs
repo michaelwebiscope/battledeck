@@ -14,12 +14,14 @@ public class ImagesController : ControllerBase
     private readonly NavalArchiveDbContext _db;
     private readonly ImageStorageService _storage;
     private readonly ImageSearchService _imageSearch;
+    private readonly CacheInvalidationService _cacheInv;
 
-    public ImagesController(NavalArchiveDbContext db, ImageStorageService storage, ImageSearchService imageSearch)
+    public ImagesController(NavalArchiveDbContext db, ImageStorageService storage, ImageSearchService imageSearch, CacheInvalidationService cacheInv)
     {
         _db = db;
         _storage = storage;
         _imageSearch = imageSearch;
+        _cacheInv = cacheInv;
     }
 
     /// <summary>Serve ship image from database. Id is ship id.</summary>
@@ -77,12 +79,14 @@ public class ImagesController : ControllerBase
         return await _storage.GetAuditAsync(_db);
     }
 
-    /// <summary>Test API keys without populating. Returns per-provider success/failure.</summary>
+    /// <summary>Test API keys for configured image sources only. Returns per-source success/failure.</summary>
     [HttpPost("test-keys")]
     public async Task<ActionResult<List<KeyTestResult>>> TestKeys([FromBody] PopulateRequest? request = null, CancellationToken ct = default)
     {
         var keys = BuildImageSearchKeys(request);
-        var results = await _imageSearch.TestKeysAsync(keys, ct);
+        var sources = await _db.ImageSources.AsNoTracking().OrderBy(s => s.SortOrder).ToListAsync(ct);
+        var sourceConfigs = sources.Select(ImageSourcesController.ToConfig).ToList();
+        var results = await _imageSearch.TestKeysAsync(keys, sourceConfigs, ct);
         return Ok(results);
     }
 
@@ -116,6 +120,8 @@ public class ImagesController : ControllerBase
         var keys = BuildImageSearchKeys(request);
         var options = await BuildPopulateOptionsAsync(request, ct);
         var result = await _storage.PopulateAllAsync(_db, default, keys, options);
+        _cacheInv.OnShipUpdated();
+        _cacheInv.OnCaptainUpdated();
         return Ok(result);
     }
 
@@ -134,6 +140,8 @@ public class ImagesController : ControllerBase
             await Response.WriteAsync($"data: {json}\n\n", ct);
             await Response.Body.FlushAsync(ct);
         }
+        _cacheInv.OnShipUpdated();
+        _cacheInv.OnCaptainUpdated();
     }
 
     /// <summary>Populate a single ship image.</summary>
@@ -141,6 +149,7 @@ public class ImagesController : ControllerBase
     public async Task<IActionResult> PopulateShip(int id)
     {
         var (stored, reason, _) = await _storage.PopulateShipImageAsync(_db, id);
+        if (stored) _cacheInv.OnShipUpdated();
         return stored ? Ok() : NotFound(new { reason });
     }
 
@@ -149,6 +158,7 @@ public class ImagesController : ControllerBase
     public async Task<IActionResult> PopulateCaptain(int id)
     {
         var (stored, reason, _) = await _storage.PopulateCaptainImageAsync(_db, id);
+        if (stored) _cacheInv.OnCaptainUpdated();
         return stored ? Ok() : NotFound(new { reason });
     }
 
@@ -164,6 +174,7 @@ public class ImagesController : ControllerBase
         ship.ImageManuallySet = false;
         ship.ImageVersion++;
         await _db.SaveChangesAsync();
+        _cacheInv.OnShipUpdated();
         return Ok(new { deleted = true });
     }
 
@@ -179,6 +190,7 @@ public class ImagesController : ControllerBase
         captain.ImageManuallySet = false;
         captain.ImageVersion++;
         await _db.SaveChangesAsync();
+        _cacheInv.OnCaptainUpdated();
         return Ok(new { deleted = true });
     }
 
@@ -192,8 +204,8 @@ public class ImagesController : ControllerBase
             : null;
         var sources = await _db.ImageSources.AsNoTracking().OrderBy(s => s.SortOrder).ToListAsync(ct);
         var sourceConfigs = sources.Select(ImageSourcesController.ToConfig).ToList();
-        var urls = await _imageSearch.FindImageUrlsAsync(q, request?.MaxCount ?? 12, ct, keys, null, request?.Provider, sourceConfigs);
-        return Ok(urls);
+        var (urls, source) = await _imageSearch.FindImageUrlsAsync(q, request?.MaxCount ?? 12, ct, keys, null, request?.Provider, sourceConfigs);
+        return Ok(new { source = source ?? "", urls });
     }
 
     /// <summary>Set ship image from URL (fetch and store).</summary>
@@ -211,6 +223,7 @@ public class ImagesController : ControllerBase
         ship.ImageManuallySet = true;
         ship.ImageVersion++;
         await _db.SaveChangesAsync(ct);
+        _cacheInv.OnShipUpdated();
         return Ok(new { stored = data.Length });
     }
 
@@ -229,6 +242,7 @@ public class ImagesController : ControllerBase
         captain.ImageManuallySet = true;
         captain.ImageVersion++;
         await _db.SaveChangesAsync(ct);
+        _cacheInv.OnCaptainUpdated();
         return Ok(new { stored = data.Length });
     }
 
@@ -251,6 +265,30 @@ public class ImagesController : ControllerBase
         ship.ImageContentType = ct;
         ship.ImageVersion++;
         await _db.SaveChangesAsync();
+        _cacheInv.OnShipUpdated();
+        return Ok(new { stored = data.Length });
+    }
+
+    /// <summary>Upload captain image. Stores in DB (ImageData).</summary>
+    [HttpPost("captain/{id:int}/upload")]
+    public async Task<IActionResult> UploadCaptainImage(int id)
+    {
+        var captain = await _db.Captains.FindAsync(id);
+        if (captain == null) return NotFound();
+
+        using var ms = new MemoryStream();
+        await Request.Body.CopyToAsync(ms);
+        var data = ms.ToArray();
+        if (data.Length < 100) return BadRequest(new { error = "Image too small" });
+
+        var ct = Request.ContentType ?? "image/jpeg";
+        if (ct.Contains(";")) ct = ct.Split(';')[0].Trim();
+
+        captain.ImageData = data;
+        captain.ImageContentType = ct;
+        captain.ImageVersion++;
+        await _db.SaveChangesAsync();
+        _cacheInv.OnCaptainUpdated();
         return Ok(new { stored = data.Length });
     }
 }

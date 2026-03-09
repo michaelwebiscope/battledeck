@@ -5,12 +5,14 @@
 -%>
 <%
   var entity = typeof entity !== 'undefined' ? entity : {};
-  var detailUrl = entity.detailUrl || ('/' + (entity.type || 'ships') + '/' + (entity.id || ''));
+  var typeCfg = entity.typeConfig || (typeof entityTypes !== 'undefined' && entityTypes[entity.type]) || {};
+  var detailUrl = entity.detailUrl || ((typeCfg.detailRoute || '/' + (entity.type || 'ships')) + '/' + (entity.id || ''));
   var imgSize = (typeof size !== 'undefined' && size === 'sm') ? '180' : ((typeof size !== 'undefined' && size === 'lg') ? '240' : '200');
   var descLen = (typeof showDescription === 'number') ? showDescription : ((typeof showDescription !== 'undefined' && showDescription) ? 80 : 0);
-  var gallery = entity.imageGallery || (entity.type === 'captain' ? 'captain' : 'image');
+  var gallery = entity.imageGallery || typeCfg.gallerySegment || 'image';
   var isGallery = typeof variant !== 'undefined' && variant === 'gallery';
   var colClass = (typeof cols !== 'undefined' && cols) ? cols : 'col-md-6 col-lg-4';
+  var rels = typeCfg.relationships || [];
 %>
 <div class="<%= colClass %>">
   <div class="card h-100">
@@ -32,8 +34,13 @@
         <% if (descLen > 0 && entity.description) { %>
           <p class="card-text small mb-2"><%= entity.description.length > descLen ? entity.description.substring(0, descLen) + '…' : entity.description %></p>
         <% } %>
-        <% if (entity.class) { %><p class="card-text small mb-1"><strong>Class:</strong> <%= entity.class.name %> · <%= entity.class.type %> · <%= entity.class.country %></p><% } %>
-        <% if (entity.captain) { %><p class="card-text small mb-2"><strong>Captain:</strong> <%= entity.captain.name %> (<%= entity.captain.rank %>)</p><% } %>
+        <% rels.filter(function(r){ return !r.isCollection && entity[r.key]; }).forEach(function(r) {
+          var rel = entity[r.key];
+          var txt = rel.name || rel.Name || '';
+          if (rel.type && rel.country) txt += ' · ' + rel.type + ' · ' + rel.country;
+          else if (rel.rank) txt += ' (' + rel.rank + ')';
+          var href = r.linkRoute && (rel.id || rel.Id) ? r.linkRoute + '/' + (rel.id || rel.Id) : null;
+        %><p class="card-text small mb-1"><strong><%= r.label %>:</strong> <% if (href) { %><a href="<%= href %>"><%= txt %></a><% } else { %><%= txt %><% } %></p><% }); %>
         <a href="<%= detailUrl %>" class="btn btn-outline-dark btn-sm">View</a>
         <a href="<%= detailUrl %>" class="btn btn-outline-secondary btn-sm admin-only ms-1">Edit</a>
       <% } %>

@@ -7,22 +7,33 @@
   <%- include('partials/header') %>
   <main class="app-shell">
     <div class="container py-4">
+      <%
+        var entityType = typeof entityTypes !== 'undefined' && entityTypes['class'] ? entityTypes['class'] : { listRoute: '/classes', displayName: 'Ship Class', pluralName: 'Ship Classes' };
+        var shipsRel = (entityType.relationships || []).find(function(r){ return r.isCollection && r.key === 'ships'; });
+        var shipsLabel = shipsRel ? shipsRel.label : 'Ships in Class';
+        var shipType = typeof entityTypes !== 'undefined' && entityTypes.ship ? entityTypes.ship : {};
+        var yearCol = (shipType.listColumns || []).find(function(c){ return c.field === 'yearCommissioned'; });
+        var yearLabel = yearCol ? yearCol.label : 'Year';
+        var shipsEmptyMsg = shipType.emptyMessage || 'None in this class.';
+      %>
       <nav aria-label="breadcrumb">
         <ol class="breadcrumb">
           <li class="breadcrumb-item"><a href="/">Home</a></li>
-          <li class="breadcrumb-item"><a href="/classes">Ship Classes</a></li>
+          <li class="breadcrumb-item"><a href="<%= entityType.listRoute %>"><%= entityType.pluralName %></a></li>
           <li class="breadcrumb-item active"><%= shipClass.name %></li>
         </ol>
       </nav>
       <h1 class="mb-2"><%= shipClass.name %></h1>
       <p class="text-muted mb-4"><%= shipClass.type %> · <%= shipClass.country %></p>
-      <h3 class="mb-3">Ships in Class</h3>
+      <button type="button" class="btn btn-outline-secondary btn-sm admin-only mb-3" id="classEditBtn">Edit</button>
+      <h3 class="mb-3"><%= shipsLabel %></h3>
       <div class="table-responsive">
         <table class="table table-hover">
           <thead class="table-light">
             <tr>
-              <th>Name</th>
-              <th>Year Commissioned</th>
+              <th><%= (typeof entityTypes !== 'undefined' && entityTypes.ship ? entityTypes.ship.displayName : 'Name') %></th>
+              <th><%= (typeof entityTypes !== 'undefined' && entityTypes.captain ? entityTypes.captain.displayName : 'Captain') %></th>
+              <th><%= yearLabel %></th>
               <th></th>
             </tr>
           </thead>
@@ -31,12 +42,13 @@
               <% shipClass.ships.forEach(function(ship) { %>
                 <tr>
                   <td><strong><%= ship.name %></strong></td>
+                  <td><% if (ship.captain) { %><a href="/captains/<%= ship.captain.id %>"><%= ship.captain.name %></a><% } else { %><span class="text-muted">—</span><% } %></td>
                   <td><%= ship.yearCommissioned %></td>
                   <td><a href="/ships/<%= ship.id %>" class="btn btn-outline-dark btn-sm">Details</a></td>
                 </tr>
               <% }); %>
             <% } else { %>
-              <tr><td colspan="3" class="text-center text-muted py-3">No ships in this class.</td></tr>
+              <tr><td colspan="4" class="text-center text-muted py-3"><%= shipsEmptyMsg %></td></tr>
             <% } %>
           </tbody>
         </table>
@@ -45,5 +57,82 @@
   </main>
   <%- include('partials/footer') %>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+  <div id="classEditModal" class="modal fade" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Edit Ship Class</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Name</label>
+            <input type="text" class="form-control" id="classEditName" value="<%= (shipClass.name || shipClass.Name || '').replace(/"/g, '&quot;') %>">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Type</label>
+            <input type="text" class="form-control" id="classEditType" value="<%= (shipClass.type || shipClass.Type || '').replace(/"/g, '&quot;') %>" placeholder="e.g. Battleship, Aircraft Carrier">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Country</label>
+            <input type="text" class="form-control" id="classEditCountry" value="<%= (shipClass.country || shipClass.Country || '').replace(/"/g, '&quot;') %>" placeholder="e.g. USA, UK">
+          </div>
+          <button type="button" class="btn btn-modern" id="classEditSaveBtn">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  (function() {
+    var classId = <%= (shipClass.id ?? shipClass.Id ?? 0) %>;
+    var modal = document.getElementById('classEditModal');
+    var editBtn = document.getElementById('classEditBtn');
+    var saveBtn = document.getElementById('classEditSaveBtn');
+    if (!modal || !classId) return;
+    if (editBtn) {
+      editBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+          new bootstrap.Modal(modal).show();
+        } else {
+          modal.classList.add('show');
+          modal.style.display = 'block';
+        }
+      });
+    }
+    if (saveBtn) {
+      saveBtn.addEventListener('click', function() {
+        var nameEl = document.getElementById('classEditName');
+        var typeEl = document.getElementById('classEditType');
+        var countryEl = document.getElementById('classEditCountry');
+        var name = nameEl ? nameEl.value.trim() : '';
+        var type = typeEl ? typeEl.value.trim() : '';
+        var country = countryEl ? countryEl.value.trim() : '';
+        if (!name) { alert('Name is required'); return; }
+        saveBtn.disabled = true;
+        fetch('/api/classes/' + classId, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name, type: type || 'Unknown', country: country || '' })
+        }).then(function(r) {
+          return r.json().catch(function() { return {}; }).then(function(data) {
+            if (!r.ok) throw new Error((data && data.error) ? data.error : 'HTTP ' + r.status);
+            if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+              bootstrap.Modal.getInstance(modal).hide();
+            } else {
+              modal.classList.remove('show');
+              modal.style.display = 'none';
+            }
+            location.reload();
+          });
+        }).catch(function(err) {
+          alert('Save failed: ' + (err && err.message ? err.message : 'Unknown error'));
+        }).finally(function() { saveBtn.disabled = false; });
+      });
+    }
+  })();
+  </script>
 </body>
 </html>

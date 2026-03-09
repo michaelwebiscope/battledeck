@@ -7,8 +7,14 @@
   <%- include('partials/header') %>
   <main class="app-shell">
     <div class="container py-4">
-      <h1 class="mb-4">Photo Gallery</h1>
-      <p class="text-muted mb-4">Archival photographs from the fleet. Click any image to view full size.</p>
+      <%
+        var pg = typeof entityTypes !== 'undefined' && entityTypes.pages && entityTypes.pages.gallery ? entityTypes.pages.gallery : {};
+        var galleryTitle = pg.title || 'Photo Gallery';
+        var galleryDesc = pg.description || 'Archival photographs. Click any image to view full size.';
+        var emptyMsg = pg.emptyMessage || 'No images available. Ensure the API is running.';
+      %>
+      <h1 class="mb-4"><%= galleryTitle %></h1>
+      <p class="text-muted mb-4"><%= galleryDesc %></p>
       <div class="row g-4">
         <% if (ships && ships.length > 0) { %>
           <% ships.forEach(function(ship) {
@@ -18,7 +24,7 @@
             <%- include('partials/entity-card', { entity: entity, size: 'sm', variant: 'gallery', cols: 'col-md-4 col-lg-3', showSubtitle: true }) %>
           <% }); %>
         <% } else { %>
-          <div class="col-12 text-center text-muted py-5">No images available. Ensure the API is running.</div>
+          <div class="col-12 text-center text-muted py-5"><%= emptyMsg %></div>
         <% } %>
       </div>
     </div>

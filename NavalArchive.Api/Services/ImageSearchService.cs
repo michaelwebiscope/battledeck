@@ -46,20 +46,20 @@ public class ImageSearchService
 
     public bool IsConfigured => IsConfiguredWith(null);
 
-    /// <summary>Search images. Uses configured sources only (no hardcoded fallback). Empty sources = no results.</summary>
-    public async Task<List<string>> FindImageUrlsAsync(string query, int maxCount = 5, CancellationToken ct = default, ImageSearchKeys? keys = null, Action<string>? onProgress = null, string? provider = null, IReadOnlyList<ImageSourceConfig>? sources = null)
+    /// <summary>Search images. Uses configured sources only. Returns urls and the source that provided them.</summary>
+    public async Task<(List<string> Urls, string? Source)> FindImageUrlsAsync(string query, int maxCount = 5, CancellationToken ct = default, ImageSearchKeys? keys = null, Action<string>? onProgress = null, string? provider = null, IReadOnlyList<ImageSourceConfig>? sources = null)
     {
         if (sources != null && sources.Count > 0)
             return await FindImageUrlsWithSourcesAsync(query, maxCount, ct, keys, onProgress, provider, sources);
 
-        return new List<string>();
+        return (new List<string>(), null);
     }
 
     /// <summary>Search using configurable sources with per-source retry count.</summary>
-    private async Task<List<string>> FindImageUrlsWithSourcesAsync(string query, int maxCount, CancellationToken ct, ImageSearchKeys? keys, Action<string>? onProgress, string? providerFilter, IReadOnlyList<ImageSourceConfig> sources)
+    private async Task<(List<string> Urls, string? Source)> FindImageUrlsWithSourcesAsync(string query, int maxCount, CancellationToken ct, ImageSearchKeys? keys, Action<string>? onProgress, string? providerFilter, IReadOnlyList<ImageSourceConfig> sources)
     {
         var ordered = sources.Where(s => s.Enabled).OrderBy(s => s.SortOrder).ToList();
-        if (ordered.Count == 0) return new List<string>();
+        if (ordered.Count == 0) return (new List<string>(), null);
 
         foreach (var src in ordered)
         {
@@ -83,13 +83,13 @@ public class ImageSearchService
             {
                 onProgress?.Invoke(retries > 1 ? $"Trying {src.Name} (attempt {attempt + 1}/{retries})..." : $"Trying {src.Name}...");
                 var urls = await TryProviderAsync(src.ProviderType, query, maxCount, 1, ct, keys, onProgress, src);
-                if (urls.Count > 0) { onProgress?.Invoke($"{src.Name}: {urls.Count} results"); return urls; }
+                if (urls.Count > 0) { onProgress?.Invoke($"{src.Name}: {urls.Count} results"); return (urls, src.Name ?? src.ProviderType); }
                 onProgress?.Invoke($"{src.Name}: no results");
                 if (attempt < retries - 1) await Task.Delay(500, ct);
             }
         }
 
-        return new List<string>();
+        return (new List<string>(), null);
     }
 
     private async Task<List<string>> TryProviderAsync(string providerType, string query, int maxCount, int retries, CancellationToken ct, ImageSearchKeys? keys, Action<string>? onProgress, ImageSourceConfig? config = null)
@@ -311,151 +311,56 @@ public class ImageSearchService
         !string.IsNullOrWhiteSpace(url) &&
         (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || url.StartsWith("https://", StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>Test each configured API key. Returns per-provider success/failure with error details.</summary>
-    public async Task<List<KeyTestResult>> TestKeysAsync(ImageSearchKeys? keys, CancellationToken ct = default)
+    /// <summary>Test API keys for configured sources only. Returns per-source success/failure.</summary>
+    public async Task<List<KeyTestResult>> TestKeysAsync(ImageSearchKeys? keys, IReadOnlyList<ImageSourceConfig>? sources, CancellationToken ct = default)
     {
         var results = new List<KeyTestResult>();
         var query = "battleship";
 
-        if (!string.IsNullOrWhiteSpace(GetKey("PEXELS_API_KEY", keys)))
+        if (sources == null || sources.Count == 0)
         {
-            try
-            {
-                var url = $"https://api.pexels.com/v1/search?query={Uri.EscapeDataString(query)}&per_page=1";
-                var client = _http.CreateClient();
-                client.Timeout = TimeSpan.FromSeconds(10);
-                client.DefaultRequestHeaders.Add("Authorization", GetKey("PEXELS_API_KEY", keys)!);
-                var res = await client.GetAsync(url, ct);
-                var body = await res.Content.ReadAsStringAsync(ct);
-                results.Add(new KeyTestResult("Pexels", res.IsSuccessStatusCode, res.IsSuccessStatusCode ? "OK" : $"HTTP {(int)res.StatusCode}: {(body.Length > 200 ? body.Substring(0, 200) + "..." : body)}"));
-            }
-            catch (Exception ex) { results.Add(new KeyTestResult("Pexels", false, ex.Message)); }
+            results.Add(new KeyTestResult("(none)", false, "No image sources configured. Add sources in Image Sources."));
+            return results;
         }
 
-        if (!string.IsNullOrWhiteSpace(GetKey("PIXABAY_API_KEY", keys)))
+        foreach (var src in sources.Where(s => s.Enabled).OrderBy(s => s.SortOrder))
         {
+            var name = src.Name ?? src.ProviderType ?? "?";
+            if (string.Equals(src.ProviderType, "Wikipedia", StringComparison.OrdinalIgnoreCase))
+            {
+                results.Add(new KeyTestResult(name, true, "OK (no key required)"));
+                continue;
+            }
+
+            var hasKey = string.IsNullOrWhiteSpace(src.AuthKeyRef) || !string.IsNullOrWhiteSpace(GetKey(src.AuthKeyRef, keys));
+            if (src.ProviderType == "Google" && hasKey && !string.IsNullOrWhiteSpace(src.AuthKeyRef))
+                hasKey = !string.IsNullOrWhiteSpace(GetKey("GOOGLE_CSE_ID", keys));
+
+            if (!hasKey)
+            {
+                results.Add(new KeyTestResult(name, false, "nokey"));
+                continue;
+            }
+
             try
             {
-                var url = $"https://pixabay.com/api/?key={Uri.EscapeDataString(GetKey("PIXABAY_API_KEY", keys)!)}&q={Uri.EscapeDataString(query)}&per_page=1";
-                var client = _http.CreateClient();
-                client.Timeout = TimeSpan.FromSeconds(10);
-                var res = await client.GetAsync(url, ct);
-                var body = await res.Content.ReadAsStringAsync(ct);
-                results.Add(new KeyTestResult("Pixabay", res.IsSuccessStatusCode, res.IsSuccessStatusCode ? "OK" : $"HTTP {(int)res.StatusCode}: {(body.Length > 200 ? body.Substring(0, 200) + "..." : body)}"));
+                var providerType = src.ProviderType ?? "Custom";
+                var urls = await TryProviderAsync(providerType, query, 1, 1, ct, keys, null, src);
+                results.Add(new KeyTestResult(name, urls.Count > 0, urls.Count > 0 ? "OK" : "No results"));
             }
-            catch (Exception ex) { results.Add(new KeyTestResult("Pixabay", false, ex.Message)); }
-        }
-
-        if (!string.IsNullOrWhiteSpace(GetKey("UNSPLASH_ACCESS_KEY", keys)))
-        {
-            try
+            catch (Exception ex)
             {
-                var url = $"https://api.unsplash.com/search/photos?query={Uri.EscapeDataString(query)}&per_page=1";
-                var client = _http.CreateClient();
-                client.Timeout = TimeSpan.FromSeconds(10);
-                client.DefaultRequestHeaders.Add("Authorization", $"Client-ID {GetKey("UNSPLASH_ACCESS_KEY", keys)}");
-                var res = await client.GetAsync(url, ct);
-                var body = await res.Content.ReadAsStringAsync(ct);
-                results.Add(new KeyTestResult("Unsplash", res.IsSuccessStatusCode, res.IsSuccessStatusCode ? "OK" : $"HTTP {(int)res.StatusCode}: {(body.Length > 200 ? body.Substring(0, 200) + "..." : body)}"));
+                results.Add(new KeyTestResult(name, false, ex.Message));
             }
-            catch (Exception ex) { results.Add(new KeyTestResult("Unsplash", false, ex.Message)); }
         }
-
-        if (!string.IsNullOrWhiteSpace(GetKey("GOOGLE_API_KEY", keys)) && !string.IsNullOrWhiteSpace(GetKey("GOOGLE_CSE_ID", keys)))
-        {
-            try
-            {
-                var url = $"https://www.googleapis.com/customsearch/v1?key={Uri.EscapeDataString(GetKey("GOOGLE_API_KEY", keys)!)}&cx={Uri.EscapeDataString(GetKey("GOOGLE_CSE_ID", keys)!)}&q={Uri.EscapeDataString(query)}&searchType=image&num=1";
-                var client = _http.CreateClient();
-                client.Timeout = TimeSpan.FromSeconds(10);
-                var res = await client.GetAsync(url, ct);
-                var body = await res.Content.ReadAsStringAsync(ct);
-                results.Add(new KeyTestResult("Google", res.IsSuccessStatusCode, res.IsSuccessStatusCode ? "OK" : $"HTTP {(int)res.StatusCode}: {(body.Length > 200 ? body.Substring(0, 200) + "..." : body)}"));
-            }
-            catch (Exception ex) { results.Add(new KeyTestResult("Google", false, ex.Message)); }
-        }
-
-        if (results.Count == 0)
-            results.Add(new KeyTestResult("(none)", false, "No API keys provided. Enter keys in the optional section above."));
 
         return results;
     }
 
-    /// <summary>Test all 4 providers; for each without a key, returns Provider with Message "nokey". Used by populate to show key status.</summary>
-    public async Task<List<KeyTestResult>> TestKeysForPopulateAsync(ImageSearchKeys? keys, CancellationToken ct = default)
+    /// <summary>Test configured sources for populate. Used by populate stream to show key status.</summary>
+    public async Task<List<KeyTestResult>> TestKeysForPopulateAsync(ImageSearchKeys? keys, IReadOnlyList<ImageSourceConfig>? sources, CancellationToken ct = default)
     {
-        var results = new List<KeyTestResult>();
-        var providers = new[] { "Pexels", "Pixabay", "Unsplash", "Google" };
-        var keyNames = new[] { "PEXELS_API_KEY", "PIXABAY_API_KEY", "UNSPLASH_ACCESS_KEY", "GOOGLE_API_KEY" };
-
-        for (var i = 0; i < 4; i++)
-        {
-            var hasKey = !string.IsNullOrWhiteSpace(GetKey(keyNames[i], keys));
-            if (i == 3) hasKey = hasKey && !string.IsNullOrWhiteSpace(GetKey("GOOGLE_CSE_ID", keys));
-
-            if (!hasKey)
-            {
-                results.Add(new KeyTestResult(providers[i], false, "nokey"));
-                continue;
-            }
-
-            if (i == 0)
-            {
-                try
-                {
-                    var url = $"https://api.pexels.com/v1/search?query=battleship&per_page=1";
-                    var client = _http.CreateClient();
-                    client.Timeout = TimeSpan.FromSeconds(10);
-                    client.DefaultRequestHeaders.Add("Authorization", GetKey("PEXELS_API_KEY", keys)!);
-                    var res = await client.GetAsync(url, ct);
-                    var body = await res.Content.ReadAsStringAsync(ct);
-                    results.Add(new KeyTestResult("Pexels", res.IsSuccessStatusCode, res.IsSuccessStatusCode ? "OK" : $"HTTP {(int)res.StatusCode}: {(body.Length > 150 ? body.Substring(0, 150) + "..." : body)}"));
-                }
-                catch (Exception ex) { results.Add(new KeyTestResult("Pexels", false, ex.Message)); }
-            }
-            else if (i == 1)
-            {
-                try
-                {
-                    var url = $"https://pixabay.com/api/?key={Uri.EscapeDataString(GetKey("PIXABAY_API_KEY", keys)!)}&q=battleship&per_page=1";
-                    var client = _http.CreateClient();
-                    client.Timeout = TimeSpan.FromSeconds(10);
-                    var res = await client.GetAsync(url, ct);
-                    var body = await res.Content.ReadAsStringAsync(ct);
-                    results.Add(new KeyTestResult("Pixabay", res.IsSuccessStatusCode, res.IsSuccessStatusCode ? "OK" : $"HTTP {(int)res.StatusCode}: {(body.Length > 150 ? body.Substring(0, 150) + "..." : body)}"));
-                }
-                catch (Exception ex) { results.Add(new KeyTestResult("Pixabay", false, ex.Message)); }
-            }
-            else if (i == 2)
-            {
-                try
-                {
-                    var url = $"https://api.unsplash.com/search/photos?query=battleship&per_page=1";
-                    var client = _http.CreateClient();
-                    client.Timeout = TimeSpan.FromSeconds(10);
-                    client.DefaultRequestHeaders.Add("Authorization", $"Client-ID {GetKey("UNSPLASH_ACCESS_KEY", keys)}");
-                    var res = await client.GetAsync(url, ct);
-                    var body = await res.Content.ReadAsStringAsync(ct);
-                    results.Add(new KeyTestResult("Unsplash", res.IsSuccessStatusCode, res.IsSuccessStatusCode ? "OK" : $"HTTP {(int)res.StatusCode}: {(body.Length > 150 ? body.Substring(0, 150) + "..." : body)}"));
-                }
-                catch (Exception ex) { results.Add(new KeyTestResult("Unsplash", false, ex.Message)); }
-            }
-            else
-            {
-                try
-                {
-                    var url = $"https://www.googleapis.com/customsearch/v1?key={Uri.EscapeDataString(GetKey("GOOGLE_API_KEY", keys)!)}&cx={Uri.EscapeDataString(GetKey("GOOGLE_CSE_ID", keys)!)}&q=battleship&searchType=image&num=1";
-                    var client = _http.CreateClient();
-                    client.Timeout = TimeSpan.FromSeconds(10);
-                    var res = await client.GetAsync(url, ct);
-                    var body = await res.Content.ReadAsStringAsync(ct);
-                    results.Add(new KeyTestResult("Google", res.IsSuccessStatusCode, res.IsSuccessStatusCode ? "OK" : $"HTTP {(int)res.StatusCode}: {(body.Length > 150 ? body.Substring(0, 150) + "..." : body)}"));
-                }
-                catch (Exception ex) { results.Add(new KeyTestResult("Google", false, ex.Message)); }
-            }
-        }
-
-        return results;
+        return await TestKeysAsync(keys, sources, ct);
     }
 }
 

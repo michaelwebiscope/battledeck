@@ -2,30 +2,228 @@
 <html lang="en">
 <head>
   <%- include('partials/head') %>
+  <style>
+    .captains-page .captain-card-wrap { text-align: center; }
+    .captains-page .captain-name {
+      font-weight: 600; font-size: 1rem; margin-bottom: 8px; color: var(--blue-deep);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; margin-left: auto; margin-right: auto;
+    }
+    .captains-page .captain-card-wrap a.captain-name { text-decoration: none; color: inherit; }
+    .captains-page .captain-card-wrap a.captain-name:hover { color: var(--blue); }
+    .captains-page .captain-edit-card {
+      width: 200px; border-radius: 12px; overflow: hidden;
+      background: white; border: 2px solid rgba(12, 74, 110, 0.2);
+      box-shadow: 0 2px 8px rgba(12, 74, 110, 0.1);
+      transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease;
+      cursor: pointer;
+    }
+    .captains-page .captain-edit-card:hover { transform: translateY(-4px); box-shadow: 0 8px 20px rgba(12, 74, 110, 0.18); }
+    .captains-page .captain-edit-card.selected { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.4); }
+    .captains-page .captain-edit-card .img-wrap { width: 100%; height: 160px; overflow: hidden; border-radius: 10px 10px 0 0; background: #e9ecef; }
+    .captains-page .captain-edit-card .edit-thumb { width: 100%; height: 100%; object-fit: cover; display: block; vertical-align: top; }
+    .captains-page .captains-grid { display: flex; flex-wrap: wrap; gap: 24px; }
+  </style>
 </head>
 <body>
   <%- include('partials/header') %>
-  <main class="app-shell">
+  <main class="app-shell captains-page">
     <div class="container py-4">
-      <h1 class="mb-4">Captains</h1>
+      <%
+        var captainType = typeof entityTypes !== 'undefined' && entityTypes.captain ? entityTypes.captain : {};
+        var listTitle = captainType.listTitle || 'Captains';
+        var emptyMessage = captainType.emptyMessage || 'None found.';
+      %>
+      <h1 class="mb-4"><%= listTitle %></h1>
       <% if (typeof error !== 'undefined' && error) { %>
         <div class="alert alert-warning"><%= error %></div>
       <% } %>
-      <div class="row g-4">
+      <div class="captains-grid d-flex flex-wrap gap-4">
         <% if (captains && captains.length > 0) { %>
           <% captains.forEach(function(c) {
-            var entity = toEntity(c, 'captain');
-            entity.subtitle = [c.rank, c.serviceYears ? c.serviceYears + ' years service' : '', c.shipCount != null ? c.shipCount + ' ship' + (c.shipCount !== 1 ? 's' : '') + ' commanded' : ''].filter(Boolean).join(' · ');
+            var capId = c.id || c.Id;
+            var capName = (c.name || c.Name || 'Unnamed').replace(/"/g, '&quot;');
           %>
-            <%- include('partials/entity-card', { entity: entity, showSubtitle: true }) %>
+            <div class="captain-card-wrap">
+              <a href="#" class="captain-name d-block captain-view-link" data-id="<%= capId %>" title="<%= capName %>"><%= c.name || c.Name || 'Unnamed' %></a>
+              <div class="captain-edit-card edit-card" data-entity="captain" data-id="<%= capId %>" data-name="<%= capName %>">
+                <div class="img-wrap">
+                  <img src="/gallery/captain/<%= capId %>?v=<%= (c.imageVersion != null ? c.imageVersion : c.ImageVersion) || 0 %>" alt="" class="edit-thumb" onerror="this.onerror=null;this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22160%22 viewBox=%220 0 200 160%22%3E%3Crect fill=%22%236c757d%22 width=%22200%22 height=%22160%22/%3E%3Ctext fill=%22%23fff%22 x=%22100%22 y=%2280%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-size=%2212%22%3ENo image%3C/text%3E%3C/svg%3E';">
+                </div>
+              </div>
+            </div>
           <% }); %>
         <% } else { %>
-          <div class="col-12 text-center text-muted py-5">No captains found.</div>
+          <div class="col-12 text-center text-muted py-5"><%= emptyMessage %></div>
         <% } %>
       </div>
     </div>
   </main>
   <%- include('partials/footer') %>
+
+  <div id="captainViewModal" class="modal fade" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="captainViewTitle">Captain</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body" id="captainViewBody">
+          <div class="text-center text-muted py-4">Loading...</div>
+        </div>
+        <div class="modal-footer">
+          <a href="#" id="captainViewFullPage" class="btn btn-outline-secondary btn-sm">Open full page</a>
+          <button type="button" class="btn btn-outline-secondary btn-sm admin-only" id="captainViewEditBtn">Edit</button>
+          <button type="button" class="btn btn-outline-danger btn-sm admin-only" id="captainViewDeleteBtn">Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <style>#captainsBulkBar.captains-bulk-hidden{display:none!important}</style>
+  <div id="captainsBulkBar" class="admin-only captains-bulk-hidden" style="position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1050; box-shadow: 0 4px 20px rgba(0,0,0,0.15); border-radius: 8px; padding: 12px 20px; background: #fff; border: 1px solid #dee2e6;">
+    <span class="me-3"><strong id="captainsBulkCount">0</strong> selected — deselect to view</span>
+    <button type="button" class="btn btn-sm btn-outline-secondary me-2" id="captainsBulkDeselect">Deselect all</button>
+    <button type="button" class="btn btn-sm btn-outline-danger" id="captainsBulkDelete">Delete from database</button>
+  </div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <%- include('partials/image-lightbox') %>
+
+  <script>
+  (function() {
+    var bulkBar = document.getElementById('captainsBulkBar');
+    var bulkCount = document.getElementById('captainsBulkCount');
+    var viewModal = document.getElementById('captainViewModal');
+    var viewBody = document.getElementById('captainViewBody');
+    var viewTitle = document.getElementById('captainViewTitle');
+    var viewFullPage = document.getElementById('captainViewFullPage');
+    var viewEditBtn = document.getElementById('captainViewEditBtn');
+    var viewDeleteBtn = document.getElementById('captainViewDeleteBtn');
+
+    function getSelectedItems() {
+      var items = [];
+      document.querySelectorAll('.captain-edit-card.selected').forEach(function(card) {
+        items.push({ id: parseInt(card.dataset.id, 10), name: card.dataset.name || '', card: card });
+      });
+      return items;
+    }
+    function hasSelection() { return getSelectedItems().length > 0; }
+    function updateBulkBar() {
+      var items = getSelectedItems();
+      if (bulkBar && bulkCount) {
+        bulkCount.textContent = items.length;
+        bulkBar.classList.toggle('captains-bulk-hidden', items.length === 0);
+      }
+    }
+    var lastClickedCardIndex = null;
+    function getAllCards() { return Array.from(document.querySelectorAll('.captain-edit-card')); }
+
+    document.querySelectorAll('.captain-edit-card').forEach(function(card) {
+      card.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (document.body.classList.contains('admin-mode')) {
+          var cards = getAllCards();
+          var idx = cards.indexOf(card);
+          if (e.shiftKey && lastClickedCardIndex !== null) {
+            var from = Math.min(lastClickedCardIndex, idx);
+            var to = Math.max(lastClickedCardIndex, idx);
+            for (var i = from; i <= to; i++) cards[i].classList.add('selected');
+          } else {
+            card.classList.toggle('selected');
+            lastClickedCardIndex = idx;
+          }
+          updateBulkBar();
+        } else {
+          if (hasSelection()) return;
+          openCaptainView(parseInt(card.dataset.id, 10));
+        }
+      });
+    });
+
+    function openCaptainView(id) {
+      if (hasSelection()) return;
+      viewBody.innerHTML = '<div class="text-center text-muted py-4">Loading...</div>';
+      viewTitle.textContent = 'Captain';
+      viewFullPage.href = '/captains/' + id;
+      viewEditBtn.onclick = function() { window.location.href = '/captains/' + id; };
+      viewDeleteBtn.onclick = null;
+      new bootstrap.Modal(viewModal).show();
+      fetch('/api/captains/' + id)
+        .then(function(r) {
+          if (!r.ok) throw new Error('Failed to load');
+          return r.json();
+        })
+        .then(function(cap) {
+          var ships = cap.ships || cap.Ships || [];
+          var shipRows = ships.map(function(s) {
+            var cls = s.class || s.Class;
+            var clsName = cls ? (cls.name || cls.Name) : '—';
+            var clsId = cls ? (cls.id || cls.Id) : '';
+            var clsLink = clsId ? '<a href="/classes/' + clsId + '">' + clsName + '</a>' : clsName;
+            return '<tr><td><strong>' + (s.name || s.Name || '') + '</strong></td><td>' + clsLink + '</td><td>' + (s.yearCommissioned || '') + '</td><td><a href="/ships/' + (s.id || s.Id) + '" class="btn btn-outline-dark btn-sm">Details</a></td></tr>';
+          }).join('');
+          var shipsTable = ships.length ? '<h6 class="mt-3">Ships Commanded</h6><table class="table table-sm"><thead><tr><th>Ship</th><th>Class</th><th>Year</th><th></th></tr></thead><tbody>' + shipRows + '</tbody></table>' : '<p class="text-muted mt-2">No ships on record.</p>';
+          var imgPath = '/gallery/captain/' + id + '?v=' + (cap.imageVersion ?? cap.ImageVersion ?? 0);
+          var subtitle = [cap.rank || cap.Rank, cap.serviceYears ? cap.serviceYears + ' years service' : ''].filter(Boolean).join(' · ');
+          viewBody.innerHTML = '<div class="row g-3"><div class="col-auto"><div style="min-width:140px;min-height:180px;cursor:pointer;background:#e9ecef;border-radius:8px;overflow:hidden;" role="button" data-image-url="' + imgPath + '" data-image-title="' + (cap.name || '').replace(/"/g, '&quot;') + '" onclick="typeof showImageModal===\'function\'&&showImageModal(this.dataset.imageUrl,this.dataset.imageTitle)"><img src="' + imgPath + '" alt="" class="rounded w-100" style="max-height:200px;object-fit:cover;" onerror="this.style.display=\'none\'"></div></div><div class="col"><h5>' + (cap.name || cap.Name || 'Unnamed') + '</h5>' + (subtitle ? '<p class="text-muted mb-0">' + subtitle + '</p>' : '') + shipsTable + '</div></div>';
+          viewTitle.textContent = cap.name || cap.Name || 'Unnamed';
+          viewDeleteBtn.onclick = function() {
+            if (!confirm('Delete this captain? This cannot be undone.')) return;
+            fetch('/api/captains/delete/' + id, { method: 'POST' })
+              .then(function(r) {
+                return r.json().catch(function() { return {}; }).then(function(data) {
+                  if (!r.ok) throw new Error((data && data.error) || 'Delete failed');
+                  bootstrap.Modal.getInstance(viewModal).hide();
+                  location.reload();
+                });
+              })
+              .catch(function(err) { alert('Delete failed: ' + err.message); });
+          };
+        })
+        .catch(function() { viewBody.innerHTML = '<div class="text-danger">Failed to load captain.</div>'; });
+    }
+
+    document.querySelectorAll('.captain-view-link').forEach(function(a) {
+      a.addEventListener('click', function(e) {
+        e.preventDefault();
+        if (hasSelection()) return;
+        openCaptainView(parseInt(this.dataset.id, 10));
+      });
+    });
+    document.getElementById('captainsBulkDeselect')?.addEventListener('click', function() {
+      document.querySelectorAll('.captain-edit-card.selected').forEach(function(c) { c.classList.remove('selected'); });
+      updateBulkBar();
+    });
+    document.getElementById('captainsBulkDelete')?.addEventListener('click', function() {
+      var rows = getSelectedItems();
+      if (rows.length === 0) return;
+      if (!confirm('Delete ' + rows.length + ' captain(s) from the database? Captains with assigned ships cannot be deleted. This cannot be undone.')) return;
+      var btn = this;
+      btn.disabled = true;
+      var done = 0, failed = 0;
+      var errMsg = '';
+      function deleteNext() {
+        if (done + failed >= rows.length) {
+          document.getElementById('captainsBulkDeselect')?.click();
+          btn.disabled = false;
+          if (failed > 0) alert('Delete failed for ' + failed + ' captain(s). ' + (errMsg || 'Captains with ships assigned cannot be deleted.'));
+          location.reload();
+          return;
+        }
+        var r = rows[done + failed];
+        fetch('/api/captains/delete/' + r.id, { method: 'POST' })
+          .then(function(res) {
+            return res.json().catch(function() { return {}; }).then(function(data) {
+              if (!res.ok) { errMsg = (data && data.error) || ('HTTP ' + res.status); throw new Error(errMsg); }
+              done++;
+              deleteNext();
+            });
+          })
+          .catch(function(e) { failed++; if (e && e.message) errMsg = e.message; deleteNext(); });
+      }
+      deleteNext();
+    });
+  })();
+  </script>
 </body>
 </html>

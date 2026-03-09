@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace NavalArchive.Api.Controllers;
 
@@ -22,9 +23,20 @@ public class TimelineController : ControllerBase
         new { Year = 1945, Month = "Sep", Title = "V-J Day", Description = "Japanese surrender aboard USS Missouri in Tokyo Bay." }
     };
 
+    private readonly IMemoryCache _cache;
+    private static readonly TimeSpan CacheExpiration = TimeSpan.FromMinutes(10);
+
+    public TimelineController(IMemoryCache cache) => _cache = cache;
+
     [HttpGet]
     public IActionResult GetTimeline()
     {
-        return Ok(Events);
+        const string key = "timeline:main";
+        var result = _cache.GetOrCreate(key, entry =>
+        {
+            entry!.AbsoluteExpirationRelativeToNow = CacheExpiration;
+            return Events;
+        });
+        return Ok(result);
     }
 }

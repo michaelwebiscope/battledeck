@@ -1,39 +1,55 @@
-<nav class="navbar navbar-dark bg-dark">
-  <div class="container-fluid">
-    <a class="navbar-brand fw-bold" href="/">
-      <span class="text-uppercase" style="letter-spacing: 0.15em;">⚓ Naval Archive</span>
+<header class="app-topbar" id="appTopbar">
+  <div class="topbar-inner">
+    <a href="/" class="topbar-brand">
+      <div class="topbar-brand-icon">⚓</div>
+      <span>Naval Archive</span>
     </a>
-    <div class="d-flex align-items-center gap-2 me-2">
-      <label class="form-check form-switch mb-0" title="Admin mode: edit ships and captains from any page">
+    <nav class="topbar-nav">
+      <% (navItems || []).forEach(function(item) { %>
+      <% if (item.items) { %>
+      <div class="topbar-dropdown" onclick="if(window.innerWidth<=991) this.classList.toggle('expanded')">
+        <button type="button" class="topbar-dropdown-trigger" aria-haspopup="true" aria-expanded="false">
+          <i class="bi bi-<%= item.label === 'Explore' ? 'compass' : item.label === 'Support' ? 'heart' : item.label === 'Member' ? 'person' : item.label === 'Cart' ? 'cart' : 'folder2-open' %>"></i>
+          <span><%= item.label %></span>
+        </button>
+        <div class="topbar-dropdown-menu" role="menu">
+          <% item.items.forEach(function(sub) { %>
+          <a href="<%= sub.href %>" role="menuitem" class="<%= (currentPath === sub.href || (sub.href !== '/' && currentPath.startsWith(sub.href))) ? ' active' : '' %>">
+            <i class="bi bi-<%= sub.href.includes('fleet') ? 'ship' : sub.href.includes('captains') ? 'person' : sub.href.includes('timeline') ? 'calendar' : sub.href.includes('gallery') ? 'images' : sub.href.includes('stats') ? 'bar-chart' : sub.href.includes('logs') ? 'journal' : sub.href.includes('classes') ? 'collection' : sub.href.includes('compare') ? 'arrow-left-right' : 'folder' %>"></i>
+            <%= sub.label %>
+          </a>
+          <% }); %>
+        </div>
+      </div>
+      <% } else if (item.href) { %>
+      <a class="topbar-link<%= (currentPath === item.href || (item.href !== '/' && currentPath.startsWith(item.href))) ? ' active' : '' %>" href="<%= item.href %>">
+        <i class="bi bi-<%= item.href === '/' ? 'house-door' : item.href.includes('simulation') ? 'controller' : item.href.includes('donate') ? 'heart' : item.href.includes('cart') ? 'cart' : 'link-45deg' %>"></i>
+        <span><%= item.label %></span>
+      </a>
+      <% } %>
+      <% }); %>
+    </nav>
+    <div class="topbar-right">
+      <a href="/admin/images" class="topbar-link admin-only text-decoration-none">
+        <i class="bi bi-images"></i>
+        <span>Audit</span>
+      </a>
+      <a href="/admin/add-from-url" class="topbar-link admin-only text-decoration-none">
+        <i class="bi bi-plus-circle"></i>
+        <span>Add from URL</span>
+      </a>
+      <label class="topbar-admin" title="Admin mode" style="cursor: pointer;">
         <input class="form-check-input" type="checkbox" id="adminModeToggle">
-        <span class="form-check-label text-white-50 small">Admin</span>
+        <i class="bi bi-shield-lock"></i>
+        <span>Admin</span>
       </label>
-    </div>
-    <button class="navbar-toggler border-0 px-3 py-2" type="button" data-bs-toggle="collapse" data-bs-target="#navMain" aria-controls="navMain" aria-expanded="false" aria-label="Toggle navigation">
-      <span class="navbar-toggler-icon"></span>
-    </button>
-    <div class="collapse navbar-collapse" id="navMain">
-      <ul class="navbar-nav flex-column w-100 py-3">
-        <% (navItems || []).forEach(function(item) { %>
-        <% if (item.items) { %>
-        <li class="nav-item">
-          <span class="nav-link text-muted small text-uppercase px-3 py-1"><%= item.label %></span>
-          <ul class="list-unstyled ps-3 pb-2">
-            <% item.items.forEach(function(sub) { %>
-            <li><a class="nav-link<%= (currentPath === sub.href || (sub.href !== '/' && currentPath.startsWith(sub.href))) ? ' active' : '' %>" href="<%= sub.href %>"><%= sub.label %></a></li>
-            <% }); %>
-          </ul>
-        </li>
-        <% } else { %>
-        <li class="nav-item">
-          <a class="nav-link<%= (currentPath === item.href || (item.href !== '/' && currentPath.startsWith(item.href))) ? ' active' : '' %>" href="<%= item.href %>"><%= item.label %></a>
-        </li>
-        <% } %>
-        <% }); %>
-      </ul>
+      <button class="topbar-toggle" type="button" aria-label="Toggle menu" onclick="document.getElementById('appTopbar').classList.toggle('expanded')">
+        <i class="bi bi-list"></i>
+      </button>
     </div>
   </div>
-</nav>
+</header>
+<div class="main-content">
 <script>
 (function(){
   var key = 'adminMode';

@@ -2,20 +2,34 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <script>if (localStorage.getItem('adminMode') !== 'true') { (window.top || window).location.replace('/'); }</script>
   <title><%= title %></title>
   <style>
-    body { font-family: system-ui, sans-serif; margin: 0; padding: 12px; background: #1a1a2e; color: #eee; }
-    .search-bar { display: flex; gap: 8px; margin-bottom: 12px; }
-    .search-bar input { flex: 1; padding: 8px 12px; border-radius: 6px; border: 1px solid #444; background: #16213e; color: #eee; }
+    body { font-family: system-ui, sans-serif; font-size: 14px; margin: 0; padding: 12px; background: #1a1a2e; color: #eee; line-height: 1.4; }
+    .search-bar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+    .search-bar input { flex: 1; min-width: 120px; padding: 8px 12px; border-radius: 6px; border: 1px solid #444; background: #16213e; color: #eee; }
     .search-bar select { padding: 8px 12px; border-radius: 6px; border: 1px solid #444; background: #16213e; color: #eee; min-width: 120px; }
     .search-bar button { padding: 8px 16px; background: #0f3460; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
     .search-bar button:hover { background: #1a4a7a; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
-    .grid-item { cursor: pointer; border: 2px solid transparent; border-radius: 8px; overflow: hidden; transition: border-color 0.2s; }
+    .grid-item { cursor: pointer; border: 2px solid transparent; border-radius: 8px; overflow: hidden; transition: border-color 0.2s; display: flex; flex-direction: column; padding: 8px; }
     .grid-item:hover { border-color: #e94560; }
-    .grid-item img { width: 100%; height: 100px; object-fit: cover; display: block; }
-    .status { padding: 8px; color: #888; font-size: 13px; }
+    .grid-item.selected { border-color: #e94560; background: rgba(233,69,96,0.15); }
+    .grid-item .img-title { margin-bottom: 6px; line-height: 1.3; font-size: 13px; flex-shrink: 0; color: #eee; }
+    .grid-item img { width: 100%; height: 100px; object-fit: cover; border-radius: 4px; }
+    .grid-item .img-placeholder { width: 100%; height: 100px; background: #2a2a4a; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 13px; color: #aaa; }
+    .status { padding: 8px; color: #bbb; font-size: 14px; }
     .error { color: #e94560; }
+    .custom-section { margin: 12px 0; padding: 12px; background: #16213e; border-radius: 8px; border: 1px solid #333; }
+    .custom-section input[type="text"] { flex: 1; min-width: 200px; padding: 8px 12px; border-radius: 6px; border: 1px solid #444; background: #1a1a2e; color: #eee; }
+    .action-bar { display: flex; gap: 8px; margin: 8px 0; flex-wrap: wrap; align-items: center; }
+    .action-bar label { cursor: pointer; padding: 6px 12px; background: #0f3460; color: #fff; border-radius: 6px; font-size: 13px; }
+    .action-bar label:hover { background: #1a4a7a; }
+    .action-bar input[type="file"] { display: none; }
+    .action-bar button { padding: 8px 16px; background: #0f3460; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+    .action-bar button:hover { background: #1a4a7a; }
+    .grid-item .chk-wrap { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+    .grid-item input[type="checkbox"] { cursor: pointer; width: 16px; height: 16px; }
   </style>
 </head>
 <body>
@@ -29,6 +43,15 @@
     </select>
     <button id="searchBtn">Search</button>
   </div>
+  <div class="custom-section">
+    <div class="action-bar">
+      <input type="text" id="customUrlInput" placeholder="Paste image URL (custom link)">
+      <button type="button" id="setFromUrlBtn">Set from URL</button>
+      <label for="uploadFileInput">Upload image</label>
+      <input type="file" id="uploadFileInput" accept="image/*">
+      <button type="button" id="removeSelectedBtn" style="background:#6c757d">Remove selected</button>
+    </div>
+  </div>
   <div id="status" class="status"></div>
   <div id="grid" class="grid"></div>
 
@@ -38,8 +61,28 @@
       var entityId = '<%= entityId %>';
       var queryInput = document.getElementById('queryInput');
       var searchBtn = document.getElementById('searchBtn');
+
+      function populateProviderSelect(sources) {
+        var sel = document.getElementById('providerSelect');
+        if (!sel || !Array.isArray(sources) || sources.length === 0) return;
+        sel.innerHTML = '<option value="">All (fallback)</option>';
+        sources.forEach(function(s) {
+          var val = s.providerType || s.ProviderType || s.name || s.Name || '';
+          var label = s.name || s.Name || s.providerType || s.ProviderType || val;
+          if (val) sel.appendChild(new Option(label, val));
+        });
+      }
+      window.addEventListener('message', function(e) {
+        if (e.data && e.data.type === 'imageSources' && Array.isArray(e.data.sources)) {
+          populateProviderSelect(e.data.sources);
+        }
+      });
       var status = document.getElementById('status');
       var grid = document.getElementById('grid');
+      var customUrlInput = document.getElementById('customUrlInput');
+      var setFromUrlBtn = document.getElementById('setFromUrlBtn');
+      var uploadFileInput = document.getElementById('uploadFileInput');
+      var removeSelectedBtn = document.getElementById('removeSelectedBtn');
 
       function getKeys() {
         try {
@@ -47,13 +90,60 @@
         } catch (e) { return {}; }
       }
 
+      function titleFromUrl(url) {
+        try {
+          var path = new URL(url).pathname;
+          var name = path.split('/').pop() || url;
+          return decodeURIComponent(name).slice(0, 40) || 'Image';
+        } catch (e) { return 'Image'; }
+      }
+
       function sendImageToParent(url) {
-        if (window.opener) {
-          window.opener.postMessage({ type: 'imageSelected', entity: entity, entityId: entityId, url: url }, '*');
-          window.close();
+        var target = window.opener || window.parent;
+        target.postMessage({ type: 'imageSelected', entity: entity, entityId: entityId, url: url }, '*');
+        if (window.opener) window.close();
+      }
+      function sendImageUploaded() {
+        var target = window.opener || window.parent;
+        target.postMessage({ type: 'imageUploaded', entity: entity, entityId: entityId }, '*');
+        if (window.opener) window.close();
+      }
+
+      function makeGridItem(opts) {
+        var title = opts.title || '';
+        var url = opts.url || '';
+        var div = document.createElement('div');
+        div.className = 'grid-item';
+        div.dataset.url = url;
+        var chkWrap = document.createElement('div');
+        chkWrap.className = 'chk-wrap';
+        var cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.onclick = function(e) { e.stopPropagation(); div.classList.toggle('selected', cb.checked); };
+        chkWrap.appendChild(cb);
+        div.appendChild(chkWrap);
+        var titleEl = document.createElement('div');
+        titleEl.className = 'img-title';
+        titleEl.textContent = title || 'Image';
+        titleEl.title = title || url;
+        div.appendChild(titleEl);
+        if (url) {
+          var imgEl = document.createElement('img');
+          imgEl.src = url;
+          imgEl.alt = title;
+          imgEl.onerror = function() { var ph = document.createElement('div'); ph.className = 'img-placeholder'; ph.textContent = 'Failed to load'; imgEl.parentNode.replaceChild(ph, imgEl); };
+          div.appendChild(imgEl);
         } else {
-          window.parent.postMessage({ type: 'imageSelected', entity: entity, entityId: entityId, url: url }, '*');
+          var ph = document.createElement('div');
+          ph.className = 'img-placeholder';
+          ph.textContent = 'No image';
+          div.appendChild(ph);
         }
+        div.onclick = function(e) {
+          if (e.target.type === 'checkbox') return;
+          sendImageToParent(url);
+        };
+        return div;
       }
 
       function search() {
@@ -65,7 +155,13 @@
           fetch('/api/wikipedia/search?q=' + encodeURIComponent(q) + '&limit=12')
             .then(function(r) { return r.json(); })
             .then(function(pages) {
-              if (!Array.isArray(pages)) { status.textContent = 'Error: ' + (pages.error || 'Invalid response'); status.className = 'status error'; return; }
+              var list = Array.isArray(pages) ? pages : (pages && Array.isArray(pages.pages) ? pages.pages : []);
+              if (!Array.isArray(list) || list.length === 0) {
+                status.textContent = 'Error: ' + (pages && (pages.error || pages.message)) || 'Invalid response';
+                status.className = 'status error';
+                return;
+              }
+              pages = list;
               status.textContent = pages.length + ' Wikipedia pages. Click to fetch image for that page.';
               status.className = 'status';
               pages.forEach(function(p) {
@@ -73,26 +169,32 @@
                 var imageUrl = p.imageUrl || p.ImageUrl || '';
                 var div = document.createElement('div');
                 div.className = 'grid-item';
-                div.style = 'display: flex; flex-direction: column; padding: 8px;';
+                div.dataset.title = title;
+                var chkWrap = document.createElement('div');
+                chkWrap.className = 'chk-wrap';
+                var cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.onclick = function(e) { e.stopPropagation(); div.classList.toggle('selected', cb.checked); };
+                chkWrap.appendChild(cb);
+                div.appendChild(chkWrap);
                 var titleEl = document.createElement('div');
-                titleEl.className = 'small fw-bold';
-                titleEl.textContent = title;
-                titleEl.style = 'margin-bottom: 6px; line-height: 1.2; flex-shrink: 0;';
+                titleEl.className = 'img-title';
+                titleEl.textContent = title || 'No title';
                 div.appendChild(titleEl);
                 if (imageUrl) {
                   var imgEl = document.createElement('img');
                   imgEl.src = imageUrl;
                   imgEl.alt = title;
-                  imgEl.style = 'width: 100%; height: 100px; object-fit: cover; border-radius: 4px;';
-                  imgEl.onerror = function() { this.style.display = 'none'; };
+                  imgEl.onerror = function() { var ph = document.createElement('div'); ph.className = 'img-placeholder'; ph.textContent = 'Failed'; imgEl.parentNode.replaceChild(ph, imgEl); };
                   div.appendChild(imgEl);
                 } else {
-                  var placeholder = document.createElement('div');
-                  placeholder.style = 'width: 100%; height: 100px; background: #2a2a4a; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #666;';
-                  placeholder.textContent = 'No image';
-                  div.appendChild(placeholder);
+                  var ph = document.createElement('div');
+                  ph.className = 'img-placeholder';
+                  ph.textContent = 'No image';
+                  div.appendChild(ph);
                 }
-                div.onclick = function() {
+                div.onclick = function(e) {
+                  if (e.target.type === 'checkbox') return;
                   status.textContent = 'Fetching image for ' + title + '...';
                   fetch('/api/wikipedia/image?title=' + encodeURIComponent(title))
                     .then(function(r) { return r.json(); })
@@ -121,19 +223,25 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ query: q, maxCount: 16, provider: provider || undefined, ...keys })
         }).then(function(r) { return r.json(); })
-          .then(function(urls) {
-            if (!Array.isArray(urls)) { status.textContent = 'Error: ' + (urls.error || 'Invalid response'); status.className = 'status error'; return; }
-            status.textContent = urls.length + ' results. Click to select.';
+          .then(function(data) {
+            var urls = Array.isArray(data) ? data : (Array.isArray(data && data.urls) ? data.urls : []);
+            if (!Array.isArray(urls)) {
+              status.textContent = 'Error: ' + (data && (data.error || data.message)) || 'Invalid response';
+              status.className = 'status error';
+              return;
+            }
+            var source = data.source || '';
+            status.textContent = urls.length + ' results' + (source ? ' from ' + source : '') + '. Click to select.';
             status.className = 'status';
+            if (source) {
+              var sourceLabel = document.createElement('div');
+              sourceLabel.className = 'source-label';
+              sourceLabel.style = 'grid-column: 1 / -1; font-size: 12px; color: #888; margin-bottom: 8px; padding: 4px 0;';
+              sourceLabel.textContent = 'Source: ' + source;
+              grid.appendChild(sourceLabel);
+            }
             urls.forEach(function(url) {
-              var div = document.createElement('div');
-              div.className = 'grid-item';
-              var img = document.createElement('img');
-              img.src = url;
-              img.alt = '';
-              img.onerror = function() { div.style.display = 'none'; };
-              div.appendChild(img);
-              div.onclick = function() { sendImageToParent(url); };
+              var div = makeGridItem({ title: titleFromUrl(url), url: url });
               grid.appendChild(div);
             });
           })
@@ -145,6 +253,45 @@
 
       searchBtn.onclick = search;
       queryInput.onkeydown = function(e) { if (e.key === 'Enter') search(); };
+
+      setFromUrlBtn.onclick = function() {
+        var url = (customUrlInput.value || '').trim();
+        if (!url) { status.textContent = 'Enter an image URL.'; status.className = 'status error'; return; }
+        if (!/^https?:\/\//i.test(url)) { status.textContent = 'URL must start with http:// or https://'; status.className = 'status error'; return; }
+        sendImageToParent(url);
+      };
+
+      uploadFileInput.onchange = function() {
+        var file = uploadFileInput.files && uploadFileInput.files[0];
+        if (!file || !file.type.match(/^image\//)) { status.textContent = 'Select an image file.'; status.className = 'status error'; return; }
+        status.textContent = 'Uploading...';
+        status.className = 'status';
+        var form = new FormData();
+        form.append('file', file);
+        fetch('/api/images/' + entity + '/' + entityId + '/upload', {
+          method: 'POST',
+          body: file,
+          headers: { 'Content-Type': file.type || 'image/jpeg' }
+        }).then(function(r) {
+          return r.json().then(function(data) {
+            if (!r.ok) throw new Error(data.error || data.message || 'Upload failed');
+            return data;
+          });
+        })
+          .then(function() { sendImageUploaded(); })
+          .catch(function(e) {
+            status.textContent = 'Upload error: ' + e.message;
+            status.className = 'status error';
+          });
+        uploadFileInput.value = '';
+      };
+
+      removeSelectedBtn.onclick = function() {
+        var sel = grid.querySelectorAll('.grid-item.selected');
+        sel.forEach(function(el) { el.remove(); });
+        status.textContent = (sel.length ? sel.length + ' removed. ' : '') + 'Select items and click Remove selected to hide them.';
+        status.className = 'status';
+      };
     })();
   </script>
 </body>

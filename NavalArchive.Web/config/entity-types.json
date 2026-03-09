@@ -1,0 +1,72 @@
+{
+  "_comment": "Entity type definitions - drives templates. Add new types here; no code changes needed.",
+  "pages": {
+    "gallery": { "title": "Photo Gallery", "description": "Archival photographs. Click any image to view full size.", "emptyMessage": "No images available. Ensure the API is running." }
+  },
+  "ship": {
+    "displayName": "Ship",
+    "pluralName": "Ships",
+    "detailRoute": "/ships",
+    "listRoute": "/fleet",
+    "apiPath": "/api/ships",
+    "gallerySegment": "image",
+    "hasImage": true,
+    "hasEdit": true,
+    "subtitleField": "yearCommissioned",
+    "subtitleFormat": "Commissioned {value}",
+    "listTitle": "Fleet Roster",
+    "listCardTitle": "Complete Registry",
+    "searchPlaceholder": "Search by name or description...",
+    "emptyMessage": "None loaded.",
+    "formFieldLabels": { "yearCommissioned": "Year Commissioned", "description": "Description" },
+    "listColumns": [
+      { "key": "name", "label": "Name" },
+      { "key": "class", "label": "Class", "relationship": "class" },
+      { "key": "type", "label": "Type", "relationship": "class", "field": "type" },
+      { "key": "country", "label": "Country", "relationship": "class", "field": "country" },
+      { "key": "captain", "label": "Captain", "relationship": "captain" },
+      { "key": "rank", "label": "Rank", "relationship": "captain", "field": "rank" },
+      { "key": "year", "label": "Year", "field": "yearCommissioned" },
+      { "key": "description", "label": "Description", "field": "description" }
+    ],
+    "relationships": [
+      { "key": "class", "label": "Class", "targetType": "class", "linkRoute": "/classes" },
+      { "key": "captain", "label": "Captain", "targetType": "captain", "linkRoute": "/captains" }
+    ]
+  },
+  "captain": {
+    "displayName": "Captain",
+    "pluralName": "Captains",
+    "detailRoute": "/captains",
+    "listRoute": "/captains",
+    "apiPath": "/api/captains",
+    "gallerySegment": "captain",
+    "hasImage": true,
+    "hasEdit": true,
+    "subtitleFields": ["rank", "serviceYears"],
+    "subtitleFormat": "{rank} · {serviceYears} years service",
+    "listTitle": "Captains",
+    "emptyMessage": "None found.",
+    "relationships": [
+      { "key": "ships", "label": "Ships Commanded", "targetType": "ship", "linkRoute": "/ships", "isCollection": true }
+    ]
+  },
+  "class": {
+    "displayName": "Ship Class",
+    "pluralName": "Ship Classes",
+    "detailRoute": "/classes",
+    "listRoute": "/classes",
+    "apiPath": "/api/classes",
+    "gallerySegment": null,
+    "hasImage": false,
+    "hasEdit": true,
+    "subtitleFields": ["type", "country"],
+    "subtitleFormat": "{type} · {country}",
+    "listTitle": "Ship Classes",
+    "emptyMessage": "None found.",
+    "countLabel": "in class",
+    "relationships": [
+      { "key": "ships", "label": "Ships in Class", "targetType": "ship", "linkRoute": "/ships", "isCollection": true }
+    ]
+  }
+}

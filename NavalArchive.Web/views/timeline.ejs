@@ -2,37 +2,138 @@
 <html lang="en">
 <head>
   <%- include('partials/head') %>
+  <style>
+    .timeline-page .content-area {
+      max-width: 720px;
+      margin: 0 auto;
+    }
+    .timeline-page .intro {
+      font-size: 1.05rem;
+      line-height: 1.7;
+      color: var(--text);
+      margin-bottom: 2rem;
+    }
+    .timeline-page .timeline-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .timeline-page .timeline-list li {
+      padding: 0.75rem 0;
+      border-bottom: 1px solid rgba(6, 182, 212, 0.3);
+      display: flex;
+      gap: 1rem;
+      align-items: baseline;
+    }
+    .timeline-page .timeline-list li:last-child {
+      border-bottom: none;
+    }
+    .timeline-page .timeline-date {
+      font-weight: 600;
+      color: var(--text);
+      min-width: 140px;
+      flex-shrink: 0;
+      font-size: 0.95rem;
+    }
+    .timeline-page .timeline-desc {
+      color: var(--muted);
+      line-height: 1.6;
+      margin: 0;
+    }
+    .timeline-page .timeline-desc strong {
+      color: var(--text);
+    }
+    .timeline-page .section-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-top: 2.5rem;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid rgba(6, 182, 212, 0.3);
+    }
+    .timeline-page .faq-item {
+      margin-bottom: 1rem;
+    }
+    .timeline-page .faq-item h4 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 0.35rem;
+    }
+    .timeline-page .faq-item p {
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.6;
+      margin: 0;
+    }
+    .timeline-page .cite-block {
+      font-size: 0.875rem;
+      color: var(--muted);
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid rgba(6, 182, 212, 0.3);
+    }
+    .timeline-page .cite-block a {
+      color: var(--brand);
+    }
+  </style>
 </head>
 <body>
   <%- include('partials/header') %>
-  <main class="app-shell">
+  <main class="app-shell timeline-page">
     <div class="container py-4">
-      <h1 class="mb-4">Naval Timeline</h1>
-      <p class="text-muted mb-4">Key events of the Second World War at sea.</p>
-      <% if (typeof error !== 'undefined' && error) { %>
-        <div class="alert alert-warning"><%= error %></div>
-      <% } else if (events && events.length > 0) { %>
-        <div class="timeline">
-          <% events.forEach(function(evt) { %>
-            <div class="card mb-3">
-              <div class="card-body">
-                <div class="d-flex">
-                  <div class="me-4 text-center" style="min-width: 80px;">
-                    <span class="badge bg-dark fs-6"><%= evt.year %></span>
-                    <p class="small text-muted mb-0 mt-1"><%= evt.month %></p>
-                  </div>
-                  <div>
-                    <h5 class="card-title mb-1"><%= evt.title %></h5>
-                    <p class="card-text text-muted mb-0"><%= evt.description %></p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          <% }); %>
+      <div class="content-area">
+        <h1 class="mb-3">World War II Naval Timeline</h1>
+        <p class="intro">Explore a timeline of key naval events during World War II. The war at sea shaped the course of the conflict in both the Atlantic and Pacific theaters—from the Royal Navy's blockade and the Battle of the Atlantic to the carrier battles of the Pacific and the Normandy landings.</p>
+        <p class="small text-muted mb-4">
+          <span class="me-2">Tags:</span>
+          <a href="/fleet" class="text-decoration-none text-muted">World War II</a>
+          <span class="mx-1">·</span>
+          <a href="/fleet" class="text-decoration-none text-muted">naval history</a>
+          <span class="mx-1">·</span>
+          <a href="/timeline" class="text-decoration-none text-muted">key dates</a>
+        </p>
+
+        <% if (typeof error !== 'undefined' && error) { %>
+          <div class="alert alert-warning"><%= error %></div>
+        <% } else if (events && events.length > 0) { %>
+          <ul class="timeline-list">
+            <% 
+            var months = { Jan:'January', Feb:'February', Mar:'March', Apr:'April', May:'May', Jun:'June', Jul:'July', Aug:'August', Sep:'September', Oct:'October', Nov:'November', Dec:'December' };
+            events.forEach(function(evt) { 
+              var monthFull = months[evt.month] || evt.month;
+              var dateStr = monthFull + ' ' + evt.year;
+            %>
+              <li>
+                <span class="timeline-date"><%= dateStr %></span>
+                <p class="timeline-desc"><strong><%= evt.title %>.</strong> <%= evt.description %></p>
+              </li>
+            <% }); %>
+          </ul>
+        <% } else { %>
+          <p class="text-muted">No timeline events available.</p>
+        <% } %>
+
+        <h2 class="section-title">Frequently Asked Questions</h2>
+        <div class="faq-item">
+          <h4>When did World War II start?</h4>
+          <p>World War II began on September 1, 1939, with the German invasion of Poland. Britain and France declared war on Germany on September 3.</p>
         </div>
-      <% } else { %>
-        <div class="text-center text-muted py-5">No timeline events available.</div>
-      <% } %>
+        <div class="faq-item">
+          <h4>When did World War II end in Europe?</h4>
+          <p>German armed forces surrendered unconditionally on May 7, 1945. The surrender took effect on May 8 (V-E Day). Soviet forces announced Victory Day on May 9.</p>
+        </div>
+        <div class="faq-item">
+          <h4>When did World War II end in the Pacific?</h4>
+          <p>World War II ended on September 2, 1945, when Japan formally surrendered aboard the USS Missouri in Tokyo Bay.</p>
+        </div>
+
+        <div class="cite-block">
+          <p class="mb-1"><strong>Source:</strong> <a href="https://encyclopedia.ushmm.org/content/en/article/world-war-ii-key-dates" target="_blank" rel="noopener noreferrer">World War II: Key Dates</a> — United States Holocaust Memorial Museum, Holocaust Encyclopedia.</p>
+          <p class="mb-0 small">Naval events curated for this archive. For the complete timeline of WWII, see the Holocaust Encyclopedia.</p>
+        </div>
+      </div>
     </div>
   </main>
   <%- include('partials/footer') %>

@@ -6,7 +6,7 @@
 <%
   var entity = typeof entity !== 'undefined' ? entity : {};
   var imgH = typeof imageHeight !== 'undefined' ? imageHeight : 240;
-  var gallery = entity.imageGallery || (entity.type === 'captain' ? 'captain' : 'image');
+  var gallery = entity.imageGallery || (entity.typeConfig && entity.typeConfig.gallerySegment) || 'image';
 %>
 <div class="row">
   <div class="col-lg-4 mb-4">

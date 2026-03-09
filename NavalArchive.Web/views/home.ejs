@@ -8,17 +8,22 @@
   <main class="py-0 app-shell">
     <!-- Hero Section -->
     <section class="position-relative overflow-hidden rounded-bottom-4" style="min-height: 460px;">
-      <div class="position-absolute top-0 start-0 w-100 h-100" style="background: linear-gradient(120deg, rgba(10, 18, 34, 0.86), rgba(29, 40, 66, 0.72)), url('https://upload.wikimedia.org/wikipedia/commons/thumb/2/2a/USS_Enterprise_%28CV-6%29_in_Puerto_Rico%2C_early_1941.jpg/1920px-USS_Enterprise_%28CV-6%29_in_Puerto_Rico%2C_early_1941.jpg') center/cover;"></div>
+      <div class="position-absolute top-0 start-0 w-100 h-100" style="background: linear-gradient(120deg, rgba(12, 74, 110, 0.85), rgba(6, 182, 212, 0.4)), url('https://upload.wikimedia.org/wikipedia/commons/thumb/2/2a/USS_Enterprise_%28CV-6%29_in_Puerto_Rico%2C_early_1941.jpg/1920px-USS_Enterprise_%28CV-6%29_in_Puerto_Rico%2C_early_1941.jpg') center/cover;"></div>
       <div class="position-relative container py-5 text-white text-center">
-        <div class="glass-panel d-inline-block px-4 py-2 rounded-pill mb-4 small fw-semibold text-uppercase" style="letter-spacing: 0.12em;">Live Collection • Curated History</div>
-        <h1 class="display-2 fw-bold mb-3" style="text-shadow: 0 10px 24px rgba(0,0,0,0.45);">WW2 Naval History Archive</h1>
+        <div class="glass-panel d-inline-block px-4 py-2 mb-4 small fw-semibold" style="letter-spacing: 0.2em; border-radius: 12px; color: var(--blue-deep) !important;">Digital Archive</div>
+        <h1 class="display-2 fw-bold mb-3">WW2 Naval History Archive</h1>
         <p class="lead fs-4 mb-4 mx-auto" style="max-width: 700px;">A modern digital museum for fleet records, command timelines, and mission intelligence from the defining naval theater of the 20th century.</p>
         <a href="/fleet" class="btn btn-modern btn-lg px-4 me-2">Explore the Fleet</a>
-        <a href="/simulation" class="btn btn-outline-light btn-lg px-4">Open Live Battle</a>
+        <a href="/simulation" class="btn btn-hero-outline btn-lg px-4">Open Live Battle</a>
       </div>
     </section>
 
     <div class="container py-5">
+      <%
+        var shipType = typeof entityTypes !== 'undefined' && entityTypes.ship ? entityTypes.ship : { displayName: 'Ship', pluralName: 'Ships', listTitle: 'Fleet Roster' };
+        var classType = typeof entityTypes !== 'undefined' && entityTypes.class ? entityTypes.class : { pluralName: 'Ship Classes' };
+        var captainType = typeof entityTypes !== 'undefined' && entityTypes.captain ? entityTypes.captain : { pluralName: 'Captains' };
+      %>
       <!-- Quick Stats -->
       <section class="mb-5">
         <div class="row g-3">
@@ -26,7 +31,7 @@
             <a href="/fleet" class="card text-decoration-none text-dark h-100">
               <div class="card-body text-center py-3">
                 <span class="fs-3 fw-bold">50</span>
-                <p class="small text-secondary mb-0">Ships</p>
+                <p class="small text-secondary mb-0"><%= shipType.pluralName %></p>
               </div>
             </a>
           </div>
@@ -34,7 +39,7 @@
             <a href="/classes" class="card text-decoration-none text-dark h-100">
               <div class="card-body text-center py-3">
                 <span class="fs-3 fw-bold">10</span>
-                <p class="small text-secondary mb-0">Classes</p>
+                <p class="small text-secondary mb-0"><%= classType.pluralName %></p>
               </div>
             </a>
           </div>
@@ -42,7 +47,7 @@
             <a href="/captains" class="card text-decoration-none text-dark h-100">
               <div class="card-body text-center py-3">
                 <span class="fs-3 fw-bold">25</span>
-                <p class="small text-secondary mb-0">Captains</p>
+                <p class="small text-secondary mb-0"><%= captainType.pluralName %></p>
               </div>
             </a>
           </div>
@@ -57,9 +62,9 @@
         </div>
       </section>
 
-      <!-- Featured Ship -->
+      <!-- Featured -->
       <section class="mb-5">
-        <h2 class="mb-4">Featured Ship</h2>
+        <h2 class="mb-4">Featured <%= shipType.displayName %></h2>
         <div class="card">
           <div class="row g-0">
             <div class="col-md-4">
@@ -70,9 +75,9 @@
                 <h3 class="card-title"><%= featuredShip.name %></h3>
                 <p class="text-secondary mb-2">Commissioned <%= featuredShip.year %></p>
                 <p class="card-text"><%= featuredShip.description %></p>
-                <a href="/ships/<%= featuredShip.id || 9 %>" class="btn btn-modern">View Ship</a>
-                <a href="/fleet" class="btn btn-outline-secondary btn-sm ms-2">Browse Full Fleet</a>
-                <a href="/discover" class="btn btn-outline-secondary btn-sm ms-2" title="Discover a random ship">🎲 Discover a Ship</a>
+                <a href="/ships/<%= featuredShip.id || 9 %>" class="btn btn-modern">View <%= shipType.displayName %></a>
+                <a href="/fleet" class="btn btn-outline-secondary btn-sm ms-2">Browse Full <%= shipType.listTitle %></a>
+                <a href="/discover" class="btn btn-outline-secondary btn-sm ms-2" title="Discover a random <%= shipType.displayName.toLowerCase() %>">🎲 Discover a <%= shipType.displayName %></a>
                 <button id="refreshData" class="btn btn-outline-secondary btn-sm ms-2" title="Fetch latest from Wikipedia">↻ Refresh from Wikipedia</button>
               </div>
             </div>

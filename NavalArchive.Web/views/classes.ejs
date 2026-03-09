@@ -7,26 +7,40 @@
   <%- include('partials/header') %>
   <main class="app-shell">
     <div class="container py-4">
-      <h1 class="mb-4">Ship Classes</h1>
+      <%
+        var classType = typeof entityTypes !== 'undefined' && entityTypes['class'] ? entityTypes['class'] : {};
+        var listTitle = classType.listTitle || 'Ship Classes';
+        var emptyMessage = classType.emptyMessage || 'None found.';
+        var countLabel = classType.countLabel || 'in class';
+        var shipPlural = (typeof entityTypes !== 'undefined' && entityTypes.ship && entityTypes.ship.pluralName) ? entityTypes.ship.pluralName.toLowerCase() : 'ships';
+      %>
+      <h1 class="mb-4"><%= listTitle %></h1>
       <% if (typeof error !== 'undefined' && error) { %>
         <div class="alert alert-warning"><%= error %></div>
       <% } %>
       <div class="row g-4">
         <% if (classes && classes.length > 0) { %>
-          <% classes.forEach(function(c) { %>
+          <% (Array.isArray(classes) ? classes : []).forEach(function(c) {
+            var cid = c.id ?? c.Id;
+            var cname = c.name ?? c.Name ?? '';
+            var ctype = c.type ?? c.Type ?? '-';
+            var ccountry = c.country ?? c.Country ?? '-';
+            var ccount = c.shipCount ?? c.ShipCount ?? 0;
+          %>
             <div class="col-md-6 col-lg-4">
               <div class="card h-100">
                 <div class="card-body">
-                  <h5 class="card-title"><%= c.name %></h5>
-                  <p class="card-text text-muted mb-1"><%= c.type %> · <%= c.country %></p>
-                  <p class="card-text small mb-2"><%= c.shipCount %> ship<%= c.shipCount !== 1 ? 's' : '' %> in class</p>
-                  <a href="/classes/<%= c.id %>" class="btn btn-outline-dark btn-sm">View Ships</a>
+                  <h5 class="card-title"><%= cname %></h5>
+                  <p class="card-text text-muted mb-1"><%= ctype %> · <%= ccountry %></p>
+                  <p class="card-text small mb-2"><%= ccount %> <%= shipPlural %> <%= countLabel %></p>
+                  <a href="/classes/<%= cid %>" class="btn btn-outline-dark btn-sm">View <%= shipPlural %></a>
+                  <a href="/classes/<%= cid %>" class="btn btn-outline-secondary btn-sm admin-only ms-1">Edit</a>
                 </div>
               </div>
             </div>
           <% }); %>
         <% } else { %>
-          <div class="col-12 text-center text-muted py-5">No ship classes found.</div>
+          <div class="col-12 text-center text-muted py-5"><%= emptyMessage %></div>
         <% } %>
       </div>
     </div>
