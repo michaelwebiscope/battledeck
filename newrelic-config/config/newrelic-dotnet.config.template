@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- App-local newrelic.config for .NET apps. Deployed by deploy-newrelic.ps1. -->
-<!-- License: {{LICENSE_KEY}} (or NEW_RELIC_LICENSE_KEY env from registry for services). -->
-<configuration xmlns="urn:newrelic-config" agentEnabled="true">
-  <service licenseKey="{{LICENSE_KEY}}" sendEnvironmentInfo="true" autoStart="true" />
-  <application>
-    <name>{{APP_NAME}}</name>
-  </application>
-</configuration>

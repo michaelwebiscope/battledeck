@@ -1,6 +1,0 @@
-# New Relic environment variables (set on VM or in service registry)
-# Copy to .env or configure via deploy-newrelic.ps1 -LicenseKey
-
-NEW_RELIC_LICENSE_KEY=ec32fcb24680059dd463ffbb0cb6c5ddFFFFNRAL
-NEW_RELIC_APP_NAME=Navalarchive
-NEW_RELIC_DISTRIBUTED_TRACING_ENABLED=true

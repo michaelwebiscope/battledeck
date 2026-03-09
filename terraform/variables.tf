@@ -75,13 +75,6 @@ variable "github_token" {
   sensitive   = true
 }
 
-variable "newrelic_license_key" {
-  description = "New Relic license key for Node.js APM (leave empty to skip New Relic)"
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
 variable "bootstrap_trigger" {
   description = "Bump this (e.g. 2, 3) to force VM bootstrap to re-run. WARNING: Takes 45-60 min. For quick web updates use refresh_web_trigger instead."
   type        = string

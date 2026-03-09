@@ -50,7 +50,7 @@ The site will be available at **http://localhost:3000**.
 ./scripts/run-local.sh
 ```
 
-Starts all services: Payment (5001), Card (5002), Cart (5003), API (5000), Web (3000). Press Ctrl+C to stop.
+Starts all services: Payment (5001), Card (5002), Cart (5003), API (5000), Web (3000). Press Ctrl+C to stop. Payment uses the Go service when `go` is installed; otherwise falls back to .NET PaymentSimulation.
 
 **Option B: Manual (API + Web only)**
 
@@ -105,26 +105,6 @@ Ship descriptions and images are fetched from **Wikipedia** on first run (or whe
 
 - **API URL:** Set `API_URL` env var to change backend (default: `http://localhost:5000`)
 - **Frontend Port:** Set `PORT` env var (default: `3000`)
-
-### Testing New Relic instrumentation (outside IIS)
-
-To run the Node.js frontend with New Relic APM locally (without IIS):
-
-```bash
-cd NavalArchive.Web
-export NEW_RELIC_LICENSE_KEY="your-license-key"
-export NEW_RELIC_APP_NAME="Navalarchive"
-export NEW_RELIC_AI_MONITORING_ENABLED=true
-npm run start:instrumented
-```
-
-Or in one line:
-
-```bash
-NEW_RELIC_LICENSE_KEY=your-key NEW_RELIC_APP_NAME=Navalarchive npm run start:instrumented
-```
-
-The API runs via `dotnet run` and does not use IIS locally; the .NET agent (if installed) would instrument it the same way in both scenarios.
 
 ---
 

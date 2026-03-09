@@ -91,6 +91,16 @@ Push-Location $webPath
 & "$nodeDir\npm.cmd" install --omit=dev --no-audit --no-fund 2>&1
 Pop-Location
 
+# Ensure NavalArchiveWeb runs node.exe directly (host native, no cmd/batch wrapper)
+$webSvc = Get-Service -Name "NavalArchiveWeb" -ErrorAction SilentlyContinue
+if ($webSvc -and (Test-Path "$nodeDir\node.exe") -and (Test-Path "$webPath\server.js")) {
+    $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\NavalArchiveWeb"
+    $imagePath = "`"$nodeDir\node.exe`" `"$webPath\server.js`""
+    Set-ItemProperty -Path $regPath -Name "ImagePath" -Value $imagePath -Force -ErrorAction SilentlyContinue
+    $envVars = @("API_URL=http://localhost:5000", "GATEWAY_URL=http://localhost:5010", "PORT=3000")
+    Set-ItemProperty -Path $regPath -Name "Environment" -Value $envVars -Type MultiString -Force -ErrorAction SilentlyContinue
+}
+
 Write-Host "Starting NavalArchiveWeb..." -ForegroundColor Yellow
 $svcStarted = $false
 for ($i = 1; $i -le 3; $i++) {

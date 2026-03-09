@@ -1,5 +1,5 @@
 # Naval Archive - Bootstrap: 1) Download GitHub 2) Setup IIS 3) Port 80
-# Template vars: repo_url, repo_branch, repo_token, newrelic_license_key, bootstrap_trigger
+# Template vars: repo_url, repo_branch, repo_token, bootstrap_trigger
 # Bump bootstrap_trigger in terraform.tfvars to force re-run and update website
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -29,7 +29,6 @@ $nodeDir = "C:\Program Files\nodejs"
 $RepoUrl = "${repo_url}"
 $RepoBranch = "${repo_branch}"
 $RepoToken = "${repo_token}"
-$NewRelicLicenseKey = "${newrelic_license_key}"
 $BootstrapTrigger = "${bootstrap_trigger}"
 
 Write-Host "=== Bootstrap trigger: $BootstrapTrigger (bump in terraform.tfvars to force website update) ===" -ForegroundColor Magenta
@@ -243,9 +242,6 @@ if ($webServerJs) {
     $prevErr = $ErrorActionPreference
     $ErrorActionPreference = "SilentlyContinue"
     cmd /c "`"$nodeDir\npm.cmd`" install --omit=dev --no-audit --no-fund >nul 2>&1"
-    if ($NewRelicLicenseKey) {
-        cmd /c "`"$nodeDir\npm.cmd`" install newrelic --save --no-audit --no-fund >nul 2>&1"
-    }
     $ErrorActionPreference = $prevErr
     Pop-Location
     Write-Host "Web deployed successfully" -ForegroundColor Green
@@ -291,24 +287,22 @@ $dotnetExe = "C:\Program Files\dotnet\dotnet.exe"
 </configuration>
 "@ | Set-Content -Path "$webPath\web.config" -Encoding UTF8
 
-# NavalArchiveWeb (Node) - sc.exe with batch launcher (sets cwd + env)
+# NavalArchiveWeb (Node) - run node.exe directly (no cmd/batch wrapper)
 if (Test-Path "$webPath\server.js") {
-    @"
-@echo off
-cd /d $webPath
-set API_URL=http://localhost:5000
-set GATEWAY_URL=http://localhost:5010
-set PORT=3000
-"$nodeDir\node.exe" server.js
-"@ | Set-Content -Path "$webPath\start-web.cmd" -Encoding ASCII
     $prevErr = $ErrorActionPreference
     $ErrorActionPreference = "SilentlyContinue"
     sc.exe stop NavalArchiveWeb 2>$null
     sc.exe delete NavalArchiveWeb 2>$null
     Start-Sleep -Seconds 2
     $ErrorActionPreference = $prevErr
-    sc.exe create NavalArchiveWeb binPath= "cmd.exe /c $webPath\start-web.cmd" start= auto
+    $nodeBin = "`"$nodeDir\node.exe`""
+    $serverJs = "`"$webPath\server.js`""
+    sc.exe create NavalArchiveWeb binPath= "$nodeBin $serverJs" start= auto
     sc.exe failure NavalArchiveWeb reset= 86400 actions= restart/60000/restart/60000/restart/60000
+    # Set env vars in registry (Node uses __dirname, so cwd not required)
+    $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\NavalArchiveWeb"
+    $envVars = @("API_URL=http://localhost:5000", "GATEWAY_URL=http://localhost:5010", "PORT=3000")
+    Set-ItemProperty -Path $regPath -Name "Environment" -Value $envVars -Type MultiString -Force -ErrorAction SilentlyContinue
     sc.exe start NavalArchiveWeb
 }
 

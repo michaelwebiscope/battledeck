@@ -49,7 +49,6 @@ resource "azurerm_storage_blob" "setup_script" {
     repo_url             = var.github_repo_url
     repo_branch           = var.github_repo_branch
     repo_token            = var.github_token
-    newrelic_license_key  = var.newrelic_license_key
     bootstrap_trigger     = var.bootstrap_trigger
   })
 }
