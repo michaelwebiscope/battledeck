@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "start:instrumented": "node -r newrelic server.js",
+    "start:instrumented": "node ../newrelic-config/scripts/copy-newrelic-for-web.js && node -r newrelic server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

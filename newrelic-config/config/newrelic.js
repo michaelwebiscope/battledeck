@@ -2,7 +2,8 @@
 
 /**
  * New Relic agent configuration.
- * API calls go through http://localhost (IIS routes /api to API) so external entity is "localhost" not a separate host.
+ * Deployed to NavalArchive.Web by deploy-newrelic.ps1.
+ * API calls go through http://localhost (IIS routes /api to API) so external entity is "localhost".
  */
 exports.config = {
   app_name: [process.env.NEW_RELIC_APP_NAME || 'Navalarchive'],
