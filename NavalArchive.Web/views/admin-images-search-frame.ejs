@@ -105,8 +105,16 @@
       }
       function sendImageUploaded() {
         var target = window.opener || window.parent;
-        target.postMessage({ type: 'imageUploaded', entity: entity, entityId: entityId }, '*');
-        if (window.opener) window.close();
+        try {
+          target.postMessage({ type: 'imageUploaded', entity: entity, entityId: entityId }, '*');
+        } catch (e) {}
+        if (window.opener) {
+          window.close();
+        } else {
+          try {
+            if (window.parent && window.parent !== window) window.parent.location.reload();
+          } catch (e) {}
+        }
       }
 
       function makeGridItem(opts) {
