@@ -6,9 +6,10 @@
   1. Copies newrelic.js to NavalArchive.Web
   2. Ensures newrelic npm package is installed
   3. Updates start-web.cmd to use node -r newrelic
-  4. Deploys app-local newrelic.config to each .NET app folder (app name per app)
-  5. Sets registry env vars for NavalArchive services (NEW_RELIC_APP_NAME, NEW_RELIC_LICENSE_KEY)
-  6. Optionally restarts services
+  4. Installs New Relic .NET Agent MSI if not present (creates C:\Program Files\New Relic)
+  5. Deploys app-local newrelic.config to each .NET app folder (app name per app)
+  6. Sets registry env vars for NavalArchive services (NEW_RELIC_APP_NAME, NEW_RELIC_LICENSE_KEY)
+  7. Optionally restarts services
 
 .PARAMETER LicenseKey
   New Relic license key. If empty, skips instrumentation (config copy only).
@@ -80,7 +81,29 @@ $nodeCmd
 Set-Content -Path $startWebPath -Value $startWebContent -Encoding ASCII -Force
 Write-Host "  [OK] Updated start-web.cmd (Node startup)" -ForegroundColor Green
 
-# 4. Deploy app-local newrelic.config to each .NET app folder (outside IIS)
+# 4. Install New Relic .NET Agent MSI if not present (creates C:\Program Files\New Relic)
+$nrDotNetPath = "C:\Program Files\New Relic\.NET Agent"
+if (-not (Test-Path $nrDotNetPath) -and $LicenseKey) {
+    Write-Host "  Installing New Relic .NET Agent MSI..." -ForegroundColor Yellow
+    $msiUrl = "https://download.newrelic.com/dot_net_agent/latest_release/NewRelicDotNetAgent_x64.msi"
+    $msiPath = "$tempDir\NewRelicDotNetAgent_x64.msi"
+    try {
+        New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
+        Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath -UseBasicParsing -TimeoutSec 120
+        $proc = Start-Process msiexec -ArgumentList "/i", $msiPath, "/qn", "/norestart" -Wait -PassThru
+        if ($proc.ExitCode -eq 0) {
+            Write-Host "  [OK] New Relic .NET Agent installed" -ForegroundColor Green
+        } else {
+            Write-Host "  [WARN] MSI exit code: $($proc.ExitCode)" -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "  [WARN] .NET Agent install failed: $_" -ForegroundColor Yellow
+    }
+} elseif (Test-Path $nrDotNetPath) {
+    Write-Host "  [OK] New Relic .NET Agent already installed" -ForegroundColor Green
+}
+
+# 5. Deploy app-local newrelic.config to each .NET app folder (outside IIS)
 # Per New Relic docs: app-local config is recommended for non-IIS apps
 # https://docs.newrelic.com/docs/apm/agents/net-agent/configuration/name-your-net-application
 $dotnetApps = @(
@@ -114,7 +137,7 @@ try {
     Write-Host "  [WARN] Could not deploy .NET configs: $_" -ForegroundColor Yellow
 }
 
-# 5. Instrument services (registry env vars) when license key provided
+# 6. Instrument services (registry env vars) when license key provided
 if ($LicenseKey) {
     $instrumentUrl = "$($RepoUrl -replace '\.git$','')/raw/$RepoBranch/newrelic-config/newrelic-instrument-services.ps1"
     $instrumentPath = "$tempDir\newrelic-instrument-services.ps1"
