@@ -156,6 +156,9 @@ function toEntity(item, type = 'ship') {
   const id = item.id ?? item.Id;
   const base = cfg.detailRoute || '/' + type + 's';
   const gallery = cfg.gallerySegment || 'image';
+  const imageVersion = item.imageVersion ?? item.ImageVersion ?? 0;
+  const fallbackUrl = item.imageUrl ?? item.ImageUrl ?? '';
+  const viewImageUrl = gallery ? `/gallery/${gallery}/${id}?v=${imageVersion}` : fallbackUrl;
   let subtitle = '';
   if (cfg.subtitleField && item[cfg.subtitleField]) {
     subtitle = (cfg.subtitleFormat || '{value}').replace('{value}', item[cfg.subtitleField]);
@@ -168,17 +171,17 @@ function toEntity(item, type = 'ship') {
     subtitle = parts.join(' · ');
   }
   return {
+    ...item,
     id,
     name: item.name ?? item.Name ?? '',
     description: item.description ?? item.Description ?? '',
     subtitle,
-    imageUrl: gallery ? `/gallery/${gallery}/${id}?v=${item.imageVersion ?? item.ImageVersion ?? 0}` : '',
-    imageVersion: item.imageVersion ?? item.ImageVersion ?? 0,
+    imageUrl: viewImageUrl,
+    imageVersion,
     imageGallery: gallery,
     type,
     typeConfig: cfg,
-    detailUrl: `${base}/${id}`,
-    ...item
+    detailUrl: `${base}/${id}`
   };
 }
 

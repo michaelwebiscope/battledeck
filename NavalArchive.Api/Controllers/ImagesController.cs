@@ -263,6 +263,7 @@ public class ImagesController : ControllerBase
 
         ship.ImageData = data;
         ship.ImageContentType = ct;
+        ship.ImageManuallySet = true;
         ship.ImageVersion++;
         await _db.SaveChangesAsync();
         _cacheInv.OnShipUpdated();
@@ -286,6 +287,7 @@ public class ImagesController : ControllerBase
 
         captain.ImageData = data;
         captain.ImageContentType = ct;
+        captain.ImageManuallySet = true;
         captain.ImageVersion++;
         await _db.SaveChangesAsync();
         _cacheInv.OnCaptainUpdated();

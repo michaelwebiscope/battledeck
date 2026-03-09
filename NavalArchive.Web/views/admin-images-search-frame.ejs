@@ -272,11 +272,13 @@
       uploadFileInput.onchange = function() {
         var file = uploadFileInput.files && uploadFileInput.files[0];
         if (!file || !file.type.match(/^image\//)) { status.textContent = 'Select an image file.'; status.className = 'status error'; return; }
+        if (!entity || !entityId) { status.textContent = 'Cannot upload: missing entity or id.'; status.className = 'status error'; return; }
         status.textContent = 'Uploading...';
         status.className = 'status';
         var form = new FormData();
         form.append('file', file);
-        fetch('/api/images/' + entity + '/' + entityId + '/upload', {
+        var uploadUrl = '/api/images/' + encodeURIComponent(entity) + '/' + encodeURIComponent(entityId) + '/upload';
+        fetch(uploadUrl, {
           method: 'POST',
           body: file,
           headers: { 'Content-Type': file.type || 'image/jpeg' }

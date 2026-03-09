@@ -184,7 +184,15 @@
     });
 
     window.addEventListener('message', function(e) {
-      if (!e.data || e.data.type !== 'imageSelected' || String(e.data.entityId) !== String(captainId)) return;
+      if (!e.data) return;
+      if (e.data.type === 'imageUploaded' && e.data.entity === 'captain' && String(e.data.entityId) === String(captainId)) {
+        frame.src = 'about:blank';
+        searchPane.style.display = 'none';
+        formPane.style.display = 'block';
+        location.href = location.pathname + '?_=' + Date.now();
+        return;
+      }
+      if (e.data.type !== 'imageSelected' || String(e.data.entityId) !== String(captainId)) return;
       if (e.data.entity !== 'captain') return;
       fetch('/api/images/captain/' + captainId + '/from-url', {
         method: 'POST',
