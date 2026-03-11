@@ -13,15 +13,17 @@ public class ImagesController : ControllerBase
 {
     private readonly NavalArchiveDbContext _db;
     private readonly ImageStorageService _storage;
-    private readonly ImageSearchService _imageSearch;
     private readonly CacheInvalidationService _cacheInv;
+    private readonly IHttpClientFactory _http;
+    private readonly IConfiguration _config;
 
-    public ImagesController(NavalArchiveDbContext db, ImageStorageService storage, ImageSearchService imageSearch, CacheInvalidationService cacheInv)
+    public ImagesController(NavalArchiveDbContext db, ImageStorageService storage, CacheInvalidationService cacheInv, IHttpClientFactory http, IConfiguration config)
     {
         _db = db;
         _storage = storage;
-        _imageSearch = imageSearch;
         _cacheInv = cacheInv;
+        _http = http;
+        _config = config;
     }
 
     /// <summary>Serve ship image from database. Id is ship id.</summary>
@@ -79,87 +81,159 @@ public class ImagesController : ControllerBase
         return await _storage.GetAuditAsync(_db);
     }
 
-    /// <summary>Test API keys for configured image sources only. Returns per-source success/failure.</summary>
+    /// <summary>Test API keys for configured image sources. Routes to Java ImagePopulator.</summary>
     [HttpPost("test-keys")]
-    public async Task<ActionResult<List<KeyTestResult>>> TestKeys([FromBody] PopulateRequest? request = null, CancellationToken ct = default)
+    public async Task<IActionResult> TestKeys([FromBody] PopulateRequest? request = null, CancellationToken ct = default)
     {
-        var keys = BuildImageSearchKeys(request);
-        var sources = await _db.ImageSources.AsNoTracking().OrderBy(s => s.SortOrder).ToListAsync(ct);
-        var sourceConfigs = sources.Select(ImageSourcesController.ToConfig).ToList();
-        var results = await _imageSearch.TestKeysAsync(keys, sourceConfigs, ct);
-        return Ok(results);
+        request = await WithDbSourcesAsync(request, ct);
+        return await ProxyPostAsync(JavaBaseUrl + "/test-keys", request, ct, TimeSpan.FromSeconds(30));
     }
 
-    private static ImageSearchKeys? BuildImageSearchKeys(PopulateRequest? request)
-    {
-        if (request == null) return null;
-        var hasKeys = (request.PexelsApiKey != null || request.PixabayApiKey != null || request.UnsplashAccessKey != null || request.GoogleApiKey != null) ||
-            (request.CustomKeys != null && request.CustomKeys.Count > 0);
-        if (!hasKeys) return null;
-        return new ImageSearchKeys(request.PexelsApiKey, request.PixabayApiKey, request.UnsplashAccessKey, request.GoogleApiKey, request.GoogleCseId, request.CustomKeys);
-    }
+    private string JavaBaseUrl => (_config["ImagePopulator:Url"] ?? "http://localhost:5099").TrimEnd('/');
 
-    private async Task<PopulateOptions?> BuildPopulateOptionsAsync(PopulateRequest? request, CancellationToken ct = default)
+    private async Task<PopulateRequest?> WithDbSourcesAsync(PopulateRequest? request, CancellationToken ct)
     {
-        if (request == null) return null;
-        var sources = request.ImageSources;
-        if (sources == null || sources.Count == 0)
+        if (request == null) request = new PopulateRequest();
+        if (request.ImageSources == null || request.ImageSources.Count == 0)
         {
             var dbSources = await _db.ImageSources.OrderBy(s => s.SortOrder).ToListAsync(ct);
-            sources = dbSources.Select(ImageSourcesController.ToConfig).ToList();
+            request.ImageSources = dbSources.Select(ImageSourcesController.ToConfig).ToList();
         }
-        var hasOpts = request.ShipSearchPrefix != null || request.CaptainSearchPrefix != null || (sources != null && sources.Count > 0);
-        if (!hasOpts) return null;
-        return new PopulateOptions(request.ShipSearchPrefix, request.CaptainSearchPrefix, sources);
+        return request;
     }
 
-    /// <summary>Populate all images from ImageUrl into ImageData. Uses image sources entity from DB when not in request.</summary>
-    [HttpPost("populate")]
-    public async Task<ActionResult<PopulateResult>> PopulateAll([FromBody] PopulateRequest? request = null, CancellationToken ct = default)
+    private static readonly JsonSerializerOptions _camelCase = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+
+    private async Task<IActionResult> ProxyPostAsync(string javaUrl, object? body, CancellationToken ct, TimeSpan? timeout = null)
     {
-        var keys = BuildImageSearchKeys(request);
-        var options = await BuildPopulateOptionsAsync(request, ct);
-        var result = await _storage.PopulateAllAsync(_db, default, keys, options);
+        try
+        {
+            var client = _http.CreateClient();
+            client.Timeout = timeout ?? TimeSpan.FromMinutes(10);
+            var json = JsonSerializer.Serialize(body, _camelCase);
+            using var res = await client.PostAsync(javaUrl, new StringContent(json, System.Text.Encoding.UTF8, "application/json"), ct);
+            var responseBody = await res.Content.ReadAsStringAsync(ct);
+            return new ContentResult
+            {
+                Content = responseBody,
+                ContentType = "application/json",
+                StatusCode = (int)res.StatusCode
+            };
+        }
+        catch (HttpRequestException ex) { return StatusCode(503, new { message = "ImagePopulator unreachable.", detail = ex.Message }); }
+        catch (TaskCanceledException)   { return StatusCode(504, new { message = "ImagePopulator request timed out." }); }
+    }
+
+    /// <summary>Returns ships and captains without cached images (used by Java populate).</summary>
+    [HttpGet("populate-queue")]
+    public async Task<ActionResult> GetPopulateQueue(CancellationToken ct = default)
+    {
+        var ships = await _db.Ships
+            .Where(s => s.ImageData == null && !s.ImageManuallySet)
+            .Select(s => new { s.Id, s.Name, s.ImageUrl })
+            .ToListAsync(ct);
+        var captains = await _db.Captains
+            .Where(c => c.ImageData == null && !c.ImageManuallySet)
+            .Select(c => new { c.Id, c.Name, c.ImageUrl })
+            .ToListAsync(ct);
+        return Ok(new { ships, captains });
+    }
+
+    /// <summary>Populate all images. Routes to Java ImagePopulator.</summary>
+    [HttpPost("populate")]
+    public async Task<IActionResult> PopulateAll([FromBody] PopulateRequest? request = null, CancellationToken ct = default)
+    {
+        request = await WithDbSourcesAsync(request, ct);
+        var result = await ProxyPostAsync(JavaBaseUrl + "/populate", request, ct);
         _cacheInv.OnShipUpdated();
         _cacheInv.OnCaptainUpdated();
-        return Ok(result);
+        return result;
     }
 
-    /// <summary>Streaming populate: Server-Sent Events with progress after each ship/captain.</summary>
+    /// <summary>Streaming populate: SSE progress forwarded from Java ImagePopulator.</summary>
     [HttpPost("populate/stream")]
     public async Task PopulateStream([FromBody] PopulateRequest? request = null, CancellationToken ct = default)
     {
         Response.ContentType = "text/event-stream";
         Response.Headers.CacheControl = "no-cache";
-        var keys = BuildImageSearchKeys(request);
-        var options = await BuildPopulateOptionsAsync(request, ct);
-        var jsonOpts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
-        await foreach (var evt in _storage.PopulateAllStreamAsync(_db, ct, keys, options))
+        request = await WithDbSourcesAsync(request, ct);
+        try
         {
-            var json = JsonSerializer.Serialize(new { evt.Type, evt.Data }, jsonOpts);
-            await Response.WriteAsync($"data: {json}\n\n", ct);
-            await Response.Body.FlushAsync(ct);
+            var client = _http.CreateClient();
+            client.Timeout = System.Threading.Timeout.InfiniteTimeSpan;
+            var json = JsonSerializer.Serialize(request, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+            var javaReq = new HttpRequestMessage(HttpMethod.Post, JavaBaseUrl + "/populate/stream")
+            {
+                Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")
+            };
+            using var javaResp = await client.SendAsync(javaReq, HttpCompletionOption.ResponseHeadersRead, ct);
+            using var stream = await javaResp.Content.ReadAsStreamAsync(ct);
+            using var reader = new System.IO.StreamReader(stream);
+            while (!reader.EndOfStream && !ct.IsCancellationRequested)
+            {
+                var line = await reader.ReadLineAsync();
+                if (line != null)
+                {
+                    await Response.WriteAsync(line + "\n", ct);
+                    await Response.Body.FlushAsync(ct);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            var msg = JsonSerializer.Serialize(new { type = "error", data = ex.Message });
+            await Response.WriteAsync($"data: {msg}\n\n", ct);
         }
         _cacheInv.OnShipUpdated();
         _cacheInv.OnCaptainUpdated();
     }
 
-    /// <summary>Populate a single ship image.</summary>
+    /// <summary>Populate a single ship image. Routes to Java ImagePopulator.</summary>
     [HttpPost("populate/ship/{id:int}")]
-    public async Task<IActionResult> PopulateShip(int id)
+    public async Task<IActionResult> PopulateShip(int id, [FromBody] PopulateRequest? request = null, CancellationToken ct = default)
     {
-        var (stored, reason, _) = await _storage.PopulateShipImageAsync(_db, id);
-        if (stored) _cacheInv.OnShipUpdated();
-        return stored ? Ok() : NotFound(new { reason });
+        request = await WithDbSourcesAsync(request, ct);
+        var result = await ProxyPostAsync(JavaBaseUrl + "/populate/ship/" + id, request, ct, TimeSpan.FromMinutes(2));
+        _cacheInv.OnShipUpdated();
+        return result;
     }
 
-    /// <summary>Populate a single captain image.</summary>
+    /// <summary>Populate a single captain image. Routes to Java ImagePopulator.</summary>
     [HttpPost("populate/captain/{id:int}")]
-    public async Task<IActionResult> PopulateCaptain(int id)
+    public async Task<IActionResult> PopulateCaptain(int id, [FromBody] PopulateRequest? request = null, CancellationToken ct = default)
     {
-        var (stored, reason, _) = await _storage.PopulateCaptainImageAsync(_db, id);
-        if (stored) _cacheInv.OnCaptainUpdated();
-        return stored ? Ok() : NotFound(new { reason });
+        request = await WithDbSourcesAsync(request, ct);
+        var result = await ProxyPostAsync(JavaBaseUrl + "/populate/captain/" + id, request, ct, TimeSpan.FromMinutes(2));
+        _cacheInv.OnCaptainUpdated();
+        return result;
+    }
+
+    /// <summary>Trigger the Java ImagePopulator (Wikipedia) to run. API calls the Java entity at ImagePopulator:Url/run.</summary>
+    [HttpPost("populate/wikipedia")]
+    public async Task<IActionResult> TriggerWikipediaPopulate(CancellationToken ct = default)
+    {
+        var baseUrl = _config["ImagePopulator:Url"] ?? "http://localhost:5099";
+        var url = baseUrl.TrimEnd('/') + "/run";
+        try
+        {
+            var client = _http.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(15);
+            var res = await client.PostAsync(url, null, ct);
+            if (res.StatusCode == System.Net.HttpStatusCode.Accepted)
+                return Accepted(new { message = "Wikipedia populate started. The Java ImagePopulator is fetching ship images and uploading to the API." });
+            if (res.StatusCode == System.Net.HttpStatusCode.Conflict)
+                return StatusCode(409, new { message = "ImagePopulator is already running a populate job." });
+            var body = await res.Content.ReadAsStringAsync(ct);
+            return StatusCode((int)res.StatusCode, new { message = body ?? res.ReasonPhrase });
+        }
+        catch (HttpRequestException ex)
+        {
+            return StatusCode(503, new { message = "ImagePopulator unreachable. Ensure the Java listener service is running on " + baseUrl + ".", detail = ex.Message });
+        }
+        catch (TaskCanceledException)
+        {
+            return StatusCode(504, new { message = "ImagePopulator request timed out." });
+        }
     }
 
     /// <summary>Delete ship image. Clears ImageData, ImageUrl, and ImageManuallySet so sync can repopulate.</summary>
@@ -194,18 +268,24 @@ public class ImagesController : ControllerBase
         return Ok(new { deleted = true });
     }
 
-    /// <summary>Search images by query. Uses configured image sources (All = try all enabled sources). Provider filters to one source.</summary>
+    /// <summary>Search images by query. Routes to Java ImagePopulator.</summary>
     [HttpPost("search")]
-    public async Task<ActionResult<List<string>>> SearchImages([FromBody] ImageSearchRequest? request = null, CancellationToken ct = default)
+    public async Task<IActionResult> SearchImages([FromBody] ImageSearchRequest? request = null, CancellationToken ct = default)
     {
-        var q = request?.Query ?? "battleship";
-        var keys = request != null && (request.PexelsApiKey != null || request.PixabayApiKey != null || request.UnsplashAccessKey != null || request.GoogleApiKey != null)
-            ? new ImageSearchKeys(request.PexelsApiKey, request.PixabayApiKey, request.UnsplashAccessKey, request.GoogleApiKey, request.GoogleCseId)
-            : null;
         var sources = await _db.ImageSources.AsNoTracking().OrderBy(s => s.SortOrder).ToListAsync(ct);
-        var sourceConfigs = sources.Select(ImageSourcesController.ToConfig).ToList();
-        var (urls, source) = await _imageSearch.FindImageUrlsAsync(q, request?.MaxCount ?? 12, ct, keys, null, request?.Provider, sourceConfigs);
-        return Ok(new { source = source ?? "", urls });
+        var javaRequest = new
+        {
+            Query = request?.Query ?? "battleship",
+            MaxCount = request?.MaxCount ?? 12,
+            Provider = request?.Provider,
+            PexelsApiKey = request?.PexelsApiKey,
+            PixabayApiKey = request?.PixabayApiKey,
+            UnsplashAccessKey = request?.UnsplashAccessKey,
+            GoogleApiKey = request?.GoogleApiKey,
+            GoogleCseId = request?.GoogleCseId,
+            ImageSources = sources.Select(ImageSourcesController.ToConfig).ToList()
+        };
+        return await ProxyPostAsync(JavaBaseUrl + "/search", javaRequest, ct, TimeSpan.FromSeconds(30));
     }
 
     /// <summary>Set ship image from URL (fetch and store).</summary>
