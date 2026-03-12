@@ -83,5 +83,7 @@
     if (Test-Path $iisreset) { & $iisreset /noforce }
     $appcmd = if (Test-Path "$env:windir\SysNative\inetsrv\appcmd.exe") { "$env:windir\SysNative\inetsrv\appcmd.exe" } else { "$env:windir\System32\inetsrv\appcmd.exe" }
     & $appcmd stop site "Default Web Site" 2>$null
+    exit 0
   args:
     executable: powershell
+  failed_when: false
