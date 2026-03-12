@@ -1,0 +1,174 @@
+---
+# Create deploy dirs, dotnet publish API and all services
+
+- name: Create deploy directories
+  ansible.windows.win_file:
+    path: "{{ item }}"
+    state: directory
+  loop:
+    - "{{ api_path }}"
+    - "{{ web_path }}"
+    - "{{ payment_path }}"
+    - "{{ card_path }}"
+    - "{{ cart_path }}"
+    - "{{ image_populator_path }}"
+    - "{{ api_path }}\\logs"
+    - "{{ chain_paths.Gateway }}"
+    - "{{ chain_paths.Auth }}"
+    - "{{ chain_paths.User }}"
+    - "{{ chain_paths.Catalog }}"
+    - "{{ chain_paths.Inventory }}"
+    - "{{ chain_paths.Basket }}"
+    - "{{ chain_paths.Order }}"
+    - "{{ chain_paths.Payment }}"
+    - "{{ chain_paths.Shipping }}"
+    - "{{ chain_paths.Notification }}"
+
+- name: Stop IIS API site for build
+  ansible.windows.win_shell: |
+    $appcmd = if (Test-Path "$env:windir\SysNative\inetsrv\appcmd.exe") { "$env:windir\SysNative\inetsrv\appcmd.exe" } else { "$env:windir\System32\inetsrv\appcmd.exe" }
+    if (Test-Path $appcmd) {
+      & $appcmd stop site NavalArchive-API 2>$null
+      & $appcmd stop apppool NavalArchive-API 2>$null
+    }
+  args:
+    executable: powershell
+  ignore_errors: true
+
+- name: Stop IIS chain sites/app pools before publish (avoid locked dlls)
+  ansible.windows.win_shell: |
+    $appcmd = if (Test-Path "$env:windir\SysNative\inetsrv\appcmd.exe") { "$env:windir\SysNative\inetsrv\appcmd.exe" } else { "$env:windir\System32\inetsrv\appcmd.exe" }
+    if (Test-Path $appcmd) {
+      {% for item in iis_chain_services %}
+      & $appcmd stop site "{{ item.site }}" 2>$null
+      & $appcmd stop apppool "{{ item.apppool }}" 2>$null
+      {% endfor %}
+    }
+  args:
+    executable: powershell
+  ignore_errors: true
+
+- name: Clear API output (except logs)
+  ansible.windows.win_shell: |
+    if (Test-Path "{{ api_path }}") {
+      Get-ChildItem "{{ api_path }}" -Exclude logs | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    }
+  args:
+    executable: powershell
+
+- name: Publish API
+  ansible.windows.win_shell: |
+    $csproj = Get-ChildItem "{{ src_path }}" -Filter "NavalArchive.Api.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($csproj) {
+      Push-Location $csproj.DirectoryName
+      & "{{ dotnet_dir }}\dotnet.exe" publish -c Release -o "{{ api_path }}"
+      if ($LASTEXITCODE -ne 0) { throw "API publish failed" }
+      Pop-Location
+    }
+  args:
+    executable: powershell
+
+- name: Publish Payment (self-contained)
+  ansible.windows.win_shell: |
+    $csproj = Get-ChildItem "{{ src_path }}" -Filter "NavalArchive.PaymentSimulation.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($csproj) {
+      $temp = "{{ ansible_env.TEMP }}\\navalarchive-payment-publish"
+      if (Test-Path $temp) { Remove-Item -Recurse -Force $temp }
+      Push-Location $csproj.DirectoryName
+      & "{{ dotnet_dir }}\dotnet.exe" publish -c Release -r win-x64 --self-contained true -o $temp
+      if ($LASTEXITCODE -ne 0) { Pop-Location; throw "Payment publish failed" }
+      Pop-Location
+      if (Test-Path "{{ payment_path }}") {
+        if (Test-Path "{{ payment_path }}.old") { Remove-Item -Recurse -Force "{{ payment_path }}.old" }
+        Rename-Item "{{ payment_path }}" "navalarchive-payment.old" -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 2
+      }
+      New-Item -ItemType Directory -Force -Path "{{ payment_path }}" | Out-Null
+      Copy-Item -Path "$temp\*" -Destination "{{ payment_path }}" -Recurse -Force
+      if (Test-Path "{{ payment_path }}.old") { Remove-Item -Recurse -Force "{{ payment_path }}.old" }
+      Remove-Item -Recurse -Force $temp -ErrorAction SilentlyContinue
+    }
+  args:
+    executable: powershell
+
+- name: Publish Card (self-contained)
+  ansible.windows.win_shell: |
+    $csproj = Get-ChildItem "{{ src_path }}" -Filter "NavalArchive.CardService.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($csproj) {
+      Push-Location $csproj.DirectoryName
+      & "{{ dotnet_dir }}\dotnet.exe" publish -c Release -r win-x64 --self-contained true -o "{{ card_path }}"
+      if ($LASTEXITCODE -ne 0) { throw "Card publish failed" }
+      Pop-Location
+    }
+  args:
+    executable: powershell
+
+- name: Publish Cart (self-contained)
+  ansible.windows.win_shell: |
+    $csproj = Get-ChildItem "{{ src_path }}" -Filter "NavalArchive.CartService.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($csproj) {
+      Push-Location $csproj.DirectoryName
+      & "{{ dotnet_dir }}\dotnet.exe" publish -c Release -r win-x64 --self-contained true -o "{{ cart_path }}"
+      if ($LASTEXITCODE -ne 0) { throw "Cart publish failed" }
+      Pop-Location
+    }
+  args:
+    executable: powershell
+
+- name: Deploy NavalArchive.Web (copy + npm install)
+  ansible.windows.win_shell: |
+    $webServerJs = Get-ChildItem "{{ src_path }}" -Filter "server.js" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.DirectoryName -like "*NavalArchive.Web*" } | Select-Object -First 1
+    if ($webServerJs) {
+      $webSrcDir = $webServerJs.DirectoryName
+      if (Test-Path "{{ web_path }}") { Remove-Item "{{ web_path }}" -Recurse -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2 }
+      New-Item -ItemType Directory -Force -Path "{{ web_path }}" | Out-Null
+      Get-ChildItem -Path $webSrcDir -Exclude node_modules | Copy-Item -Destination "{{ web_path }}" -Recurse -Force
+      Push-Location "{{ web_path }}"
+      & "{{ node_dir }}\npm.cmd" install --omit=dev --no-audit --no-fund
+      if ("{{ newrelic_license_key | default('') }}") {
+        & "{{ node_dir }}\npm.cmd" install newrelic --omit=dev --no-audit --no-fund
+      }
+      Pop-Location
+    }
+  args:
+    executable: powershell
+
+- name: Deploy Go payment-service binary
+  ansible.windows.win_shell: |
+    $bin = Get-ChildItem "{{ src_path }}" -Filter "payment-service.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($bin) {
+      New-Item -ItemType Directory -Force -Path "{{ payment_path }}" | Out-Null
+      Copy-Item -Path $bin.FullName -Destination "{{ payment_path }}\payment-service.exe" -Force
+    }
+  args:
+    executable: powershell
+
+- name: Deploy ImagePopulator jar
+  ansible.windows.win_shell: |
+    $jar = Get-ChildItem "{{ src_path }}" -Filter "image-populator*.jar" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike "original-*" } | Select-Object -First 1
+    if ($jar) {
+      New-Item -ItemType Directory -Force -Path "{{ image_populator_path }}" | Out-Null
+      Copy-Item -Path $jar.FullName -Destination "{{ image_populator_path }}\image-populator.jar" -Force
+    }
+  args:
+    executable: powershell
+
+- name: Publish chain microservices
+  ansible.windows.win_shell: |
+    $spec = @{
+      Csproj = "{{ item.csproj }}"
+      Exe = "{{ item.exe }}"
+      OutPath = "{{ chain_paths[item.path_key] }}"
+      Port = {{ item.port }}
+    }
+    $csproj = Get-ChildItem "{{ src_path }}" -Filter $spec.Csproj -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($csproj) {
+      Push-Location $csproj.DirectoryName
+      & "{{ dotnet_dir }}\dotnet.exe" publish -c Release -r win-x64 --self-contained true -o $spec.OutPath
+      Pop-Location
+    }
+  args:
+    executable: powershell
+  loop: "{{ chain_services }}"
+  loop_control:
+    label: "{{ item.csproj }}"

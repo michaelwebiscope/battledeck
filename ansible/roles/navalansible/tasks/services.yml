@@ -127,37 +127,39 @@
       ImagePopulator listener:
       {{ 'healthy on port ' + (image_populator_port | string) if imagepopulator_health.status_code | default(0) == 200 else 'not responding on port ' + (image_populator_port | string) + ' after 90s - check C:\\inetpub\\run-image-populator-listener.ps1 and scheduled task logs' }}
 
-- name: Create NavalArchivePayment service
+- name: Create run-payment-service.ps1 (Go binary launcher)
+  ansible.windows.win_copy:
+    content: |
+      $ErrorActionPreference = "Stop"
+      $env:HTTP_PORT = "5001"
+      $env:DATABASE_URL = "{{ payment_path }}\payment.db"
+      $env:USE_QUEUE = "false"
+      $env:IDEMPOTENCY = "db"
+      {% if newrelic_license_key is defined and newrelic_license_key | length > 0 %}
+      $env:OTEL_SERVICE_NAME = "NavalArchivePayment"
+      $env:OTEL_EXPORTER_OTLP_ENDPOINT = "{{ otel_exporter_otlp_endpoint }}"
+      $env:OTEL_EXPORTER_OTLP_PROTOCOL = "{{ otel_exporter_otlp_protocol }}"
+      $env:OTEL_EXPORTER_OTLP_HEADERS = "api-key={{ newrelic_license_key }}"
+      $env:OTEL_TRACES_EXPORTER = "otlp"
+      $env:OTEL_METRICS_EXPORTER = "otlp"
+      $env:OTEL_RESOURCE_ATTRIBUTES = "service.name=NavalArchivePayment,service.namespace=NavalArchive,deployment.environment=prod"
+      {% endif %}
+      Set-Location "{{ payment_path }}"
+      & "{{ payment_path }}\payment-service.exe"
+    dest: "{{ payment_path }}\\run-payment-service.ps1"
+
+- name: Create NavalArchivePayment scheduled task (Go payment-service)
   ansible.windows.win_shell: |
+    sc.exe stop NavalArchivePayment 2>$null
     sc.exe delete NavalArchivePayment 2>$null
-    sc.exe create NavalArchivePayment binPath= "{{ payment_path }}\NavalArchive.PaymentSimulation.exe --urls=http://localhost:5001"
-    sc.exe config NavalArchivePayment start= auto
-    sc.exe failure NavalArchivePayment reset= 86400 actions= restart/60000/restart/60000/restart/60000
-    $envVars = @("OTEL_SERVICE_NAME=NavalArchivePayment")
-    $envVars += @(
-      "OTEL_DOTNET_AUTO_HOME={{ otel_dotnet_auto_home }}",
-      "OTEL_EXPORTER_OTLP_ENDPOINT={{ otel_exporter_otlp_endpoint }}",
-      "OTEL_EXPORTER_OTLP_PROTOCOL={{ otel_exporter_otlp_protocol }}",
-      "OTEL_EXPORTER_OTLP_HEADERS=api-key={{ newrelic_license_key }}",
-      "OTEL_TRACES_EXPORTER=otlp",
-      "OTEL_METRICS_EXPORTER=otlp",
-      "OTEL_LOGS_EXPORTER=otlp",
-      "OTEL_RESOURCE_ATTRIBUTES=service.name=NavalArchivePayment,service.namespace=NavalArchive,deployment.environment=prod",
-      "OTEL_DOTNET_AUTO_TRACES_ENABLED=true",
-      "OTEL_DOTNET_AUTO_METRICS_ENABLED=true",
-      "OTEL_DOTNET_AUTO_LOGS_ENABLED=true",
-      "CORECLR_ENABLE_PROFILING=1",
-      "CORECLR_PROFILER={918728DD-259F-4A6A-AC2B-B85E1B658318}",
-      "CORECLR_PROFILER_PATH_64={{ otel_dotnet_auto_home }}\win-x64\OpenTelemetry.AutoInstrumentation.Native.dll",
-      "COR_ENABLE_PROFILING=1",
-      "COR_PROFILER={918728DD-259F-4A6A-AC2B-B85E1B658318}",
-      "COR_PROFILER_PATH_64={{ otel_dotnet_auto_home }}\win-x64\OpenTelemetry.AutoInstrumentation.Native.dll",
-      "DOTNET_ADDITIONAL_DEPS={{ otel_dotnet_auto_home }}\AdditionalDeps",
-      "DOTNET_SHARED_STORE={{ otel_dotnet_auto_home }}\store",
-      "DOTNET_STARTUP_HOOKS={{ otel_dotnet_auto_home }}\net\OpenTelemetry.AutoInstrumentation.StartupHook.dll"
-    )
-    Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\NavalArchivePayment" -Name "Environment" -Value $envVars -Type MultiString -Force -ErrorAction SilentlyContinue
-    sc.exe start NavalArchivePayment
+    $taskName = "NavalArchivePayment"
+    $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File `"{{ payment_path }}\run-payment-service.ps1`"" -WorkingDirectory "{{ payment_path }}"
+    $trigger = New-ScheduledTaskTrigger -AtStartup -RandomDelay (New-TimeSpan -Minutes 1)
+    $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 0)
+    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+    Start-ScheduledTask -TaskName $taskName
   args:
     executable: powershell
 

@@ -19,17 +19,27 @@ public class PaymentsController : ControllerBase
     public async Task<IActionResult> Simulate([FromBody] SimulateRequest request)
     {
         var paymentUrl = _config["PaymentService:Url"] ?? "http://localhost:5001";
-        var client = _httpClientFactory.CreateClient();
-        var response = await client.PostAsJsonAsync($"{paymentUrl}/api/payment/simulate", new
+        try
         {
-            amount = request.Amount,
-            currency = request.Currency ?? "USD",
-            description = request.Description ?? "Donation"
-        });
-        if (!response.IsSuccessStatusCode)
-            return StatusCode(502, new { error = "Payment service unavailable", message = "Ensure PaymentSimulation is running on port 5001." });
-        var result = await response.Content.ReadFromJsonAsync<object>();
-        return Ok(result);
+            var client = _httpClientFactory.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(30);
+            var response = await client.PostAsJsonAsync($"{paymentUrl}/api/payment/simulate", new
+            {
+                amount = request.Amount,
+                currency = request.Currency ?? "USD",
+                description = request.Description ?? "Donation"
+            });
+            var body = await response.Content.ReadAsStringAsync();
+            return new ContentResult { Content = body, ContentType = "application/json", StatusCode = (int)response.StatusCode };
+        }
+        catch (HttpRequestException)
+        {
+            return StatusCode(502, new { error = "Payment service unavailable" });
+        }
+        catch (TaskCanceledException)
+        {
+            return StatusCode(504, new { error = "Payment request timed out" });
+        }
     }
 }
 
