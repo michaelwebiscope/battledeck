@@ -97,19 +97,19 @@ func main() {
 
 	// Public
 	r.Get("/health", handler.HandleHealth(db))
+	r.Post("/api/payment/simulate", handler.HandleSimulate(proc, idem, db, q, cfg.UseQueue))
+	r.Get("/api/payment/status/{transactionId}", handler.HandleStatus(db))
 
-	// Authenticated routes
+	// Authenticated routes (require X-API-Key from account-service)
 	r.Group(func(r chi.Router) {
 		r.Use(handler.AuthMiddleware(cfg.AccountServiceURL, nrApp))
 
-		// Payment methods
+		// Payment methods (account-scoped)
 		r.Post("/api/payment/methods", handler.HandleAddPaymentMethod(db))
 		r.Get("/api/payment/methods", handler.HandleListPaymentMethods(db))
 		r.Delete("/api/payment/methods/{token}", handler.HandleDeletePaymentMethod(db))
 
-		// Payments
-		r.Post("/api/payment/simulate", handler.HandleSimulate(proc, idem, db, q, cfg.UseQueue))
-		r.Get("/api/payment/status/{transactionId}", handler.HandleStatus(db))
+		// Account-scoped payment history
 		r.Get("/api/payment/history", handler.HandleHistory(db))
 	})
 
