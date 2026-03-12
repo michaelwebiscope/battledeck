@@ -147,6 +147,11 @@
   <%- include('partials/footer') %>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   <script>
+    function escapeHtml(s) {
+      var d = document.createElement('div');
+      d.textContent = s;
+      return d.innerHTML;
+    }
     let currentApiKey = localStorage.getItem('paymentAccountKey') || '';
     if (currentApiKey) {
       document.getElementById('apiKeyInput').value = currentApiKey;
@@ -178,10 +183,16 @@
         el.innerHTML = `
           <div class="alert alert-success py-2 mb-2">✓ Account created!</div>
           <div class="mb-1 fw-semibold small">Your API Key <span class="text-danger">(save this — shown once)</span>:</div>
-          <div class="key-display mb-2">${data.apiKey}</div>
-          <button class="btn btn-sm btn-outline-secondary" onclick="navigator.clipboard.writeText('${data.apiKey}');this.textContent='Copied!'">
+          <div class="key-display mb-2" id="newApiKeyDisplay">${escapeHtml(String(data.apiKey || ''))}</div>
+          <button class="btn btn-sm btn-outline-secondary" id="copyKeyBtn" type="button">
             <i class="bi bi-clipboard"></i> Copy Key
           </button>`;
+        document.getElementById('copyKeyBtn').onclick = function() {
+          var key = document.getElementById('newApiKeyDisplay').textContent;
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(key).then(function() { this.textContent = 'Copied!'; }.bind(this));
+          } else { this.textContent = 'Copied!'; }
+        };
         loadDashboard(data);
       } catch (err) {
         el.innerHTML = '<div class="alert alert-danger py-2">Account service unavailable</div>';
@@ -242,7 +253,7 @@
           return;
         }
         el.innerHTML = `<div class="text-success small">✓ +$${amount.toFixed(2)} added</div>`;
-        updateBalance(data.balance);
+        document.getElementById('balanceDisplay').textContent = '$' + (data.balance != null ? Number(data.balance).toFixed(2) : '0.00');
       } catch (err) {
         el.innerHTML = '<div class="text-danger small">Service unavailable</div>';
       }
@@ -270,7 +281,8 @@
           el.innerHTML = `<div class="text-danger small">${data.error || 'Payment failed'}</div>`;
           return;
         }
-        el.innerHTML = `<div class="text-success small">✓ ${data.message || 'Queued'} (${data.transactionId || ''})</div>`;
+        var msg = (res.status === 202 || data.status === 'queued') ? (data.message || 'Payment queued') : (data.message || 'Payment approved');
+        el.innerHTML = `<div class="text-success small">✓ ${msg}${data.transactionId ? ' (' + data.transactionId + ')' : ''}</div>`;
         // Refresh balance + history after a short delay (queue processes async)
         setTimeout(() => { loadAccount(); loadHistory(); }, 1500);
       } catch (err) {

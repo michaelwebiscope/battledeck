@@ -13,7 +13,7 @@
   <main class="app-shell">
     <div class="container py-4">
       <h1 class="mb-1">Support the Museum</h1>
-      <p class="text-muted mb-4">Make a simulated donation to the Naval Archive.</p>
+      <p class="text-muted mb-4">Make a simulated donation to the Naval Archive. Use <strong>Quick Donation</strong> for a one-off payment, or <strong>Pay from Account</strong> to use your wallet balance (create an account first on <a href="/payment-account">Payment Account</a>).</p>
 
       <div class="row">
         <div class="col-lg-7">
@@ -108,11 +108,13 @@
         });
         const data = await res.json();
         if (!res.ok) {
-          el.innerHTML = `<div class="alert alert-danger">${data.message || data.error || 'Payment failed'}</div>`;
+          el.innerHTML = `<div class="alert alert-danger">${(data.message || data.error || 'Payment failed')}</div>`;
+        } else if (res.status === 202 || data.status === 'queued') {
+          el.innerHTML = `<div class="alert alert-info">&#10003; ${data.message || 'Payment queued for processing'}${data.transactionId ? ' (Transaction: ' + data.transactionId + ')' : ''}</div>`;
         } else if (data.approved) {
           el.innerHTML = `<div class="alert alert-success">&#10003; ${data.message || 'Payment approved'}${data.transactionId ? ' (Transaction: ' + data.transactionId + ')' : ''}</div>`;
         } else {
-          el.innerHTML = `<div class="alert alert-warning">${data.message || 'Payment queued'}</div>`;
+          el.innerHTML = `<div class="alert alert-warning">${data.message || 'Payment declined'}</div>`;
         }
       } catch (err) {
         el.innerHTML = '<div class="alert alert-danger">Payment service unavailable.</div>';
@@ -166,7 +168,8 @@
           el.innerHTML = `<div class="alert alert-danger py-2 small">${data.error || 'Payment failed'}</div>`;
           return;
         }
-        el.innerHTML = `<div class="alert alert-success py-2 small">&#10003; ${data.message || 'Queued'}${data.transactionId ? ' (' + data.transactionId + ')' : ''}</div>`;
+        var msg = (res.status === 202 || data.status === 'queued') ? (data.message || 'Payment queued') : (data.message || 'Payment approved');
+        el.innerHTML = `<div class="alert alert-success py-2 small">&#10003; ${msg}${data.transactionId ? ' (' + data.transactionId + ')' : ''}</div>`;
         // Refresh balance
         setTimeout(async () => {
           try {
