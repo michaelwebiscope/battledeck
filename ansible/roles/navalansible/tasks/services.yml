@@ -1,0 +1,276 @@
+---
+# Create and start Windows services (sc.exe for custom binPath with args)
+
+- name: Create NavalArchiveWeb service (Node) - use 8.3 path to avoid sc.exe quoting
+  ansible.windows.win_shell: |
+    sc.exe stop NavalArchiveWeb 2>$null
+    sc.exe delete NavalArchiveWeb 2>$null
+    Start-Sleep -Seconds 2
+    $nodeShort = (New-Object -ComObject Scripting.FileSystemObject).GetFile("{{ node_dir }}\node.exe").ShortPath
+    $webShort = (New-Object -ComObject Scripting.FileSystemObject).GetFolder("{{ web_path }}").ShortPath
+    sc.exe create NavalArchiveWeb binPath= "$nodeShort $webShort\server.js" start= auto
+    sc.exe failure NavalArchiveWeb reset= 86400 actions= restart/60000/restart/60000/restart/60000
+    Start-Sleep -Seconds 1
+    $envVars = @(
+      "API_URL=http://localhost:5000",
+      "GATEWAY_URL=http://localhost:5010",
+      "PORT=3000",
+      "NEW_RELIC_APP_NAME={{ newrelic_node_app_name | default('NavalArchiveWeb') }}"
+    )
+    {% if newrelic_license_key is defined and newrelic_license_key | length > 0 %}
+    $envVars += @(
+      "NEW_RELIC_LICENSE_KEY={{ newrelic_license_key }}",
+      "NEW_RELIC_NO_CONFIG_FILE=true",
+      "NEW_RELIC_DISTRIBUTED_TRACING_ENABLED=true",
+      "NODE_OPTIONS=-r {{ web_path }}\node_modules\newrelic\index.js"
+    )
+    {% endif %}
+    Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\NavalArchiveWeb" -Name "Environment" -Value $envVars -Type MultiString -Force -ErrorAction SilentlyContinue
+    sc.exe start NavalArchiveWeb
+  args:
+    executable: powershell
+  failed_when: false
+
+- name: Ensure New Relic Java agent directory exists (for ImagePopulator service)
+  ansible.windows.win_file:
+    path: "{{ newrelic_java_agent_dir | default('C:\\ProgramData\\NewRelic\\java') }}"
+    state: directory
+  when: newrelic_license_key is defined and newrelic_license_key | length > 0
+
+- name: Download New Relic Java agent jar (needed before service starts)
+  ansible.windows.win_get_url:
+    url: https://download.newrelic.com/newrelic/java-agent/newrelic-agent/current/newrelic.jar
+    dest: "{{ newrelic_java_agent_dir | default('C:\\ProgramData\\NewRelic\\java') }}\\newrelic.jar"
+  when: newrelic_license_key is defined and newrelic_license_key | length > 0
+
+- name: Write New Relic Java agent config file (newrelic.yml)
+  ansible.windows.win_copy:
+    content: |
+      common: &default_settings
+        license_key: '{{ newrelic_license_key }}'
+        app_name: {{ newrelic_java_app_name | default('NavalArchiveImagePopulator') }}
+        distributed_tracing:
+          enabled: true
+        log_level: info
+        log_file_path: 'C:\ProgramData\NewRelic\java\logs'
+      production:
+        <<: *default_settings
+    dest: "{{ newrelic_java_agent_dir | default('C:\\ProgramData\\NewRelic\\java') }}\\newrelic.yml"
+  when: newrelic_license_key is defined and newrelic_license_key | length > 0
+
+- name: Create run-image-populator-listener.ps1 (Java listener script - bypasses service timeout)
+  ansible.windows.win_copy:
+    content: |
+      $ErrorActionPreference = "Stop"
+      $apiBase = "http://localhost:5000"
+      $jar = (Get-ChildItem "{{ image_populator_path }}" -Filter "image-populator*.jar" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName)
+      if (-not $jar) { throw "No image-populator jar found in {{ image_populator_path }}" }
+      $javaExe = $null
+      foreach ($base in @("C:\Program Files\Amazon Corretto", "C:\Program Files\Eclipse Adoptium")) {
+        if (Test-Path $base) {
+          $jdk = Get-ChildItem $base -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "jdk*" } | Select-Object -First 1
+          if ($jdk -and (Test-Path "$($jdk.FullName)\bin\java.exe")) {
+            $javaExe = "$($jdk.FullName)\bin\java.exe"
+            break
+          }
+        }
+      }
+      if (-not $javaExe) { $javaExe = "java" }
+      $jvmArgs = @()
+      $nrJar = "C:\ProgramData\NewRelic\java\newrelic.jar"
+      if (Test-Path $nrJar) {
+        $jvmArgs += "-javaagent:$nrJar"
+      }
+      {% if newrelic_license_key is defined and newrelic_license_key | length > 0 %}
+      $env:NEW_RELIC_LICENSE_KEY = "{{ newrelic_license_key }}"
+      $env:NEW_RELIC_APP_NAME = "{{ newrelic_java_app_name | default('NavalArchiveImagePopulator') }}"
+      $env:NEW_RELIC_DISTRIBUTED_TRACING_ENABLED = "true"
+      {% endif %}
+      $jvmArgs += "-jar"
+      $jvmArgs += $jar
+      $jvmArgs += $apiBase
+      $jvmArgs += "--listen"
+      $jvmArgs += "--port"
+      $jvmArgs += "{{ image_populator_port }}"
+      & $javaExe @jvmArgs
+    dest: C:\inetpub\run-image-populator-listener.ps1
+
+- name: Create NavalArchiveImagePopulator scheduled task (Java listener - bypasses service 1053 timeout)
+  ansible.windows.win_shell: |
+    sc.exe stop NavalArchiveImagePopulator 2>$null
+    sc.exe delete NavalArchiveImagePopulator 2>$null
+    $taskName = "NavalArchiveImagePopulator"
+    $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File C:\inetpub\run-image-populator-listener.ps1"
+    $trigger = New-ScheduledTaskTrigger -AtStartup -RandomDelay (New-TimeSpan -Minutes 2)
+    $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 0)
+    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+    Start-ScheduledTask -TaskName $taskName
+  args:
+    executable: powershell
+
+- name: Wait for ImagePopulator listener to be healthy
+  ansible.windows.win_uri:
+    url: "http://127.0.0.1:{{ image_populator_port }}/health"
+    method: GET
+    status_code: 200
+  register: imagepopulator_health
+  until: imagepopulator_health.status_code | default(0) == 200
+  retries: 18
+  delay: 5
+  failed_when: false
+
+- name: Report ImagePopulator listener health
+  ansible.builtin.debug:
+    msg: >-
+      ImagePopulator listener:
+      {{ 'healthy on port ' + (image_populator_port | string) if imagepopulator_health.status_code | default(0) == 200 else 'not responding on port ' + (image_populator_port | string) + ' after 90s - check C:\\inetpub\\run-image-populator-listener.ps1 and scheduled task logs' }}
+
+- name: Create NavalArchivePayment service
+  ansible.windows.win_shell: |
+    sc.exe delete NavalArchivePayment 2>$null
+    sc.exe create NavalArchivePayment binPath= "{{ payment_path }}\NavalArchive.PaymentSimulation.exe --urls=http://localhost:5001"
+    sc.exe config NavalArchivePayment start= auto
+    sc.exe failure NavalArchivePayment reset= 86400 actions= restart/60000/restart/60000/restart/60000
+    $envVars = @("OTEL_SERVICE_NAME=NavalArchivePayment")
+    $envVars += @(
+      "OTEL_DOTNET_AUTO_HOME={{ otel_dotnet_auto_home }}",
+      "OTEL_EXPORTER_OTLP_ENDPOINT={{ otel_exporter_otlp_endpoint }}",
+      "OTEL_EXPORTER_OTLP_PROTOCOL={{ otel_exporter_otlp_protocol }}",
+      "OTEL_EXPORTER_OTLP_HEADERS=api-key={{ newrelic_license_key }}",
+      "OTEL_TRACES_EXPORTER=otlp",
+      "OTEL_METRICS_EXPORTER=otlp",
+      "OTEL_LOGS_EXPORTER=otlp",
+      "OTEL_RESOURCE_ATTRIBUTES=service.name=NavalArchivePayment,service.namespace=NavalArchive,deployment.environment=prod",
+      "OTEL_DOTNET_AUTO_TRACES_ENABLED=true",
+      "OTEL_DOTNET_AUTO_METRICS_ENABLED=true",
+      "OTEL_DOTNET_AUTO_LOGS_ENABLED=true",
+      "CORECLR_ENABLE_PROFILING=1",
+      "CORECLR_PROFILER={918728DD-259F-4A6A-AC2B-B85E1B658318}",
+      "CORECLR_PROFILER_PATH_64={{ otel_dotnet_auto_home }}\win-x64\OpenTelemetry.AutoInstrumentation.Native.dll",
+      "COR_ENABLE_PROFILING=1",
+      "COR_PROFILER={918728DD-259F-4A6A-AC2B-B85E1B658318}",
+      "COR_PROFILER_PATH_64={{ otel_dotnet_auto_home }}\win-x64\OpenTelemetry.AutoInstrumentation.Native.dll",
+      "DOTNET_ADDITIONAL_DEPS={{ otel_dotnet_auto_home }}\AdditionalDeps",
+      "DOTNET_SHARED_STORE={{ otel_dotnet_auto_home }}\store",
+      "DOTNET_STARTUP_HOOKS={{ otel_dotnet_auto_home }}\net\OpenTelemetry.AutoInstrumentation.StartupHook.dll"
+    )
+    Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\NavalArchivePayment" -Name "Environment" -Value $envVars -Type MultiString -Force -ErrorAction SilentlyContinue
+    sc.exe start NavalArchivePayment
+  args:
+    executable: powershell
+
+- name: Create NavalArchiveCard service
+  ansible.windows.win_shell: |
+    sc.exe delete NavalArchiveCard 2>$null
+    sc.exe create NavalArchiveCard binPath= "{{ card_path }}\NavalArchive.CardService.exe --urls=http://localhost:5002"
+    sc.exe config NavalArchiveCard start= auto
+    sc.exe failure NavalArchiveCard reset= 86400 actions= restart/60000/restart/60000/restart/60000
+    $envVars = @("OTEL_SERVICE_NAME=NavalArchiveCard")
+    $envVars += @(
+      "OTEL_DOTNET_AUTO_HOME={{ otel_dotnet_auto_home }}",
+      "OTEL_EXPORTER_OTLP_ENDPOINT={{ otel_exporter_otlp_endpoint }}",
+      "OTEL_EXPORTER_OTLP_PROTOCOL={{ otel_exporter_otlp_protocol }}",
+      "OTEL_EXPORTER_OTLP_HEADERS=api-key={{ newrelic_license_key }}",
+      "OTEL_TRACES_EXPORTER=otlp",
+      "OTEL_RESOURCE_ATTRIBUTES=service.name=NavalArchiveCard,service.namespace=NavalArchive,deployment.environment=prod",
+      "OTEL_DOTNET_AUTO_TRACES_ENABLED=true",
+      "CORECLR_ENABLE_PROFILING=1",
+      "CORECLR_PROFILER={918728DD-259F-4A6A-AC2B-B85E1B658318}",
+      "CORECLR_PROFILER_PATH_64={{ otel_dotnet_auto_home }}\win-x64\OpenTelemetry.AutoInstrumentation.Native.dll",
+      "COR_ENABLE_PROFILING=1",
+      "COR_PROFILER={918728DD-259F-4A6A-AC2B-B85E1B658318}",
+      "COR_PROFILER_PATH_64={{ otel_dotnet_auto_home }}\win-x64\OpenTelemetry.AutoInstrumentation.Native.dll",
+      "DOTNET_ADDITIONAL_DEPS={{ otel_dotnet_auto_home }}\AdditionalDeps",
+      "DOTNET_SHARED_STORE={{ otel_dotnet_auto_home }}\store",
+      "DOTNET_STARTUP_HOOKS={{ otel_dotnet_auto_home }}\net\OpenTelemetry.AutoInstrumentation.StartupHook.dll"
+    )
+    Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\NavalArchiveCard" -Name "Environment" -Value $envVars -Type MultiString -Force -ErrorAction SilentlyContinue
+    sc.exe start NavalArchiveCard
+  args:
+    executable: powershell
+
+- name: Create NavalArchiveCart service
+  ansible.windows.win_shell: |
+    sc.exe delete NavalArchiveCart 2>$null
+    sc.exe create NavalArchiveCart binPath= "{{ cart_path }}\NavalArchive.CartService.exe --urls=http://localhost:5003"
+    sc.exe config NavalArchiveCart start= auto
+    sc.exe failure NavalArchiveCart reset= 86400 actions= restart/60000/restart/60000/restart/60000
+    $envVars = @("OTEL_SERVICE_NAME=NavalArchiveCart")
+    $envVars += @(
+      "OTEL_DOTNET_AUTO_HOME={{ otel_dotnet_auto_home }}",
+      "OTEL_EXPORTER_OTLP_ENDPOINT={{ otel_exporter_otlp_endpoint }}",
+      "OTEL_EXPORTER_OTLP_PROTOCOL={{ otel_exporter_otlp_protocol }}",
+      "OTEL_EXPORTER_OTLP_HEADERS=api-key={{ newrelic_license_key }}",
+      "OTEL_TRACES_EXPORTER=otlp",
+      "OTEL_RESOURCE_ATTRIBUTES=service.name=NavalArchiveCart,service.namespace=NavalArchive,deployment.environment=prod",
+      "OTEL_DOTNET_AUTO_TRACES_ENABLED=true",
+      "CORECLR_ENABLE_PROFILING=1",
+      "CORECLR_PROFILER={918728DD-259F-4A6A-AC2B-B85E1B658318}",
+      "CORECLR_PROFILER_PATH_64={{ otel_dotnet_auto_home }}\win-x64\OpenTelemetry.AutoInstrumentation.Native.dll",
+      "COR_ENABLE_PROFILING=1",
+      "COR_PROFILER={918728DD-259F-4A6A-AC2B-B85E1B658318}",
+      "COR_PROFILER_PATH_64={{ otel_dotnet_auto_home }}\win-x64\OpenTelemetry.AutoInstrumentation.Native.dll",
+      "DOTNET_ADDITIONAL_DEPS={{ otel_dotnet_auto_home }}\AdditionalDeps",
+      "DOTNET_SHARED_STORE={{ otel_dotnet_auto_home }}\store",
+      "DOTNET_STARTUP_HOOKS={{ otel_dotnet_auto_home }}\net\OpenTelemetry.AutoInstrumentation.StartupHook.dll"
+    )
+    Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\NavalArchiveCart" -Name "Environment" -Value $envVars -Type MultiString -Force -ErrorAction SilentlyContinue
+    sc.exe start NavalArchiveCart
+  args:
+    executable: powershell
+
+- name: Create chain microservice
+  ansible.windows.win_shell: |
+    $outPath = "{{ chain_paths[item.path_key] }}"
+    $exe = "{{ item.exe }}"
+    $port = {{ item.port }}
+    $svc = "{{ item.svc }}"
+    if (Test-Path "$outPath\$exe") {
+      sc.exe delete $svc 2>$null
+      sc.exe create $svc binPath= "$outPath\$exe --urls=http://localhost:$port"
+      sc.exe config $svc start= auto
+      sc.exe failure $svc reset= 86400 actions= restart/60000/restart/60000/restart/60000
+      $envVars = @("OTEL_SERVICE_NAME=$svc")
+      $commonAuto = @(
+        "OTEL_DOTNET_AUTO_HOME={{ otel_dotnet_auto_home }}",
+        "OTEL_EXPORTER_OTLP_ENDPOINT={{ otel_exporter_otlp_endpoint }}",
+        "OTEL_EXPORTER_OTLP_PROTOCOL={{ otel_exporter_otlp_protocol }}",
+        "OTEL_EXPORTER_OTLP_HEADERS=api-key={{ newrelic_license_key }}",
+        "CORECLR_ENABLE_PROFILING=1",
+        "CORECLR_PROFILER={918728DD-259F-4A6A-AC2B-B85E1B658318}",
+        "CORECLR_PROFILER_PATH_64={{ otel_dotnet_auto_home }}\win-x64\OpenTelemetry.AutoInstrumentation.Native.dll",
+        "COR_ENABLE_PROFILING=1",
+        "COR_PROFILER={918728DD-259F-4A6A-AC2B-B85E1B658318}",
+        "COR_PROFILER_PATH_64={{ otel_dotnet_auto_home }}\win-x64\OpenTelemetry.AutoInstrumentation.Native.dll",
+        "DOTNET_ADDITIONAL_DEPS={{ otel_dotnet_auto_home }}\AdditionalDeps",
+        "DOTNET_SHARED_STORE={{ otel_dotnet_auto_home }}\store",
+        "DOTNET_STARTUP_HOOKS={{ otel_dotnet_auto_home }}\net\OpenTelemetry.AutoInstrumentation.StartupHook.dll"
+      )
+      if ($svc -eq "NavalArchiveOrder") {
+        $envVars += @(
+          "OTEL_TRACES_EXPORTER=otlp",
+          "OTEL_RESOURCE_ATTRIBUTES=service.name=NavalArchiveOrder,service.namespace=NavalArchive,deployment.environment=prod",
+          "OTEL_DOTNET_AUTO_TRACES_ENABLED=true"
+        ) + $commonAuto
+      } elseif ($svc -eq "NavalArchivePaymentChain" -or $svc -eq "NavalArchiveShipping" -or $svc -eq "NavalArchiveNotification") {
+        $envVars += @(
+          "OTEL_TRACES_EXPORTER=otlp",
+          "OTEL_METRICS_EXPORTER=otlp",
+          "OTEL_LOGS_EXPORTER=otlp",
+          "OTEL_RESOURCE_ATTRIBUTES=service.name=$svc,service.namespace=NavalArchive,deployment.environment=prod",
+          "OTEL_DOTNET_AUTO_TRACES_ENABLED=true",
+          "OTEL_DOTNET_AUTO_METRICS_ENABLED=true",
+          "OTEL_DOTNET_AUTO_LOGS_ENABLED=true"
+        ) + $commonAuto
+      }
+      Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\$svc" -Name "Environment" -Value $envVars -Type MultiString -Force -ErrorAction SilentlyContinue
+      sc.exe start $svc
+    }
+  args:
+    executable: powershell
+  loop: "{{ chain_services }}"
+  loop_control:
+    label: "{{ item.svc }}"
+  when: item.svc not in iis_hosted_service_names
