@@ -1,0 +1,12 @@
+---
+# Update Go service binaries only (account-service.exe, payment-service.exe).
+# Downloads latest repo zip, replaces binaries, restarts scheduled tasks.
+# Much faster than a full site.yml redeploy (~2 min vs ~45-60 min).
+# Run: ./scripts/deploy-navalansible.sh -go-only [-newrelic]
+- name: Update Go service binaries
+  hosts: navalansible-vm
+  gather_facts: true
+  tasks:
+    - ansible.builtin.include_role:
+        name: navalansible
+        tasks_from: go-binaries-only.yml

@@ -1,0 +1,148 @@
+---
+# Hot-swap Go service binaries without a full redeploy.
+# Downloads latest repo zip, replaces account-service.exe and payment-service.exe, restarts tasks.
+
+- name: Parse repo URL for owner and repo name
+  ansible.builtin.set_fact:
+    repo_owner: "{{ (github_repo_url | regex_replace('\\.git$', '') | regex_replace('/$', '')).split('/')[-2] }}"
+    repo_name: "{{ (github_repo_url | regex_replace('\\.git$', '') | regex_replace('/$', '')).split('/')[-1] }}"
+
+- name: Download repo zip (public)
+  ansible.windows.win_get_url:
+    url: "https://github.com/{{ repo_owner }}/{{ repo_name }}/archive/refs/heads/{{ github_repo_branch | default('main') }}.zip"
+    dest: "{{ ansible_env.TEMP }}\\navalarchive-go.zip"
+  when: github_token is not defined or github_token | default('') | length == 0
+
+- name: Download repo zip (with token)
+  ansible.windows.win_get_url:
+    url: "https://github.com/{{ repo_owner }}/{{ repo_name }}/archive/refs/heads/{{ github_repo_branch | default('main') }}.zip"
+    dest: "{{ ansible_env.TEMP }}\\navalarchive-go.zip"
+    headers: "Authorization: token {{ github_token }}"
+  when: github_token is defined and github_token | length > 0
+
+- name: Expand repo zip
+  ansible.windows.win_shell: |
+    $zip = "{{ ansible_env.TEMP }}\navalarchive-go.zip"
+    $out = "{{ ansible_env.TEMP }}\navalarchive-go-src"
+    if (Test-Path $out) { Remove-Item $out -Recurse -Force }
+    Expand-Archive -Path $zip -DestinationPath $out -Force
+    # Find the extracted folder (repo-branch format)
+    $extracted = Get-ChildItem $out -Directory | Select-Object -First 1
+    Write-Output $extracted.FullName
+  args:
+    executable: powershell
+  register: go_src_path
+
+- name: Stop NavalArchiveAccount scheduled task
+  ansible.windows.win_shell: |
+    Stop-ScheduledTask -TaskName "NavalArchiveAccount" -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 3
+  args:
+    executable: powershell
+
+- name: Stop NavalArchivePayment scheduled task
+  ansible.windows.win_shell: |
+    Stop-ScheduledTask -TaskName "NavalArchivePayment" -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 3
+  args:
+    executable: powershell
+
+- name: Copy new account-service.exe
+  ansible.windows.win_shell: |
+    $src = Get-ChildItem "{{ go_src_path.stdout | trim }}" -Filter "account-service.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($src) {
+      Copy-Item -Path $src.FullName -Destination "{{ account_path }}\account-service.exe" -Force
+      Write-Output "Copied $($src.FullName)"
+    } else {
+      Write-Error "account-service.exe not found in repo"
+    }
+  args:
+    executable: powershell
+
+- name: Copy new payment-service.exe
+  ansible.windows.win_shell: |
+    $src = Get-ChildItem "{{ go_src_path.stdout | trim }}" -Filter "payment-service.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($src) {
+      Copy-Item -Path $src.FullName -Destination "{{ payment_path }}\payment-service.exe" -Force
+      Write-Output "Copied $($src.FullName)"
+    } else {
+      Write-Error "payment-service.exe not found in repo"
+    }
+  args:
+    executable: powershell
+
+- name: Update run-account-service.ps1
+  ansible.windows.win_copy:
+    content: |
+      $ErrorActionPreference = "Stop"
+      $env:HTTP_PORT = "5005"
+      $env:DATABASE_URL = "{{ account_path }}\accounts.db"
+      {% if newrelic_license_key is defined and newrelic_license_key | length > 0 %}
+      $env:NEW_RELIC_LICENSE_KEY = "{{ newrelic_license_key }}"
+      $env:NEW_RELIC_APP_NAME = "{{ newrelic_go_account_app_name | default('NavalArchiveAccount') }}"
+      {% endif %}
+      Set-Location "{{ account_path }}"
+      & "{{ account_path }}\account-service.exe"
+    dest: "{{ account_path }}\\run-account-service.ps1"
+
+- name: Update run-payment-service.ps1
+  ansible.windows.win_copy:
+    content: |
+      $ErrorActionPreference = "Stop"
+      $env:HTTP_PORT = "5001"
+      $env:DATABASE_URL = "{{ payment_path }}\payment.db"
+      $env:DATABASE_TYPE = "sqlite"
+      $env:USE_QUEUE = "true"
+      $env:ACCOUNT_SERVICE_URL = "http://localhost:5005"
+      $env:IDEMPOTENCY = "db"
+      {% if newrelic_license_key is defined and newrelic_license_key | length > 0 %}
+      $env:NEW_RELIC_LICENSE_KEY = "{{ newrelic_license_key }}"
+      $env:NEW_RELIC_APP_NAME = "{{ newrelic_go_payment_app_name | default('NavalArchivePayment') }}"
+      {% endif %}
+      Set-Location "{{ payment_path }}"
+      & "{{ payment_path }}\payment-service.exe"
+    dest: "{{ payment_path }}\\run-payment-service.ps1"
+
+- name: Start NavalArchiveAccount scheduled task
+  ansible.windows.win_shell: Start-ScheduledTask -TaskName "NavalArchiveAccount"
+  args:
+    executable: powershell
+
+- name: Wait for account-service to be healthy
+  ansible.windows.win_uri:
+    url: "http://127.0.0.1:5005/health"
+    method: GET
+    status_code: 200
+  register: account_health
+  until: account_health.status_code | default(0) == 200
+  retries: 12
+  delay: 5
+  failed_when: false
+
+- name: Start NavalArchivePayment scheduled task
+  ansible.windows.win_shell: Start-ScheduledTask -TaskName "NavalArchivePayment"
+  args:
+    executable: powershell
+
+- name: Wait for payment-service to be healthy
+  ansible.windows.win_uri:
+    url: "http://127.0.0.1:5001/health"
+    method: GET
+    status_code: 200
+  register: payment_health
+  until: payment_health.status_code | default(0) == 200
+  retries: 12
+  delay: 5
+  failed_when: false
+
+- name: Report Go services health
+  ansible.builtin.debug:
+    msg: >-
+      account-service: {{ 'healthy (port 5005)' if account_health.status_code | default(0) == 200 else 'not responding on port 5005' }} |
+      payment-service: {{ 'healthy (port 5001)' if payment_health.status_code | default(0) == 200 else 'not responding on port 5001' }}
+
+- name: Cleanup temp zip
+  ansible.windows.win_file:
+    path: "{{ ansible_env.TEMP }}\\navalarchive-go.zip"
+    state: absent
+  ignore_errors: true
