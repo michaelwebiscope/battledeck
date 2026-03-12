@@ -9,6 +9,7 @@
     - "{{ api_path }}"
     - "{{ web_path }}"
     - "{{ payment_path }}"
+    - "{{ account_path }}"
     - "{{ card_path }}"
     - "{{ cart_path }}"
     - "{{ image_populator_path }}"
@@ -142,6 +143,17 @@
     }
   args:
     executable: powershell
+
+- name: Deploy Go account-service binary
+  ansible.windows.win_shell: |
+    $bin = Get-ChildItem "{{ src_path }}" -Filter "account-service.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($bin) {
+      New-Item -ItemType Directory -Force -Path "{{ account_path }}" | Out-Null
+      Copy-Item -Path $bin.FullName -Destination "{{ account_path }}\account-service.exe" -Force
+    }
+  args:
+    executable: powershell
+
 
 - name: Deploy ImagePopulator jar
   ansible.windows.win_shell: |

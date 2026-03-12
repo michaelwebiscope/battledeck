@@ -127,6 +127,40 @@
       ImagePopulator listener:
       {{ 'healthy on port ' + (image_populator_port | string) if imagepopulator_health.status_code | default(0) == 200 else 'not responding on port ' + (image_populator_port | string) + ' after 90s - check C:\\inetpub\\run-image-populator-listener.ps1 and scheduled task logs' }}
 
+- name: Create run-account-service.ps1 (Go account-service launcher)
+  ansible.windows.win_copy:
+    content: |
+      $ErrorActionPreference = "Stop"
+      $env:HTTP_PORT = "5005"
+      $env:DATABASE_URL = "{{ account_path }}\accounts.db"
+      Set-Location "{{ account_path }}"
+      & "{{ account_path }}\account-service.exe"
+    dest: "{{ account_path }}\run-account-service.ps1"
+
+- name: Create NavalArchiveAccount scheduled task (Go account-service)
+  ansible.windows.win_shell: |
+    $taskName = "NavalArchiveAccount"
+    $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File \`"{{ account_path }}\run-account-service.ps1\`"" -WorkingDirectory "{{ account_path }}"
+    $trigger = New-ScheduledTaskTrigger -AtStartup -RandomDelay (New-TimeSpan -Seconds 30)
+    $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 0)
+    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+    Start-ScheduledTask -TaskName $taskName
+  args:
+    executable: powershell
+
+- name: Wait for account-service to be healthy
+  ansible.windows.win_uri:
+    url: "http://127.0.0.1:5005/health"
+    method: GET
+    status_code: 200
+  register: account_health
+  until: account_health.status_code | default(0) == 200
+  retries: 12
+  delay: 5
+  failed_when: false
+
 - name: Create run-payment-service.ps1 (Go binary launcher)
   ansible.windows.win_copy:
     content: |
@@ -134,7 +168,8 @@
       $env:HTTP_PORT = "5001"
       $env:DATABASE_URL = "{{ payment_path }}\payment.db"
       $env:DATABASE_TYPE = "sqlite"
-      $env:USE_QUEUE = "false"
+      $env:USE_QUEUE = "true"
+      $env:ACCOUNT_SERVICE_URL = "http://localhost:5005"
       $env:IDEMPOTENCY = "db"
       {% if newrelic_license_key is defined and newrelic_license_key | length > 0 %}
       $env:OTEL_SERVICE_NAME = "NavalArchivePayment"

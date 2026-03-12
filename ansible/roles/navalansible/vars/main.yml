@@ -1,0 +1,62 @@
+---
+# Paths
+api_path: C:\inetpub\navalarchive-api
+web_path: C:\inetpub\navalarchive-web
+payment_path: C:\inetpub\navalarchive-payment
+account_path: C:\inetpub\navalarchive-account
+card_path: C:\inetpub\navalarchive-card
+cart_path: C:\inetpub\navalarchive-cart
+image_populator_path: C:\inetpub\navalarchive-imagepopulator
+clone_path: C:\navalarchive-src
+dotnet_dir: C:\Program Files\dotnet
+node_dir: C:\Program Files\nodejs
+image_populator_port: 5099
+
+# Chain microservices: Csproj, Exe, Port, Service name, Path key for chain_paths lookup
+chain_services:
+  - { csproj: NavalArchive.Gateway.csproj, exe: NavalArchive.Gateway.exe, port: 5010, svc: NavalArchiveGateway, path_key: Gateway }
+  - { csproj: NavalArchive.Auth.csproj, exe: NavalArchive.Auth.exe, port: 5011, svc: NavalArchiveAuth, path_key: Auth }
+  - { csproj: NavalArchive.UserService.csproj, exe: NavalArchive.UserService.exe, port: 5012, svc: NavalArchiveUser, path_key: User }
+  - { csproj: NavalArchive.Catalog.csproj, exe: NavalArchive.Catalog.exe, port: 5013, svc: NavalArchiveCatalog, path_key: Catalog }
+  - { csproj: NavalArchive.Inventory.csproj, exe: NavalArchive.Inventory.exe, port: 5014, svc: NavalArchiveInventory, path_key: Inventory }
+  - { csproj: NavalArchive.Basket.csproj, exe: NavalArchive.Basket.exe, port: 5015, svc: NavalArchiveBasket, path_key: Basket }
+  - { csproj: NavalArchive.Order.csproj, exe: NavalArchive.Order.exe, port: 5016, svc: NavalArchiveOrder, path_key: Order }
+  - { csproj: NavalArchive.Payment.csproj, exe: NavalArchive.Payment.exe, port: 5017, svc: NavalArchivePaymentChain, path_key: Payment }
+  - { csproj: NavalArchive.Shipping.csproj, exe: NavalArchive.Shipping.exe, port: 5018, svc: NavalArchiveShipping, path_key: Shipping }
+  - { csproj: NavalArchive.Notification.csproj, exe: NavalArchive.Notification.exe, port: 5019, svc: NavalArchiveNotification, path_key: Notification }
+
+chain_paths:
+  Gateway: C:\inetpub\navalarchive-gateway
+  Auth: C:\inetpub\navalarchive-auth
+  User: C:\inetpub\navalarchive-user
+  Catalog: C:\inetpub\navalarchive-catalog
+  Inventory: C:\inetpub\navalarchive-inventory
+  Basket: C:\inetpub\navalarchive-basket
+  Order: C:\inetpub\navalarchive-order
+  Payment: C:\inetpub\navalarchive-payment-chain
+  Shipping: C:\inetpub\navalarchive-shipping
+  Notification: C:\inetpub\navalarchive-notification
+
+iis_chain_services:
+  - { site: NavalArchive-Gateway, apppool: NavalArchive-Gateway, svc: NavalArchiveGateway, exe: NavalArchive.Gateway.exe, port: 5010, path_key: Gateway }
+  - { site: NavalArchive-Auth, apppool: NavalArchive-Auth, svc: NavalArchiveAuth, exe: NavalArchive.Auth.exe, port: 5011, path_key: Auth }
+  - { site: NavalArchive-User, apppool: NavalArchive-User, svc: NavalArchiveUser, exe: NavalArchive.UserService.exe, port: 5012, path_key: User }
+  - { site: NavalArchive-Catalog, apppool: NavalArchive-Catalog, svc: NavalArchiveCatalog, exe: NavalArchive.Catalog.exe, port: 5013, path_key: Catalog }
+  - { site: NavalArchive-Inventory, apppool: NavalArchive-Inventory, svc: NavalArchiveInventory, exe: NavalArchive.Inventory.exe, port: 5014, path_key: Inventory }
+  - { site: NavalArchive-Basket, apppool: NavalArchive-Basket, svc: NavalArchiveBasket, exe: NavalArchive.Basket.exe, port: 5015, path_key: Basket }
+
+iis_hosted_service_names:
+  - NavalArchiveGateway
+  - NavalArchiveAuth
+  - NavalArchiveUser
+  - NavalArchiveCatalog
+  - NavalArchiveInventory
+  - NavalArchiveBasket
+
+# OpenTelemetry (.NET auto-instrumentation) defaults for non-IIS services
+# Send OTLP directly to New Relic (US region); requires api-key header via OTEL_EXPORTER_OTLP_HEADERS
+otel_exporter_otlp_endpoint: https://otlp.nr-data.net
+otel_exporter_otlp_protocol: http/protobuf
+otel_dotnet_auto_home: C:\Program Files\OpenTelemetry .NET AutoInstrumentation
+# Pin to v1.9.0 — last release using DiagnosticSource 8.x (compatible with self-contained .NET 8 apps)
+otel_dotnet_auto_version: "1.9.0"
