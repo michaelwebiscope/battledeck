@@ -23,11 +23,17 @@ public class PaymentsController : ControllerBase
         {
             var client = _httpClientFactory.CreateClient();
             client.Timeout = TimeSpan.FromSeconds(30);
+            // Forward API key so payment-service can deduct from account balance
+            var apiKey = Request.Headers["X-API-Key"].FirstOrDefault()
+                ?? Request.Headers["Authorization"].FirstOrDefault()?.Replace("Bearer ", "");
+            if (!string.IsNullOrEmpty(apiKey))
+                client.DefaultRequestHeaders.Add("X-API-Key", apiKey);
             var response = await client.PostAsJsonAsync($"{paymentUrl}/api/payment/simulate", new
             {
                 amount = request.Amount,
                 currency = request.Currency ?? "USD",
-                description = request.Description ?? "Donation"
+                description = request.Description ?? "Donation",
+                paymentMethodToken = request.PaymentMethodToken
             });
             var body = await response.Content.ReadAsStringAsync();
             return new ContentResult { Content = body, ContentType = "application/json", StatusCode = (int)response.StatusCode };
@@ -43,4 +49,4 @@ public class PaymentsController : ControllerBase
     }
 }
 
-public record SimulateRequest(decimal Amount, string? Currency, string? Description);
+public record SimulateRequest(decimal Amount, string? Currency, string? Description, string? PaymentMethodToken);
