@@ -19,6 +19,10 @@
 
 - name: Kill navalarchive and dotnet processes
   ansible.windows.win_shell: |
+    # Stop IIS first to release file locks on NavalArchive.Api directory
+    iisreset /stop 2>$null
+    taskkill /F /IM w3wp.exe 2>$null
+    taskkill /F /IM node.exe 2>$null
     Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like "*navalarchive*" -or $_.CommandLine -like "*image-populator*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
     taskkill /F /IM java.exe 2>$null
     taskkill /F /IM dotnet.exe 2>$null
@@ -41,4 +45,4 @@
 
 - name: Pause for processes to exit
   ansible.builtin.pause:
-    seconds: 10
+    seconds: 15
