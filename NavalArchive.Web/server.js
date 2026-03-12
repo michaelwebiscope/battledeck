@@ -59,6 +59,7 @@ const defaultNavItems = [
   { href: '/simulation', label: 'Live Battle' },
   { label: 'Support', items: [
     { href: '/donate', label: 'Donate' },
+    { href: '/payment-account', label: 'Payment Account' },
     { href: '/membership', label: 'Membership' }
   ]},
   { label: 'Member', items: [
@@ -237,20 +238,22 @@ app.post('/api/captains/delete/:id', async (req, res) => {
 app.use('/api', async (req, res) => {
   try {
     const url = `${API_BASE}/api${req.url}`;
-    const opts = {
-      method: req.method,
-      url,
-      headers: { 'Content-Type': 'application/json' },
-      responseType: 'json',
-      validateStatus: () => true
-    };
+      const headers = { 'Content-Type': 'application/json' };
+      if (req.headers['x-api-key']) headers['X-API-Key'] = req.headers['x-api-key'];
+      const opts = {
+        method: req.method,
+        url,
+        headers,
+        responseType: 'json',
+        validateStatus: () => true
+      };
     if (req.method !== 'GET' && req.method !== 'HEAD' && req.body && Object.keys(req.body).length) opts.data = req.body;
-    const r = await axios(opts);
-    res.status(r.status).json(r.data ?? {});
-  } catch (err) {
+      const r = await axios(opts);
+      res.status(r.status).json(r.data ?? {});
+    } catch (err) {
     console.error('API proxy error:', err.message);
     res.status(502).json({ error: 'API unavailable' });
-  }
+    }
 });
 
 // --- Routes ---
@@ -263,9 +266,9 @@ app.get('/', async (req, res) => {
   // Fetch USS Enterprise (id 9) from API so we use gallery proxy - more reliable than direct Wikimedia URL
   let featuredShip = {
     id: 9,
-    name: 'USS Enterprise (CV-6)',
-    description: 'The most decorated ship of the Second World War. "The Big E" earned 20 battle stars and participated in nearly every major Pacific engagement.',
-    year: 1938,
+      name: 'USS Enterprise (CV-6)',
+      description: 'The most decorated ship of the Second World War. "The Big E" earned 20 battle stars and participated in nearly every major Pacific engagement.',
+      year: 1938,
     imageUrl: '/gallery/image/9',
     imageVersion: 0
   };
@@ -1322,6 +1325,18 @@ app.get('/admin/images/populate/status/:jobId', (req, res) => {
   res.json({ events: job.events, done: job.done });
 });
 
+// Trigger Java ImagePopulator (Wikipedia): API entity calls Java entity at localhost:5099/run
+app.post('/admin/images/populate/wikipedia', async (req, res) => {
+  try {
+    const response = await api.post('/api/images/populate/wikipedia', {}, { timeout: 20000 });
+    res.status(response.status).json(response.data || { message: 'Wikipedia populate started.' });
+  } catch (err) {
+    const status = err.response?.status ?? 503;
+    const data = err.response?.data ?? { message: err.message || 'ImagePopulator unreachable.' };
+    res.status(status).json(data);
+  }
+});
+
 // Test terminal: emits fake progress events over ~12s so you can verify the terminal updates in the browser
 app.post('/admin/images/populate/test-terminal', (req, res) => {
   const jobId = 'test-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
@@ -1455,6 +1470,10 @@ app.post('/logs/search', async (req, res) => {
 
 app.get('/donate', (req, res) => {
   res.render('donate', { title: 'Donate' });
+});
+
+app.get('/payment-account', (req, res) => {
+  res.render('payment-account', { title: 'Payment Account' });
 });
 
 app.get('/membership', (req, res) => {

@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -27,6 +28,8 @@ type AccountInfo struct {
 	AccountID string
 	Name      string
 	Tier      string
+	Balance   float64
+	APIKey    string // raw key, kept for internal deduct calls
 }
 
 func accountFromContext(ctx context.Context) *AccountInfo {
@@ -51,6 +54,7 @@ func AuthMiddleware(accountServiceURL string, nrApp *newrelic.Application) func(
 				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Invalid API key"})
 				return
 			}
+			acct.APIKey = key // store raw key for deduct calls
 
 			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), accountCtxKey, acct)))
 		})
@@ -89,15 +93,51 @@ func verifyKey(ctx context.Context, verifyURL, key string, nrApp *newrelic.Appli
 
 func decodeVerifyResponse(resp *http.Response) (*AccountInfo, error) {
 	var result struct {
-		Valid     bool   `json:"valid"`
-		AccountID string `json:"accountId"`
-		Name      string `json:"name"`
-		Tier      string `json:"tier"`
+		Valid     bool    `json:"valid"`
+		AccountID string  `json:"accountId"`
+		Name      string  `json:"name"`
+		Tier      string  `json:"tier"`
+		Balance   float64 `json:"balance"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil || !result.Valid {
 		return nil, nil
 	}
-	return &AccountInfo{AccountID: result.AccountID, Name: result.Name, Tier: result.Tier}, nil
+	return &AccountInfo{AccountID: result.AccountID, Name: result.Name, Tier: result.Tier, Balance: result.Balance}, nil
+}
+
+// deductBalance calls account-service to deduct funds from an account's balance.
+// Returns an error if insufficient funds or the call fails.
+func deductBalance(ctx context.Context, accountServiceURL, apiKey string, amount float64, nrApp *newrelic.Application) error {
+	body, _ := json.Marshal(map[string]float64{"amount": amount})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, accountServiceURL+"/api/accounts/funds/deduct", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", apiKey)
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	var resp *http.Response
+	if txn := newrelic.FromContext(ctx); txn != nil {
+		seg := newrelic.StartExternalSegment(txn, req)
+		resp, err = client.Do(req)
+		seg.Response = resp
+		seg.End()
+	} else {
+		resp, err = client.Do(req)
+	}
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusPaymentRequired {
+		return fmt.Errorf("insufficient_funds")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("deduct failed: status %d", resp.StatusCode)
+	}
+	return nil
 }
 
 // ── Payment Methods ───────────────────────────────────────────────────────────
@@ -241,7 +281,7 @@ type SimulateResponse struct {
 	Message       string  `json:"message"`
 }
 
-func HandleSimulate(proc *processor.Processor, idem idempotency.IdempotencyStore, s store.Store, q queue.Queue, useQueue bool) http.HandlerFunc {
+func HandleSimulate(proc *processor.Processor, idem idempotency.IdempotencyStore, s store.Store, q queue.Queue, useQueue bool, accountServiceURL string, nrApp *newrelic.Application) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		acct := accountFromContext(r.Context())
 
@@ -259,6 +299,24 @@ func HandleSimulate(proc *processor.Processor, idem idempotency.IdempotencyStore
 		}
 
 		ctx := r.Context()
+
+		// If authenticated with no payment method token — charge from account balance
+		if acct != nil && req.PaymentMethodToken == "" && accountServiceURL != "" {
+			deductCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			err := deductBalance(deductCtx, accountServiceURL, acct.APIKey, req.Amount, nrApp)
+			cancel()
+			if err != nil {
+				if strings.Contains(err.Error(), "insufficient_funds") {
+					writeJSON(w, http.StatusPaymentRequired, map[string]string{
+						"error": "Insufficient funds in your account balance",
+						"code":  "insufficient_funds",
+					})
+					return
+				}
+				writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Account service unavailable"})
+				return
+			}
+		}
 
 		// Validate payment method belongs to this account
 		if req.PaymentMethodToken != "" && acct != nil {

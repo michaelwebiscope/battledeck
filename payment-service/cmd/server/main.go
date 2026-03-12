@@ -97,7 +97,7 @@ func main() {
 
 	// Public
 	r.Get("/health", handler.HandleHealth(db))
-	r.Post("/api/payment/simulate", handler.HandleSimulate(proc, idem, db, q, cfg.UseQueue))
+	r.Post("/api/payment/simulate", handler.HandleSimulate(proc, idem, db, q, cfg.UseQueue, cfg.AccountServiceURL, nrApp))
 	r.Get("/api/payment/status/{transactionId}", handler.HandleStatus(db))
 
 	// Authenticated routes (require X-API-Key from account-service)

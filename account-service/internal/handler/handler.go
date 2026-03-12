@@ -50,14 +50,14 @@ func HandleRegister(s store.Store) http.HandlerFunc {
 		var req struct {
 			Name  string `json:"name"`
 			Email string `json:"email"`
-			Tier  string `json:"tier"` // optional: "sandbox" (default) or "production"
+			Tier  string `json:"tier"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid JSON"})
 			return
 		}
 		if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.Email) == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name and email are required"})
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name and ID are required"})
 			return
 		}
 
@@ -92,7 +92,7 @@ func HandleRegister(s store.Store) http.HandlerFunc {
 
 		if err := s.CreateAccount(ctx, acct); err != nil {
 			if strings.Contains(err.Error(), "UNIQUE") {
-				writeJSON(w, http.StatusConflict, map[string]string{"error": "email already registered"})
+				writeJSON(w, http.StatusConflict, map[string]string{"error": "ID already registered"})
 				return
 			}
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create account"})
@@ -104,13 +104,14 @@ func HandleRegister(s store.Store) http.HandlerFunc {
 			"name":      acct.Name,
 			"email":     acct.Email,
 			"tier":      acct.Tier,
-			"apiKey":    rawKey, // shown only once — store it safely
+			"balance":   0.0,
+			"apiKey":    rawKey,
 			"message":   "Account created. Store your API key — it will not be shown again.",
 		})
 	}
 }
 
-// HandleGetMe returns the authenticated account's details.
+// HandleGetMe returns the authenticated account's details including balance.
 func HandleGetMe(s store.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		acct := AccountFromContext(r.Context())
@@ -119,12 +120,103 @@ func HandleGetMe(s store.Store) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"accountId": acct.AccountID,
-			"name":      acct.Name,
-			"email":     acct.Email,
-			"tier":      acct.Tier,
-			"createdAt": acct.CreatedAt,
+			"accountId":    acct.AccountID,
+			"name":         acct.Name,
+			"email":        acct.Email,
+			"tier":         acct.Tier,
+			"balance":      acct.Balance,
+			"createdAt":    acct.CreatedAt,
 			"apiKeyPrefix": acct.APIKeyPrefix + "...",
+		})
+	}
+}
+
+// HandleAddFunds adds funds to the authenticated account's balance.
+// POST /api/accounts/funds  { "amount": 50.00 }
+func HandleAddFunds(s store.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		acct := AccountFromContext(r.Context())
+		if acct == nil {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "not authenticated"})
+			return
+		}
+
+		var req struct {
+			Amount float64 `json:"amount"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid JSON"})
+			return
+		}
+		if req.Amount <= 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Amount must be greater than 0"})
+			return
+		}
+		if req.Amount > 10000 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Amount exceeds maximum top-up of $10,000"})
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+
+		updated, err := s.AddFunds(ctx, acct.AccountID, req.Amount)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to add funds"})
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"accountId": updated.AccountID,
+			"balance":   updated.Balance,
+			"added":     req.Amount,
+			"message":   "Funds added successfully",
+		})
+	}
+}
+
+// HandleDeductFunds deducts funds from the authenticated account's balance.
+// Called internally by payment-service. POST /api/accounts/funds/deduct  { "amount": 25.00 }
+func HandleDeductFunds(s store.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		acct := AccountFromContext(r.Context())
+		if acct == nil {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "not authenticated"})
+			return
+		}
+
+		var req struct {
+			Amount float64 `json:"amount"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid JSON"})
+			return
+		}
+		if req.Amount <= 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid amount"})
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+
+		updated, err := s.DeductFunds(ctx, acct.AccountID, req.Amount)
+		if err != nil {
+			if strings.Contains(err.Error(), "insufficient") {
+				writeJSON(w, http.StatusPaymentRequired, map[string]string{
+					"error": "Insufficient funds",
+					"code":  "insufficient_funds",
+				})
+				return
+			}
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "deduction failed"})
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"accountId": updated.AccountID,
+			"balance":   updated.Balance,
+			"deducted":  req.Amount,
 		})
 	}
 }
@@ -155,6 +247,7 @@ func HandleVerify(s store.Store) http.HandlerFunc {
 			"accountId": acct.AccountID,
 			"name":      acct.Name,
 			"tier":      acct.Tier,
+			"balance":   acct.Balance,
 		})
 	}
 }

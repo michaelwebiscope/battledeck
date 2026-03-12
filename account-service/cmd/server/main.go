@@ -64,6 +64,8 @@ func main() {
 	r.Group(func(r chi.Router) {
 		r.Use(handler.AuthMiddleware(db))
 		r.Get("/api/accounts/me", handler.HandleGetMe(db))
+		r.Post("/api/accounts/funds", handler.HandleAddFunds(db))
+		r.Post("/api/accounts/funds/deduct", handler.HandleDeductFunds(db))
 	})
 
 	addr := fmt.Sprintf(":%d", cfg.HTTPPort)
