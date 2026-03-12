@@ -15,6 +15,7 @@ all:
           ansible_winrm_server_cert_validation: ignore
           ansible_port: 5986
           ansible_winrm_scheme: https
-          # Long-running publish/build/clone tasks can exceed previous timeout values.
-          ansible_winrm_operation_timeout_sec: 300
-          ansible_winrm_read_timeout_sec: 600
+          # Long-running publish/build/clone tasks can exceed default timeout values.
+          # Catalog.csproj self-contained publish can take 15+ min on cold builds.
+          ansible_winrm_operation_timeout_sec: 600
+          ansible_winrm_read_timeout_sec: 1200

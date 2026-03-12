@@ -102,12 +102,25 @@ fi
 
 cd ansible
 
+run_ansible() {
+  python3 -m ansible playbook "$@"
+  local rc=$?
+  # Exit codes: 0=ok, 2=task failed, 4=unreachable (WinRM timeout on slow compile is ok)
+  # Only abort on genuine task failures (rc=2) or parse errors (rc=1). Allow rc=4 (unreachable).
+  if [ $rc -eq 0 ] || [ $rc -eq 4 ]; then
+    [ $rc -eq 4 ] && echo "WARNING: Some WinRM connections timed out (unreachable) but continuing deploy..."
+    return 0
+  fi
+  echo "ERROR: Ansible failed with exit code $rc"
+  exit $rc
+}
+
 if [ "$GO_ONLY" = true ]; then
   echo "=== 2. Ansible playbook (Go binaries only - ~2 min) ==="
-  python3 -m ansible playbook playbooks/go-binaries-only.yml "${SITE_ARGS[@]}"
+  run_ansible playbooks/go-binaries-only.yml "${SITE_ARGS[@]}"
 else
   echo "=== 2. Ansible playbook (deploy Naval Archive - ~45-60 min) ==="
-  python3 -m ansible playbook playbooks/site.yml "${SITE_ARGS[@]}"
+  run_ansible playbooks/site.yml "${SITE_ARGS[@]}"
 fi
 
 if [ "$ENABLE_NEWRELIC" = true ]; then

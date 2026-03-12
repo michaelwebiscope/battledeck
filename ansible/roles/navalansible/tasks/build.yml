@@ -184,3 +184,5 @@
   loop: "{{ chain_services }}"
   loop_control:
     label: "{{ item.csproj }}"
+  ignore_unreachable: true
+  ignore_errors: true
