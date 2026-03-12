@@ -135,7 +135,7 @@
       $env:DATABASE_URL = "{{ account_path }}\accounts.db"
       Set-Location "{{ account_path }}"
       & "{{ account_path }}\account-service.exe"
-    dest: "{{ account_path }}\run-account-service.ps1"
+    dest: "{{ account_path }}\\run-account-service.ps1"
 
 - name: Create NavalArchiveAccount scheduled task (Go account-service)
   ansible.windows.win_shell: |
