@@ -1,10 +1,12 @@
-module github.com/navalarchive/account-service
+module github.com/navalarchive/payment-service
 
 go 1.24
 
 require (
 	github.com/go-chi/chi/v5 v5.0.11
+	github.com/lib/pq v1.10.9
 	github.com/newrelic/go-agent/v3 v3.42.0
+	github.com/rabbitmq/amqp091-go v1.10.0
 	modernc.org/sqlite v1.29.1
 )
 

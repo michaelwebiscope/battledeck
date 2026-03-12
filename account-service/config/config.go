@@ -8,6 +8,8 @@ import (
 type Config struct {
 	HTTPPort    int
 	DatabaseURL string
+	NRLicenseKey string // NEW_RELIC_LICENSE_KEY
+	NRAppName    string // NEW_RELIC_APP_NAME
 }
 
 func Load() *Config {
@@ -23,8 +25,15 @@ func Load() *Config {
 		dbURL = "accounts.db"
 	}
 
+	nrApp := os.Getenv("NEW_RELIC_APP_NAME")
+	if nrApp == "" {
+		nrApp = "NavalArchiveAccount"
+	}
+
 	return &Config{
-		HTTPPort:    port,
-		DatabaseURL: dbURL,
+		HTTPPort:     port,
+		DatabaseURL:  dbURL,
+		NRLicenseKey: os.Getenv("NEW_RELIC_LICENSE_KEY"),
+		NRAppName:    nrApp,
 	}
 }

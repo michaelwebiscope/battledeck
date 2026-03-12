@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/newrelic/go-agent/v3/newrelic"
 	"github.com/navalarchive/payment-service/config"
 	"github.com/navalarchive/payment-service/internal/handler"
 	"github.com/navalarchive/payment-service/internal/idempotency"
@@ -24,6 +25,24 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 
 	cfg := config.Load()
+
+	// New Relic APM — optional; skipped if no license key.
+	var nrApp *newrelic.Application
+	if cfg.NRLicenseKey != "" {
+		app, err := newrelic.NewApplication(
+			newrelic.ConfigAppName(cfg.NRAppName),
+			newrelic.ConfigLicense(cfg.NRLicenseKey),
+			newrelic.ConfigDistributedTracerEnabled(true),
+			newrelic.ConfigAppLogForwardingEnabled(true),
+		)
+		if err != nil {
+			slog.Warn("New Relic init failed", "err", err)
+		} else {
+			nrApp = app
+			defer nrApp.Shutdown(5 * time.Second)
+			slog.Info("New Relic APM enabled", "app", cfg.NRAppName)
+		}
+	}
 
 	db, err := store.NewSQLStore(cfg.DatabaseType, cfg.DatabaseURL)
 	if err != nil {
@@ -42,12 +61,12 @@ func main() {
 
 	proc := processor.New(db)
 
-	// Queue: try RabbitMQ first, fall back to in-memory channel queue.
+	// Queue: try RabbitMQ, fall back to in-memory channel queue.
 	var q queue.Queue
 	if cfg.UseQueue {
 		rmq, err := queue.NewRabbitMQ(cfg.RabbitMQURL, cfg.QueueName)
 		if err != nil {
-			slog.Warn("RabbitMQ unavailable, falling back to in-memory queue", "err", err)
+			slog.Warn("RabbitMQ unavailable, using in-memory queue", "err", err)
 			q = queue.NewChanQueue(1000)
 		} else {
 			q = rmq
@@ -74,15 +93,16 @@ func main() {
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(nrMiddleware(nrApp)) // New Relic transaction per request
 
 	// Public
 	r.Get("/health", handler.HandleHealth(db))
 
 	// Authenticated routes
 	r.Group(func(r chi.Router) {
-		r.Use(handler.AuthMiddleware(cfg.AccountServiceURL))
+		r.Use(handler.AuthMiddleware(cfg.AccountServiceURL, nrApp))
 
-		// Payment methods (tokenized cards)
+		// Payment methods
 		r.Post("/api/payment/methods", handler.HandleAddPaymentMethod(db))
 		r.Get("/api/payment/methods", handler.HandleListPaymentMethods(db))
 		r.Delete("/api/payment/methods/{token}", handler.HandleDeletePaymentMethod(db))
@@ -105,6 +125,7 @@ func main() {
 		"port", cfg.HTTPPort,
 		"use_queue", cfg.UseQueue,
 		"account_service", cfg.AccountServiceURL,
+		"newrelic", cfg.NRLicenseKey != "",
 	)
 
 	go func() {
@@ -122,5 +143,28 @@ func main() {
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
 		slog.Error("shutdown error", "err", err)
+	}
+}
+
+// nrMiddleware creates a New Relic transaction per request, named by chi route pattern.
+func nrMiddleware(app *newrelic.Application) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if app == nil {
+				next.ServeHTTP(w, r)
+				return
+			}
+			txn := app.StartTransaction(r.Method + " " + r.URL.Path)
+			txn.SetWebRequestHTTP(r)
+			w = txn.SetWebResponse(w)
+			r = newrelic.RequestWithTransactionContext(r, txn)
+			next.ServeHTTP(w, r)
+			if rc := chi.RouteContext(r.Context()); rc != nil {
+				if p := rc.RoutePattern(); p != "" {
+					txn.SetName(r.Method + " " + p)
+				}
+			}
+			txn.End()
+		})
 	}
 }

@@ -8,13 +8,15 @@ import (
 type Config struct {
 	HTTPPort          int
 	DatabaseURL       string
-	DatabaseType      string // "postgres" or "sqlite"
+	DatabaseType      string
 	RabbitMQURL       string
 	QueueName         string
-	UseQueue          bool   // if false, process synchronously
-	Idempotency       string // "redis", "memory", or "db"
+	UseQueue          bool
+	Idempotency       string
 	RedisURL          string
-	AccountServiceURL string // URL of account-service for API key verification
+	AccountServiceURL string
+	NRLicenseKey      string // NEW_RELIC_LICENSE_KEY
+	NRAppName         string // NEW_RELIC_APP_NAME
 }
 
 func Load() *Config {
@@ -49,21 +51,14 @@ func Load() *Config {
 		queueName = "payment_intents"
 	}
 
-	useQueue := os.Getenv("USE_QUEUE") == "true" || os.Getenv("USE_QUEUE") == "1"
-
-	idempotency := os.Getenv("IDEMPOTENCY")
-	if idempotency == "" {
-		idempotency = "memory"
-	}
-
-	redisURL := os.Getenv("REDIS_URL")
-	if redisURL == "" {
-		redisURL = "redis://localhost:6379"
-	}
-
 	accountServiceURL := os.Getenv("ACCOUNT_SERVICE_URL")
 	if accountServiceURL == "" {
 		accountServiceURL = "http://localhost:5005"
+	}
+
+	nrApp := os.Getenv("NEW_RELIC_APP_NAME")
+	if nrApp == "" {
+		nrApp = "NavalArchivePayment"
 	}
 
 	return &Config{
@@ -72,9 +67,11 @@ func Load() *Config {
 		DatabaseType:      dbType,
 		RabbitMQURL:       rabbitURL,
 		QueueName:         queueName,
-		UseQueue:          useQueue,
-		Idempotency:       idempotency,
-		RedisURL:          redisURL,
+		UseQueue:          os.Getenv("USE_QUEUE") == "true" || os.Getenv("USE_QUEUE") == "1",
+		Idempotency:       func() string { if v := os.Getenv("IDEMPOTENCY"); v != "" { return v }; return "memory" }(),
+		RedisURL:          func() string { if v := os.Getenv("REDIS_URL"); v != "" { return v }; return "redis://localhost:6379" }(),
 		AccountServiceURL: accountServiceURL,
+		NRLicenseKey:      os.Getenv("NEW_RELIC_LICENSE_KEY"),
+		NRAppName:         nrApp,
 	}
 }

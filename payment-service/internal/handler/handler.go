@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/newrelic/go-agent/v3/newrelic"
 	"github.com/navalarchive/payment-service/internal/idempotency"
 	"github.com/navalarchive/payment-service/internal/processor"
 	"github.com/navalarchive/payment-service/internal/queue"
@@ -34,7 +35,8 @@ func accountFromContext(ctx context.Context) *AccountInfo {
 }
 
 // AuthMiddleware validates X-API-Key or Authorization: Bearer by calling account-service.
-func AuthMiddleware(accountServiceURL string) func(http.Handler) http.Handler {
+// If nrApp is non-nil, the verify HTTP call is instrumented as a New Relic external segment.
+func AuthMiddleware(accountServiceURL string, nrApp *newrelic.Application) func(http.Handler) http.Handler {
 	verifyURL := accountServiceURL + "/api/auth/verify"
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -44,7 +46,7 @@ func AuthMiddleware(accountServiceURL string) func(http.Handler) http.Handler {
 				return
 			}
 
-			acct, err := verifyKey(r.Context(), verifyURL, key)
+			acct, err := verifyKey(r.Context(), verifyURL, key, nrApp)
 			if err != nil || acct == nil {
 				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Invalid API key"})
 				return
@@ -55,7 +57,7 @@ func AuthMiddleware(accountServiceURL string) func(http.Handler) http.Handler {
 	}
 }
 
-func verifyKey(ctx context.Context, verifyURL, key string) (*AccountInfo, error) {
+func verifyKey(ctx context.Context, verifyURL, key string, nrApp *newrelic.Application) (*AccountInfo, error) {
 	body, _ := json.Marshal(map[string]string{"apiKey": key})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, verifyURL, bytes.NewReader(body))
 	if err != nil {
@@ -63,18 +65,34 @@ func verifyKey(ctx context.Context, verifyURL, key string) (*AccountInfo, error)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
+	// Instrument as a New Relic external segment if a transaction exists in context.
 	client := &http.Client{Timeout: 3 * time.Second}
+	if txn := newrelic.FromContext(ctx); txn != nil {
+		seg := newrelic.StartExternalSegment(txn, req)
+		resp, err := client.Do(req)
+		seg.Response = resp
+		seg.End()
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+		return decodeVerifyResponse(resp)
+	}
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	return decodeVerifyResponse(resp)
+}
 
+func decodeVerifyResponse(resp *http.Response) (*AccountInfo, error) {
 	var result struct {
-		Valid      bool   `json:"valid"`
-		AccountID  string `json:"accountId"`
-		Name       string `json:"name"`
-		Tier       string `json:"tier"`
+		Valid     bool   `json:"valid"`
+		AccountID string `json:"accountId"`
+		Name      string `json:"name"`
+		Tier      string `json:"tier"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil || !result.Valid {
 		return nil, nil
@@ -88,7 +106,7 @@ type addMethodRequest struct {
 	CardNumber string `json:"cardNumber"`
 	ExpMonth   int    `json:"expMonth"`
 	ExpYear    int    `json:"expYear"`
-	CVV        string `json:"cvv"`        // accepted but never stored
+	CVV        string `json:"cvv"`
 	HolderName string `json:"holderName"`
 }
 
@@ -128,6 +146,12 @@ func HandleAddPaymentMethod(s store.Store) http.HandlerFunc {
 
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
+
+		// NR segment for DB write
+		if txn := newrelic.FromContext(ctx); txn != nil {
+			seg := txn.StartSegment("db/CreatePaymentMethod")
+			defer seg.End()
+		}
 
 		if err := s.CreatePaymentMethod(ctx, pm); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save payment method"})
@@ -198,14 +222,14 @@ func HandleDeletePaymentMethod(s store.Store) http.HandlerFunc {
 	}
 }
 
-// ── Payment Simulate / Charge ─────────────────────────────────────────────────
+// ── Simulate / Charge ─────────────────────────────────────────────────────────
 
 type SimulateRequest struct {
 	Amount             float64 `json:"amount"`
 	Currency           string  `json:"currency"`
 	Description        string  `json:"description"`
-	PaymentMethodToken string  `json:"paymentMethodToken"` // preferred
-	CardID             string  `json:"cardId"`             // legacy fallback
+	PaymentMethodToken string  `json:"paymentMethodToken"`
+	CardID             string  `json:"cardId"`
 	IdempotencyKey     string  `json:"idempotencyKey"`
 }
 
@@ -236,9 +260,13 @@ func HandleSimulate(proc *processor.Processor, idem idempotency.IdempotencyStore
 
 		ctx := r.Context()
 
-		// Validate payment method token if provided
+		// Validate payment method belongs to this account
 		if req.PaymentMethodToken != "" && acct != nil {
 			ctx2, cancel := context.WithTimeout(ctx, 3*time.Second)
+			if txn := newrelic.FromContext(ctx); txn != nil {
+				seg := txn.StartSegment("db/GetPaymentMethod")
+				defer seg.End()
+			}
 			pm, err := s.GetPaymentMethod(ctx2, req.PaymentMethodToken)
 			cancel()
 			if err != nil || pm == nil {
@@ -300,10 +328,18 @@ func HandleSimulate(proc *processor.Processor, idem idempotency.IdempotencyStore
 			return
 		}
 
-		// Sync mode
-		t, err := proc.Process(ctx, intent)
-		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		// Sync mode — add NR segment around processing
+		var t *store.Transaction
+		var procErr error
+		if txn := newrelic.FromContext(ctx); txn != nil {
+			seg := txn.StartSegment("payment/Process")
+			t, procErr = proc.Process(ctx, intent)
+			seg.End()
+		} else {
+			t, procErr = proc.Process(ctx, intent)
+		}
+		if procErr != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": procErr.Error()})
 			return
 		}
 
@@ -311,7 +347,6 @@ func HandleSimulate(proc *processor.Processor, idem idempotency.IdempotencyStore
 		if t.Approved {
 			msg = "Payment approved"
 		}
-
 		res := SimulateResponse{
 			Approved:      t.Approved,
 			TransactionID: t.TransactionID,
@@ -344,7 +379,6 @@ func HandleStatus(s store.Store) http.HandlerFunc {
 		}
 
 		acct := accountFromContext(r.Context())
-
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
 
@@ -353,8 +387,6 @@ func HandleStatus(s store.Store) http.HandlerFunc {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Transaction not found"})
 			return
 		}
-
-		// If authenticated, scope to account
 		if acct != nil && t.AccountID != "" && t.AccountID != acct.AccountID {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Transaction not found"})
 			return
