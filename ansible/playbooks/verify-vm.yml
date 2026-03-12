@@ -1,0 +1,48 @@
+---
+# Quick check: API, Web, ImagePopulator on VM (no deploy, no role).
+# Run: cd ansible && ansible playbook playbooks/verify-vm.yml -e "ansible_host=IP" -e "vm_admin_password=PASS"
+- name: Verify VM services only
+  hosts: navalansible-vm
+  gather_facts: true
+  vars:
+    image_populator_port: 5099
+  tasks:
+    - name: Check ImagePopulator service exists
+      ansible.windows.win_shell: |
+        $svc = Get-Service -Name NavalArchiveImagePopulator -ErrorAction SilentlyContinue
+        if ($svc) { Write-Output "present"; Write-Output $svc.Status } else { Write-Output "missing" }
+      args:
+        executable: powershell
+      register: populator_svc
+      changed_when: false
+
+    - name: Check ImagePopulator /health
+      ansible.windows.win_uri:
+        url: "http://localhost:{{ image_populator_port }}/health"
+        method: GET
+      register: populator_health
+      ignore_errors: true
+      when: populator_svc.stdout_lines[0] | default('') == 'present'
+
+    - name: Check API health
+      ansible.windows.win_uri:
+        url: http://localhost:5000/trace
+        method: GET
+      register: api_health
+      ignore_errors: true
+
+    - name: Check Web (Node)
+      ansible.windows.win_uri:
+        url: http://localhost:3000/
+        method: GET
+      register: web_health
+      ignore_errors: true
+
+    - name: Report VM status
+      ansible.builtin.debug:
+        msg: |
+          API: {{ 'OK' if api_health.status_code | default(0) == 200 else 'Check manually' }}
+          Web: {{ 'OK' if web_health.status_code | default(0) == 200 else 'Check manually' }}
+          ImagePopulator service: {{ populator_svc.stdout_lines[0] | default('unknown') }}
+          ImagePopulator status: {{ populator_svc.stdout_lines[1] | default('N/A') }}
+          ImagePopulator /health: {{ 'OK' if (populator_health.status_code | default(0)) == 200 else 'Not OK or N/A' }}

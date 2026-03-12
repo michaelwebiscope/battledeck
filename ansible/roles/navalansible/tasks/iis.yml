@@ -1,0 +1,87 @@
+---
+# Configure IIS: app pool, sites, bindings, cert, proxy
+
+- name: Enable IIS proxy
+  ansible.windows.win_shell: |
+    Import-Module WebAdministration -ErrorAction SilentlyContinue
+    Set-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST' -filter "system.webServer/proxy" -name "enabled" -value "True" -ErrorAction SilentlyContinue
+  args:
+    executable: powershell
+
+- name: Create NavalArchive HTTPS cert if not exists
+  ansible.windows.win_shell: |
+    $existing = Get-ChildItem Cert:\LocalMachine\My -ErrorAction SilentlyContinue | Where-Object { $_.FriendlyName -eq "NavalArchive HTTPS" } | Select-Object -First 1
+    if (!$existing) {
+      New-SelfSignedCertificate -DnsName "localhost", "127.0.0.1", "navalansible-vm" -CertStoreLocation "Cert:\LocalMachine\My" -NotAfter (Get-Date).AddYears(5) -FriendlyName "NavalArchive HTTPS"
+    }
+  args:
+    executable: powershell
+
+- name: Get cert thumbprint
+  ansible.windows.win_shell: |
+    (Get-ChildItem Cert:\LocalMachine\My -ErrorAction SilentlyContinue | Where-Object { $_.FriendlyName -eq "NavalArchive HTTPS" } | Select-Object -First 1).Thumbprint
+  args:
+    executable: powershell
+  register: thumbprint_out
+
+- name: Set cert thumbprint fact
+  ansible.builtin.set_fact:
+    cert_thumbprint: "{{ thumbprint_out.stdout | trim }}"
+
+- name: Configure IIS sites (appcmd)
+  ansible.windows.win_shell: |
+    $appcmd = if (Test-Path "$env:windir\SysNative\inetsrv\appcmd.exe") { "$env:windir\SysNative\inetsrv\appcmd.exe" } else { "$env:windir\System32\inetsrv\appcmd.exe" }
+    if (!(Test-Path $appcmd)) { exit 1 }
+    # Move Default Web Site off 80
+    & $appcmd set site "Default Web Site" "/bindings.[protocol='http',bindingInformation='*:80:'].bindingInformation:*:8080:" 2>$null
+    & $appcmd stop site "Default Web Site" 2>$null
+    & $appcmd delete site NavalArchive-API 2>$null
+    & $appcmd delete apppool NavalArchive-API 2>$null
+    & $appcmd delete site NavalArchive-Web 2>$null
+    & $appcmd add apppool /name:NavalArchive-API "/managedRuntimeVersion:"
+    & $appcmd add site /name:NavalArchive-API "/physicalPath:{{ api_path }}" "/bindings:http/*:5000:"
+    & $appcmd set app "NavalArchive-API/" /applicationPool:NavalArchive-API
+    try {
+      Import-Module IISAdministration -ErrorAction SilentlyContinue
+      New-IISSiteBinding -Name "NavalArchive-API" -BindingInformation "*:443:" -CertificateThumbPrint "{{ cert_thumbprint }}" -CertStoreLocation "Cert:\LocalMachine\My" -Protocol https -ErrorAction SilentlyContinue
+    } catch {
+      New-WebBinding -Name "NavalArchive-API" -Protocol https -Port 443 -ErrorAction SilentlyContinue
+      $b = Get-WebBinding -Name "NavalArchive-API" -Protocol "https" -ErrorAction SilentlyContinue
+      if ($b) { $b.AddSslCertificate("{{ cert_thumbprint }}", "My") }
+    }
+    & $appcmd add site /name:NavalArchive-Web "/physicalPath:{{ web_path }}" "/bindings:http/*:80:"
+    & $appcmd set app "NavalArchive-Web/" /applicationPool:DefaultAppPool 2>$null
+    {% for item in iis_chain_services %}
+    & $appcmd stop site "{{ item.site }}" 2>$null
+    & $appcmd delete site "{{ item.site }}" 2>$null
+    & $appcmd delete apppool "{{ item.apppool }}" 2>$null
+    & $appcmd add apppool /name:{{ item.apppool }} "/managedRuntimeVersion:"
+    & $appcmd add site /name:{{ item.site }} "/physicalPath:{{ chain_paths[item.path_key] }}" "/bindings:http/*:{{ item.port }}:"
+    & $appcmd set app "{{ item.site }}/" /applicationPool:{{ item.apppool }}
+    {% endfor %}
+    & $appcmd start site NavalArchive-API
+    & $appcmd start site NavalArchive-Web
+    {% for item in iis_chain_services %}
+    & $appcmd start site "{{ item.site }}" 2>$null
+    {% endfor %}
+    icacls "{{ api_path }}" /grant "IIS AppPool\NavalArchive-API:(OI)(CI)M" /T 2>$null
+    $apiAclRc = $LASTEXITCODE
+    icacls "{{ web_path }}" /grant "IIS AppPool\DefaultAppPool:(OI)(CI)RX" /T 2>$null
+    $webAclRc = $LASTEXITCODE
+    {% for item in iis_chain_services %}
+    icacls "{{ chain_paths[item.path_key] }}" /grant "IIS AppPool\{{ item.apppool }}:(OI)(CI)M" /T 2>$null
+    {% endfor %}
+    if ($apiAclRc -ne 0 -or $webAclRc -ne 0) {
+      Write-Host "Warning: icacls returned non-zero (api=$apiAclRc, web=$webAclRc). Continuing."
+    }
+  args:
+    executable: powershell
+
+- name: IIS reset
+  ansible.windows.win_shell: |
+    $iisreset = if (Test-Path "$env:windir\SysNative\inetsrv\iisreset.exe") { "$env:windir\SysNative\inetsrv\iisreset.exe" } else { "$env:windir\System32\inetsrv\iisreset.exe" }
+    if (Test-Path $iisreset) { & $iisreset /noforce }
+    $appcmd = if (Test-Path "$env:windir\SysNative\inetsrv\appcmd.exe") { "$env:windir\SysNative\inetsrv\appcmd.exe" } else { "$env:windir\System32\inetsrv\appcmd.exe" }
+    & $appcmd stop site "Default Web Site" 2>$null
+  args:
+    executable: powershell

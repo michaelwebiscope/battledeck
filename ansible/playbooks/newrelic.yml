@@ -1,0 +1,145 @@
+---
+# Install New Relic infrastructure/logs/.NET and wire app agents for Node + Java.
+# Run: python3 -m ansible playbook playbooks/newrelic.yml -e "ansible_host=<vm_ip>" -e "vm_admin_password=..." -e "newrelic_api_key=NRAK-xxx" -e "newrelic_account_id=7534908" -e "newrelic_license_key=<ingest_or_license_key>"
+
+- name: Install New Relic infrastructure and app agents
+  hosts: navalansible
+  gather_facts: true
+  vars_files:
+    - ../roles/navalansible/vars/main.yml
+  vars:
+    targets:
+      - infrastructure
+      - logs
+      - apm-dotnet
+      # apm-java is Linux-only in this role; Java instrumentation below handles ImagePopulator manually.
+    # newrelic.newrelic_install defaults to 600s on Windows; increase to avoid async timeout on slower VMs.
+    install_timeout_seconds: 1800
+    newrelic_node_app_name: NavalArchiveWeb
+    newrelic_java_app_name: NavalArchiveImagePopulator
+    newrelic_java_agent_dir: C:\ProgramData\NewRelic\java
+  environment:
+    NEW_RELIC_API_KEY: "{{ newrelic_api_key }}"
+    NEW_RELIC_ACCOUNT_ID: "{{ newrelic_account_id | default('7534908') }}"
+    NEW_RELIC_REGION: "{{ newrelic_region | default('US') }}"
+  tasks:
+    - name: Check if New Relic infrastructure agent is already installed
+      ansible.windows.win_stat:
+        path: C:\Program Files\New Relic\newrelic-infra\newrelic-infra.exe
+      register: nr_infra_stat
+
+    - name: Check if New Relic .NET APM agent is already installed
+      ansible.windows.win_stat:
+        path: C:\Program Files\New Relic\.NET Agent\netcore\NewRelic.Agent.Core.dll
+      register: nr_dotnet_stat
+
+    - name: Install infrastructure, logs, and IIS-hosted .NET agent
+      ansible.builtin.include_role:
+        name: newrelic.newrelic_install
+      when: not nr_infra_stat.stat.exists or not nr_dotnet_stat.stat.exists
+
+    - name: Report skipped Node/Java app instrumentation when no license key is provided
+      ansible.builtin.debug:
+        msg: "Skipping Node/Java APM wiring. Pass -e \"newrelic_license_key=<license_or_ingest_key>\" to enable app agents."
+      when: newrelic_license_key is not defined or newrelic_license_key | length == 0
+
+    - name: Install New Relic Node.js package in deployed web app
+      ansible.windows.win_shell: |
+        if (Test-Path "{{ web_path }}\package.json") {
+          Push-Location "{{ web_path }}"
+          & "{{ node_dir }}\npm.cmd" install newrelic --omit=dev --no-audit --no-fund
+          Pop-Location
+        }
+      args:
+        executable: powershell
+      when: newrelic_license_key is defined and newrelic_license_key | length > 0
+
+    - name: Create start-node-web.ps1 with New Relic environment
+      ansible.windows.win_copy:
+        content: |
+          $env:API_URL = "http://localhost:5000"
+          $env:GATEWAY_URL = "http://localhost:5010"
+          $env:PORT = "3000"
+          $env:NEW_RELIC_LICENSE_KEY = "{{ newrelic_license_key }}"
+          $env:NEW_RELIC_APP_NAME = "{{ newrelic_node_app_name }}"
+          $env:NEW_RELIC_NO_CONFIG_FILE = "true"
+          $env:NEW_RELIC_DISTRIBUTED_TRACING_ENABLED = "true"
+          $env:NODE_OPTIONS = "-r {{ web_path }}\node_modules\newrelic\index.js"
+          Set-Location "{{ web_path }}"
+          & "{{ node_dir }}\node.exe" server.js
+        dest: C:\inetpub\start-node-web.ps1
+      when: newrelic_license_key is defined and newrelic_license_key | length > 0
+
+    - name: Add New Relic environment to NavalArchiveWeb service
+      ansible.windows.win_shell: |
+        $envVars = @(
+          "API_URL=http://localhost:5000",
+          "GATEWAY_URL=http://localhost:5010",
+          "PORT=3000",
+          "NEW_RELIC_LICENSE_KEY={{ newrelic_license_key }}",
+          "NEW_RELIC_APP_NAME={{ newrelic_node_app_name }}",
+          "NEW_RELIC_NO_CONFIG_FILE=true",
+          "NEW_RELIC_DISTRIBUTED_TRACING_ENABLED=true",
+          "NODE_OPTIONS=-r {{ web_path }}\node_modules\newrelic\index.js"
+        )
+        $svcReg = "HKLM:\SYSTEM\CurrentControlSet\Services\NavalArchiveWeb"
+        if (Test-Path $svcReg) {
+          New-ItemProperty -Path $svcReg -Name "Environment" -PropertyType MultiString -Value $envVars -Force | Out-Null
+        } else {
+          Write-Host "NavalArchiveWeb service registry key not found: $svcReg"
+        }
+      args:
+        executable: powershell
+      when: newrelic_license_key is defined and newrelic_license_key | length > 0
+
+    - name: Ensure New Relic Java agent directory exists
+      ansible.windows.win_file:
+        path: "{{ newrelic_java_agent_dir }}"
+        state: directory
+      when: newrelic_license_key is defined and newrelic_license_key | length > 0
+
+    - name: Download New Relic Java agent jar
+      ansible.windows.win_get_url:
+        url: https://download.newrelic.com/newrelic/java-agent/newrelic-agent/current/newrelic.jar
+        dest: "{{ newrelic_java_agent_dir }}\\newrelic.jar"
+      when: newrelic_license_key is defined and newrelic_license_key | length > 0
+
+    - name: Create New Relic ImagePopulator wrapper script
+      ansible.windows.win_copy:
+        content: |
+          $ErrorActionPreference = "Stop"
+          $srcRoot = "{{ clone_path }}"
+          $nrJar = "{{ newrelic_java_agent_dir }}\newrelic.jar"
+          $javaExe = $null
+          foreach ($base in @("C:\Program Files\Amazon Corretto", "C:\Program Files\Eclipse Adoptium")) {
+            if (Test-Path $base) {
+              $jdk = Get-ChildItem $base -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "jdk*" } | Select-Object -First 1
+              if ($jdk -and (Test-Path "$($jdk.FullName)\bin\java.exe")) {
+                $javaExe = "$($jdk.FullName)\bin\java.exe"
+                break
+              }
+            }
+          }
+          if (-not $javaExe) { $javaExe = "java" }
+          $imgJar = Get-ChildItem $srcRoot -Filter "image-populator-*.jar" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $imgJar) { throw "ImagePopulator jar not found under $srcRoot" }
+          if (-not (Test-Path $nrJar)) { throw "New Relic Java agent not found at $nrJar" }
+          & $javaExe "-javaagent:$nrJar" "-Dnewrelic.config.license_key={{ newrelic_license_key }}" "-Dnewrelic.config.app_name={{ newrelic_java_app_name }}" "-Dnewrelic.config.distributed_tracing.enabled=true" -jar $imgJar.FullName http://localhost:5000
+          exit $LASTEXITCODE
+        dest: C:\inetpub\run-image-populator-newrelic.ps1
+      when: newrelic_license_key is defined and newrelic_license_key | length > 0
+
+    - name: Report Java instrumentation command
+      ansible.builtin.debug:
+        msg: 'Java instrumentation is ready. Run `powershell -ExecutionPolicy Bypass -File C:\inetpub\run-image-populator-newrelic.ps1` on the VM or use `playbooks/populate-only.yml` with `newrelic_license_key`.'
+      when: newrelic_license_key is defined and newrelic_license_key | length > 0
+
+    - name: Restart NavalArchiveWeb via scheduled task
+      ansible.windows.win_shell: |
+        taskkill /F /IM node.exe 2>$null
+        Start-Sleep -Seconds 2
+        Start-ScheduledTask -TaskName "NavalArchiveWeb-Node" -ErrorAction SilentlyContinue
+      args:
+        executable: powershell
+      failed_when: false
+      when: newrelic_license_key is defined and newrelic_license_key | length > 0

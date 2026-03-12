@@ -1,0 +1,22 @@
+---
+- hosts: navalansible
+  gather_facts: false
+  tasks:
+    - name: Check Node service and port 3000, start if stopped
+      ansible.windows.win_shell: |
+        Write-Host "=== NavalArchiveWeb service ==="
+        Get-Service NavalArchiveWeb -ErrorAction SilentlyContinue | Format-List Name,Status,StartType
+        Write-Host "`n=== Node processes ==="
+        Get-Process -Name node -ErrorAction SilentlyContinue | Format-Table Id,ProcessName
+        Write-Host "`n=== Listening on 3000 ==="
+        netstat -an | findstr "3000"
+        Write-Host "`n=== Start NavalArchiveWeb if stopped ==="
+        Start-Service NavalArchiveWeb -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 5
+        Get-Service NavalArchiveWeb
+        netstat -an | findstr "3000"
+      args:
+        executable: powershell
+      register: out
+    - debug:
+        var: out.stdout_lines

@@ -126,6 +126,18 @@ foreach ($s in $svcs) {
 $dotnet | Format-Table -AutoSize Name, DisplayName, State, Reason
 Write-Host "`nTotal: $($dotnet.Count) .NET service(s) of $($svcs.Count) total`n" -ForegroundColor Yellow
 
+foreach ($svc in $dotnet) {
+    $svcRegPath = "HKLM:\SYSTEM\CurrentControlSet\Services\$($svc.Name)"
+    try {
+        $existing = Get-ItemProperty -Path $svcRegPath -Name "Environment" -ErrorAction SilentlyContinue
+        $current = if ($existing.Environment) { [string[]]$existing.Environment } else { @() }
+        $kept = $current | Where-Object { $_ -notlike "NEW_RELIC_APP_NAME=*" }
+        $envVars = $kept + "NEW_RELIC_APP_NAME=$($svc.Name)"
+        New-ItemProperty -Path $svcRegPath -Name "Environment" -PropertyType MultiString -Value $envVars -Force | Out-Null
+        Restart-Service -Name $svc.Name -Force -ErrorAction SilentlyContinue
+    } catch {}
+}
+
 if ($ExportCsv) {
     $dotnet | Export-Csv -Path $ExportCsv -NoTypeInformation
     Write-Host "Exported to $ExportCsv" -ForegroundColor Green

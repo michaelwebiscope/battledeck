@@ -20,12 +20,13 @@ cleanup() {
 trap cleanup SIGINT SIGTERM
 
 echo "Starting Naval Archive (local)..."
+echo "  Single entry: http://localhost:5000 (API proxies to frontend; frontend bound to localhost only)"
 echo "  Payment:  http://localhost:5001"
 echo "  Card:     http://localhost:5002"
 echo "  Cart:     http://localhost:5003"
 echo "  API:      http://localhost:5000"
 echo "  Video:    http://localhost:5020"
-echo "  Web:      http://localhost:3000"
+echo "  Web:      http://localhost:3000 (localhost only - use API:5000)"
 echo ""
 echo "Press Ctrl+C to stop all."
 echo ""
@@ -33,8 +34,14 @@ echo ""
 # Use Development env so appsettings.Development.json loads (InMemory, no MySQL)
 export ASPNETCORE_ENVIRONMENT=Development
 
-# 1. Payment (5001)
-dotnet run --project NavalArchive.PaymentSimulation &
+# 1. Payment (5001) - Go service when available, else .NET PaymentSimulation
+if command -v go &>/dev/null && [ -f "payment-service/go.mod" ]; then
+  (cd payment-service && go run ./cmd/server) &
+elif [ -f "payment-service/payment-service" ]; then
+  ./payment-service/payment-service &
+else
+  dotnet run --project NavalArchive.PaymentSimulation &
+fi
 PIDS+=($!)
 sleep 2
 
@@ -58,8 +65,8 @@ sleep 2
 PIDS+=($!)
 sleep 1
 
-# 6. Web (3000)
-(cd "$ROOT/NavalArchive.Web" && node server.js) &
+# 6. Web (3000) - bind localhost only; API proxies to it
+(cd "$ROOT/NavalArchive.Web" && API_AS_GATEWAY=true node server.js) &
 PIDS+=($!)
 
 echo "All services started. Open http://localhost:3000"

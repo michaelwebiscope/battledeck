@@ -134,6 +134,8 @@
           </details>
           <button id="syncBtn" class="btn btn-outline-secondary" title="Fetch ship data and captain ImageUrls from Wikipedia only (no image search)">Sync from Wikipedia</button>
           <button id="populateBtn" class="btn btn-modern">Populate All Images (sync + fetch → store)</button>
+          <button id="populateWikipediaBtn" class="btn btn-modern ms-2" title="Trigger the Java ImagePopulator: API calls Java listener to fetch ship images from Wikipedia and upload to API">Populate from Wikipedia (Java)</button>
+          <label class="ms-2 mb-0 align-middle"><input type="checkbox" id="alsoTriggerWikipediaChk" class="form-check-input me-1"> Also trigger Wikipedia (Java) when done</label>
           <button id="testTerminalBtn" class="btn btn-outline-secondary ms-2" title="Test that the terminal updates in real-time">Test Terminal</button>
           <button id="testKeysBtn" class="btn btn-outline-secondary ms-2" title="Validate API keys and show failures">Test Keys</button>
           <span id="populateStatus" class="ms-3"></span>
@@ -552,11 +554,34 @@
             lastIdx = (st.events || []).length;
             if (st.done) {
               appendLine('[Populate] Refresh the page to see updated audit stats.');
-              showTerminal(lines);
               var s = shipResults.filter(function(x) { return (x.status || x.Status) === 'ok'; }).length;
               var c = captainResults.filter(function(x) { return (x.status || x.Status) === 'ok'; }).length;
-              statusEl.textContent = 'Done. Stored ' + s + ' ships, ' + c + ' captains.';
-              btnEl.disabled = false;
+              if (document.getElementById('alsoTriggerWikipediaChk') && document.getElementById('alsoTriggerWikipediaChk').checked) {
+                appendLine('');
+                appendLine('[Populate] Also triggering Wikipedia (Java)...');
+                fetch('/admin/images/populate/wikipedia', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+                  .then(function(r) { return r.json().then(function(d) { return { status: r.status, data: d }; }); })
+                  .then(function(result) {
+                    if (result.status === 202 || result.status === 200) {
+                      appendLine('[Populate] Wikipedia (Java) started. Refresh in a few minutes.');
+                    } else {
+                      appendLine('[Populate] Wikipedia (Java): ' + (result.data.message || result.data.detail || 'Error ' + result.status));
+                    }
+                    showTerminal(lines);
+                    statusEl.textContent = 'Done. Stored ' + s + ' ships, ' + c + ' captains.' + (result.status === 202 || result.status === 200 ? ' Wikipedia (Java) started.' : '');
+                    btnEl.disabled = false;
+                  })
+                  .catch(function(e) {
+                    appendLine('[Populate] Wikipedia (Java) error: ' + e.message);
+                    showTerminal(lines);
+                    statusEl.textContent = 'Done. Stored ' + s + ' ships, ' + c + ' captains. Wikipedia (Java) failed: ' + e.message;
+                    btnEl.disabled = false;
+                  });
+              } else {
+                showTerminal(lines);
+                statusEl.textContent = 'Done. Stored ' + s + ' ships, ' + c + ' captains.';
+                btnEl.disabled = false;
+              }
             } else {
               setTimeout(poll, 1200);
             }
@@ -692,6 +717,28 @@
           status.textContent = 'Error: ' + e.message;
           btn.disabled = false;
         });
+    };
+    document.getElementById('populateWikipediaBtn').onclick = function() {
+      var btn = this, status = document.getElementById('populateStatus');
+      btn.disabled = true;
+      status.textContent = 'Triggering Java ImagePopulator...';
+      showTerminal('[Populate from Wikipedia] Calling API → Java ImagePopulator (POST /run)...', true);
+      fetch('/admin/images/populate/wikipedia', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+        .then(function(r) { return r.json().then(function(d) { return { status: r.status, data: d }; }); })
+        .then(function(result) {
+          if (result.status === 202 || result.status === 200) {
+            showTerminal('[Populate from Wikipedia] Started. The Java service is fetching ship images from Wikipedia and uploading to the API. Refresh the page in a few minutes to see updated images.');
+            status.textContent = 'Wikipedia populate started. Refresh in a few minutes.';
+          } else {
+            showTerminal('[Populate from Wikipedia] ' + (result.data.message || result.data.detail || 'Error ' + result.status));
+            status.textContent = result.data.message || 'Error ' + result.status;
+          }
+        })
+        .catch(function(e) {
+          showTerminal('[Populate from Wikipedia] Error: ' + e.message);
+          status.textContent = 'Error: ' + e.message;
+        })
+        .finally(function() { btn.disabled = false; });
     };
     document.getElementById('verifyBtn').onclick = function() {
       var btn = this, status = document.getElementById('verifyStatus'), results = document.getElementById('verifyResults');

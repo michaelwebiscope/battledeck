@@ -1,0 +1,56 @@
+---
+# Install OpenTelemetry .NET auto-instrumentation on Windows host
+# Pinned to v{{ otel_dotnet_auto_version }} for .NET 8 self-contained app compatibility.
+
+- name: Check current OTEL auto-instrumentation version
+  ansible.windows.win_shell: |
+    $versionFile = "{{ otel_dotnet_auto_home }}\instrument.sh"
+    $versionDll = "{{ otel_dotnet_auto_home }}\net\OpenTelemetry.AutoInstrumentation.StartupHook.dll"
+    if (Test-Path $versionDll) {
+      $ver = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($versionDll).ProductVersion
+      Write-Output $ver
+    } else {
+      Write-Output "not_installed"
+    }
+  args:
+    executable: powershell
+  register: otel_current_version
+  changed_when: false
+
+- name: Remove incompatible OTEL version if present
+  ansible.windows.win_shell: |
+    $ErrorActionPreference = "SilentlyContinue"
+    if (Test-Path "{{ otel_dotnet_auto_home }}") {
+      Remove-Item "{{ otel_dotnet_auto_home }}" -Recurse -Force
+      Write-Host "Removed incompatible OTEL installation"
+    }
+  args:
+    executable: powershell
+  when: >
+    otel_current_version.stdout | trim != 'not_installed'
+    and not (otel_current_version.stdout | trim is search(otel_dotnet_auto_version))
+
+- name: Install OpenTelemetry .NET auto-instrumentation v{{ otel_dotnet_auto_version }}
+  ansible.windows.win_shell: |
+    $ErrorActionPreference = "Stop"
+    $ver = "{{ otel_dotnet_auto_version }}"
+    $moduleUrl = "https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation/releases/download/v${ver}/OpenTelemetry.DotNet.Auto.psm1"
+    $modulePath = Join-Path $env:TEMP "OpenTelemetry.DotNet.Auto.psm1"
+    Invoke-WebRequest -Uri $moduleUrl -OutFile $modulePath -UseBasicParsing
+    Import-Module $modulePath -Force
+    Install-OpenTelemetryCore
+  args:
+    executable: powershell
+  when: >
+    otel_current_version.stdout | trim == 'not_installed'
+    or not (otel_current_version.stdout | trim is search(otel_dotnet_auto_version))
+
+- name: Validate OpenTelemetry startup hook exists
+  ansible.windows.win_stat:
+    path: "{{ otel_dotnet_auto_home }}\\net\\OpenTelemetry.AutoInstrumentation.StartupHook.dll"
+  register: otel_startup_hook_stat
+
+- name: Fail if OpenTelemetry startup hook is missing
+  ansible.builtin.fail:
+    msg: "OpenTelemetry .NET auto-instrumentation is not installed correctly (missing StartupHook.dll at {{ otel_dotnet_auto_home }}\\net)."
+  when: not otel_startup_hook_stat.stat.exists

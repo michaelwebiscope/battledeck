@@ -1,0 +1,20 @@
+# Ansible inventory for navalansible
+# Set ansible_host via: -e "ansible_host=<vm_public_ip>"
+# Or: export ANSIBLE_HOST=1.2.3.4 before running
+
+all:
+  children:
+    navalansible:
+      hosts:
+        navalansible-vm:
+          ansible_host: "{{ ansible_host | default('REPLACE_WITH_VM_IP') }}"
+          ansible_user: "{{ vm_admin_username | default('azureadmin') }}"
+          ansible_password: "{{ vm_admin_password }}"
+          ansible_connection: winrm
+          ansible_winrm_transport: ntlm
+          ansible_winrm_server_cert_validation: ignore
+          ansible_port: 5986
+          ansible_winrm_scheme: https
+          # Long-running publish/build/clone tasks can exceed previous timeout values.
+          ansible_winrm_operation_timeout_sec: 300
+          ansible_winrm_read_timeout_sec: 600

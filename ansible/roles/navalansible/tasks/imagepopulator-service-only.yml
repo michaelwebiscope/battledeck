@@ -1,0 +1,122 @@
+---
+# Only ensure New Relic Java agent and create/restart NavalArchiveImagePopulator. No other services touched.
+# Use from playbook: include_role name=navalansible tasks_from=imagepopulator-service-only.yml
+
+- name: Ensure ImagePopulator jar is present (copy from clone if missing)
+  ansible.windows.win_shell: |
+    $destDir = "{{ image_populator_path }}"
+    $destJar = Join-Path $destDir "image-populator.jar"
+    if (Test-Path $destJar) { Write-Output "jar_present"; exit 0 }
+    $cloneRoot = "{{ clone_path | default('C:\\navalarchive-src') }}"
+    $dirs = Get-ChildItem $cloneRoot -Directory -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending
+    foreach ($d in $dirs) {
+      $jar = Get-ChildItem $d.FullName -Filter "image-populator*.jar" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike "original-*" } | Select-Object -First 1
+      if ($jar) {
+        New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+        Copy-Item -Path $jar.FullName -Destination $destJar -Force
+        Write-Output "jar_copied"
+        exit 0
+      }
+    }
+    Write-Output "jar_missing"
+  args:
+    executable: powershell
+  register: imagepopulator_jar_ensure
+  changed_when: imagepopulator_jar_ensure.stdout | trim == 'jar_copied'
+  failed_when: imagepopulator_jar_ensure.stdout | trim == 'jar_missing'
+
+- name: Ensure New Relic Java agent directory exists (for ImagePopulator service)
+  ansible.windows.win_file:
+    path: "{{ newrelic_java_agent_dir | default('C:\\ProgramData\\NewRelic\\java') }}"
+    state: directory
+  when: newrelic_license_key is defined and newrelic_license_key | length > 0
+
+- name: Download New Relic Java agent jar (needed before service starts)
+  ansible.windows.win_get_url:
+    url: https://download.newrelic.com/newrelic/java-agent/newrelic-agent/current/newrelic.jar
+    dest: "{{ newrelic_java_agent_dir | default('C:\\ProgramData\\NewRelic\\java') }}\\newrelic.jar"
+  when: newrelic_license_key is defined and newrelic_license_key | length > 0
+
+- name: Write New Relic Java agent config file (newrelic.yml)
+  ansible.windows.win_copy:
+    content: |
+      common: &default_settings
+        license_key: '{{ newrelic_license_key }}'
+        app_name: {{ newrelic_java_app_name | default('NavalArchiveImagePopulator') }}
+        distributed_tracing:
+          enabled: true
+        log_level: info
+        log_file_path: 'C:\ProgramData\NewRelic\java\logs'
+      production:
+        <<: *default_settings
+    dest: "{{ newrelic_java_agent_dir | default('C:\\ProgramData\\NewRelic\\java') }}\\newrelic.yml"
+  when: newrelic_license_key is defined and newrelic_license_key | length > 0
+
+- name: Create run-image-populator-listener.ps1
+  ansible.windows.win_copy:
+    content: |
+      $ErrorActionPreference = "Stop"
+      $apiBase = "http://localhost:5000"
+      $jar = (Get-ChildItem "{{ image_populator_path }}" -Filter "image-populator*.jar" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName)
+      if (-not $jar) { throw "No image-populator jar found in {{ image_populator_path }}" }
+      $javaExe = $null
+      foreach ($base in @("C:\Program Files\Amazon Corretto", "C:\Program Files\Eclipse Adoptium")) {
+        if (Test-Path $base) {
+          $jdk = Get-ChildItem $base -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "jdk*" } | Select-Object -First 1
+          if ($jdk -and (Test-Path "$($jdk.FullName)\bin\java.exe")) {
+            $javaExe = "$($jdk.FullName)\bin\java.exe"
+            break
+          }
+        }
+      }
+      if (-not $javaExe) { $javaExe = "java" }
+      $jvmArgs = @()
+      $nrJar = "C:\ProgramData\NewRelic\java\newrelic.jar"
+      if (Test-Path $nrJar) {
+        $jvmArgs += "-javaagent:$nrJar"
+      }
+      {% if newrelic_license_key is defined and newrelic_license_key | length > 0 %}
+      $env:NEW_RELIC_LICENSE_KEY = "{{ newrelic_license_key }}"
+      $env:NEW_RELIC_APP_NAME = "{{ newrelic_java_app_name | default('NavalArchiveImagePopulator') }}"
+      $env:NEW_RELIC_DISTRIBUTED_TRACING_ENABLED = "true"
+      {% endif %}
+      $jvmArgs += "-jar"
+      $jvmArgs += $jar
+      $jvmArgs += $apiBase
+      $jvmArgs += "--listen"
+      $jvmArgs += "--port"
+      $jvmArgs += "{{ image_populator_port }}"
+      & $javaExe @jvmArgs
+    dest: C:\inetpub\run-image-populator-listener.ps1
+
+- name: Create NavalArchiveImagePopulator scheduled task (Java listener)
+  ansible.windows.win_shell: |
+    sc.exe stop NavalArchiveImagePopulator 2>$null
+    sc.exe delete NavalArchiveImagePopulator 2>$null
+    $taskName = "NavalArchiveImagePopulator"
+    $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File C:\inetpub\run-image-populator-listener.ps1"
+    $trigger = New-ScheduledTaskTrigger -AtStartup -RandomDelay (New-TimeSpan -Minutes 2)
+    $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 0)
+    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+    Start-ScheduledTask -TaskName $taskName
+  args:
+    executable: powershell
+
+- name: Wait for ImagePopulator listener to be healthy
+  ansible.windows.win_uri:
+    url: "http://127.0.0.1:{{ image_populator_port }}/health"
+    method: GET
+    status_code: 200
+  register: imagepopulator_health
+  until: imagepopulator_health.status_code | default(0) == 200
+  retries: 18
+  delay: 5
+  failed_when: false
+
+- name: Report ImagePopulator listener health
+  ansible.builtin.debug:
+    msg: >-
+      ImagePopulator listener:
+      {{ 'healthy on port ' + (image_populator_port | string) if imagepopulator_health.status_code | default(0) == 200 else 'not responding on port ' + (image_populator_port | string) + ' - check C:\\inetpub\\run-image-populator-listener.ps1 and service logs' }}

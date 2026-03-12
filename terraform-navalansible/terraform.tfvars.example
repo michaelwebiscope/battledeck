@@ -1,0 +1,10 @@
+# Copy to terraform.tfvars and fill in values
+# cp terraform.tfvars.example terraform.tfvars
+
+azure_region         = "eastus"
+resource_group_name  = ""  # Leave empty to create navalansible-rg
+vm_admin_username    = "azureadmin"
+vm_admin_password    = "YourSecurePassword123!"
+vm_size              = "Standard_B2s"
+restrict_to_my_ip    = true
+allowed_ip           = ""  # Override if auto-detect fails

@@ -1,0 +1,88 @@
+---
+- name: Fix and test ImagePopulator listener service
+  hosts: navalansible
+  gather_facts: false
+  tasks:
+    - name: Ensure ImagePopulator jar is deployed
+      ansible.windows.win_shell: |
+        $jar = Get-ChildItem "C:\navalarchive-src\battledeck-main" -Filter "image-populator-*.jar" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($jar) {
+          New-Item -ItemType Directory -Force -Path "C:\inetpub\navalarchive-imagepopulator" | Out-Null
+          Copy-Item -Path $jar.FullName -Destination "C:\inetpub\navalarchive-imagepopulator\image-populator.jar" -Force
+          Write-Host "Deployed ImagePopulator jar: $($jar.FullName) -> C:\inetpub\navalarchive-imagepopulator\image-populator.jar"
+        } else {
+          Write-Host "ImagePopulator jar not found under C:\navalarchive-src\battledeck-main"
+        }
+      args:
+        executable: powershell
+
+    - name: Recreate NavalArchiveImagePopulator service (listener with NR Java agent)
+      ansible.windows.win_shell: |
+        sc.exe stop NavalArchiveImagePopulator 2>$null
+        sc.exe delete NavalArchiveImagePopulator 2>$null
+        Start-Sleep -Seconds 2
+        $ps = "$env:windir\System32\WindowsPowerShell\v1.0\powershell.exe"
+        $script = "C:\inetpub\run-image-populator-listener.ps1"
+        $nrKey = "$env:NR_KEY"
+        $lines = @(
+          '$ErrorActionPreference = "Stop"',
+          '$apiBase = "http://localhost:5000"',
+          '$jar = "C:\inetpub\navalarchive-imagepopulator\image-populator.jar"',
+          '$javaExe = $null',
+          'foreach ($base in @("C:\Program Files\Amazon Corretto", "C:\Program Files\Eclipse Adoptium")) {',
+          '  if (Test-Path $base) {',
+          '    $jdk = Get-ChildItem $base -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "jdk*" } | Select-Object -First 1',
+          '    if ($jdk -and (Test-Path "$($jdk.FullName)\bin\java.exe")) {',
+          '      $javaExe = "$($jdk.FullName)\bin\java.exe"',
+          '      break',
+          '    }',
+          '  }',
+          '}',
+          'if (-not $javaExe) { $javaExe = "java" }',
+          '$args = @()',
+          '$nrJar = "C:\\ProgramData\\NewRelic\\java\newrelic.jar"',
+          'if ($nrKey -and (Test-Path $nrJar)) {',
+          '  $args += "-javaagent:$nrJar"',
+          '  $args += "-Dnewrelic.config.license_key=$nrKey"',
+          '  $args += "-Dnewrelic.config.app_name=NavalArchiveImagePopulator"',
+          '  $args += "-Dnewrelic.config.distributed_tracing.enabled=true"',
+          '}',
+          '$args += "-jar"',
+          '$args += $jar',
+          '$args += $apiBase',
+          '$args += "--listen"',
+          '$args += "--port"',
+          '$args += "5099"',
+          '& $javaExe @args'
+        )
+        $lines | Set-Content -Path $script -Encoding UTF8
+        $bin = '"' + $ps + '" -NoProfile -ExecutionPolicy Bypass -File "' + $script + '"'
+        sc.exe create NavalArchiveImagePopulator binPath= $bin start= auto
+        sc.exe failure NavalArchiveImagePopulator reset= 86400 actions= restart/60000/restart/60000/restart/60000
+        sc.exe start NavalArchiveImagePopulator
+      args:
+        executable: powershell
+
+    - name: Wait for listener to bind
+      ansible.builtin.pause:
+        seconds: 8
+
+    - name: Hit ImagePopulator /health
+      ansible.windows.win_uri:
+        url: http://localhost:5099/health
+        method: GET
+      register: img_health
+      ignore_errors: true
+
+    - name: Trigger one /run
+      ansible.windows.win_uri:
+        url: http://localhost:5099/run
+        method: POST
+      register: img_run
+      ignore_errors: true
+
+    - name: Show ImagePopulator test results
+      ansible.builtin.debug:
+        msg: |
+          /health status: {{ img_health.status_code | default('error') }}
+          /run status: {{ img_run.status_code | default('error') }}

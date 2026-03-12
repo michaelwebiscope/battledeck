@@ -1,0 +1,20 @@
+---
+# Deploy web.config files (API and Web)
+
+- name: Deploy API web.config
+  ansible.builtin.template:
+    src: webconfig_api.j2
+    dest: "{{ api_path }}\\web.config"
+
+- name: Deploy Web web.config
+  ansible.builtin.template:
+    src: webconfig_web.j2
+    dest: "{{ web_path }}\\web.config"
+
+- name: Deploy IIS-hosted chain service web.config
+  ansible.builtin.template:
+    src: webconfig_service.j2
+    dest: "{{ chain_paths[item.path_key] }}\\web.config"
+  loop: "{{ iis_chain_services }}"
+  loop_control:
+    label: "{{ item.site }}"

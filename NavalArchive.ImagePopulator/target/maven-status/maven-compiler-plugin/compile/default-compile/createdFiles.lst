@@ -1,4 +1,9 @@
 com/navalarchive/imagepopulator/ImagePopulatorApplication$1.class
 com/navalarchive/imagepopulator/ImagePopulatorApplication$FetchResult.class
-com/navalarchive/imagepopulator/ImagePopulatorApplication$ShipsResponse.class
+com/navalarchive/imagepopulator/ImagePopulatorApplication$SearchRequest.class
+com/navalarchive/imagepopulator/ImagePopulatorApplication$ImageSourceConfig.class
 com/navalarchive/imagepopulator/ImagePopulatorApplication.class
+com/navalarchive/imagepopulator/ImagePopulatorApplication$CustomApiConfig.class
+com/navalarchive/imagepopulator/ImagePopulatorApplication$PopulateQueue.class
+com/navalarchive/imagepopulator/ImagePopulatorApplication$SearchResult.class
+com/navalarchive/imagepopulator/ImagePopulatorApplication$PopulateRequest.class

@@ -10,12 +10,14 @@ if (Test-Path $appcmd) {
     & $appcmd start site NavalArchive-API 2>$null
     & $appcmd start site NavalArchive-Web 2>$null
     & $appcmd recycle apppool /apppool.name:NavalArchive-API 2>$null
+    foreach ($site in @("NavalArchive-Gateway", "NavalArchive-Auth", "NavalArchive-User", "NavalArchive-Catalog", "NavalArchive-Inventory", "NavalArchive-Basket")) {
+        & $appcmd start site $site 2>$null
+    }
 }
 
 # Windows services
-$svcs = @("NavalArchiveWeb", "NavalArchivePayment", "NavalArchiveCard", "NavalArchiveCart",
-    "NavalArchiveGateway", "NavalArchiveAuth", "NavalArchiveUser", "NavalArchiveCatalog",
-    "NavalArchiveInventory", "NavalArchiveBasket", "NavalArchiveOrder", "NavalArchivePaymentChain",
+$svcs = @("NavalArchiveWeb", "NavalArchiveImagePopulator", "NavalArchivePayment", "NavalArchiveCard", "NavalArchiveCart",
+    "NavalArchiveOrder", "NavalArchivePaymentChain",
     "NavalArchiveShipping", "NavalArchiveNotification")
 foreach ($s in $svcs) {
     $svc = Get-Service -Name $s -ErrorAction SilentlyContinue

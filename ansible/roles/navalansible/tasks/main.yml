@@ -1,0 +1,14 @@
+---
+- include_tasks: runtime.yml
+- include_tasks: otel.yml
+- include_tasks: stop_services.yml
+- include_tasks: clone.yml
+- include_tasks: build.yml
+- include_tasks: deploy.yml
+- include_tasks: iis.yml
+- include_tasks: services.yml
+  when: update_services | default(true) | bool
+- include_tasks: populate.yml
+- include_tasks: firewall.yml
+- include_tasks: scheduled_task.yml
+- include_tasks: verify.yml

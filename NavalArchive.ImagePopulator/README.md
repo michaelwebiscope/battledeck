@@ -20,12 +20,20 @@ java -jar target/image-populator-1.0.0.jar https://20.234.15.204 --insecure
 # Or with env vars
 export API_URL=https://20.234.15.204
 java -jar target/image-populator-1.0.0.jar --insecure
+
+# Listener mode (long-lived process)
+# Starts HTTP server on :5099 and waits for POST /run
+java -jar target/image-populator-1.0.0.jar http://localhost:5000 --listen --port 5099
+# Trigger:
+curl -X POST http://localhost:5099/run
 ```
 
 ## Options
 
 - **API_URL** (env): Overrides the API base URL argument
 - **--insecure**: Accept self-signed SSL certificates (for dev/VM)
+- **--listen**: Start long-lived listener mode
+- **--port PORT**: Listener port (default 5099)
 
 ## Notes
 

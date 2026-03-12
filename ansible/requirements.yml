@@ -1,0 +1,8 @@
+---
+collections:
+  - ansible.windows
+  - ansible.posix
+  - chocolatey.chocolatey
+
+roles:
+  - newrelic.newrelic_install

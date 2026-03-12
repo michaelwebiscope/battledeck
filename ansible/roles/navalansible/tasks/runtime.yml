@@ -1,0 +1,81 @@
+---
+# Install Chocolatey, .NET 8 SDK, Node.js LTS, Java 17, IIS, URL Rewrite, ARR, ASP.NET Core Hosting
+
+- name: Install Chocolatey 1.x (2.x requires .NET 4.8; Server 2019 has 4.7)
+  ansible.windows.win_shell: |
+    if (!(Get-Command choco -ErrorAction SilentlyContinue)) {
+      $env:chocolateyVersion = '1.4.0'
+      Set-ExecutionPolicy Bypass -Scope Process -Force
+      [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+      Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+    }
+    $env:Path = [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User")
+  args:
+    executable: powershell
+  register: choco_install
+
+- name: Install .NET 8 SDK
+  chocolatey.chocolatey.win_chocolatey:
+    name: dotnet-8.0-sdk
+    state: present
+
+- name: Install Node.js LTS
+  chocolatey.chocolatey.win_chocolatey:
+    name: nodejs-lts
+    state: present
+
+- name: Install Java 17 (Corretto - temurin17 not in Choco 1.4)
+  chocolatey.chocolatey.win_chocolatey:
+    name: corretto17jdk
+    state: present
+
+- name: Install IIS and features
+  ansible.windows.win_feature:
+    name: "{{ item }}"
+    state: present
+    include_management_tools: true
+  loop:
+    - Web-Server
+    - Web-Asp-Net45
+    - Web-WebSockets
+    - Web-Scripting-Tools
+
+- name: Download URL Rewrite
+  ansible.windows.win_get_url:
+    url: https://download.microsoft.com/download/1/2/8/128E2E22-C1B9-44A4-BE2A-5859ED1D4592/rewrite_amd64_en-US.msi
+    dest: "{{ ansible_env.TEMP }}\\urlrewrite.msi"
+  register: urlrewrite_dl
+
+- name: Install URL Rewrite
+  ansible.windows.win_package:
+    path: "{{ ansible_env.TEMP }}\\urlrewrite.msi"
+    state: present
+    arguments: /quiet
+
+- name: Check ASP.NET Core Hosting
+  ansible.windows.win_stat:
+    path: C:\Program Files\IIS\Asp.Net Core Module\V2\aspnetcorev2.dll
+  register: hosting_check
+
+- name: Download ASP.NET Core Hosting
+  ansible.windows.win_get_url:
+    url: https://download.visualstudio.microsoft.com/download/pr/4956ec5e-8502-4454-8f28-40239428820f/e7181890eed8dfa11cefbf817c4e86b0/dotnet-hosting-8.0.11-win.exe
+    dest: "{{ ansible_env.TEMP }}\\hosting.exe"
+  when: not hosting_check.stat.exists
+
+- name: Install ASP.NET Core Hosting
+  ansible.windows.win_shell: |
+    Start-Process -FilePath "{{ ansible_env.TEMP }}\hosting.exe" -ArgumentList "/install", "/quiet", "/norestart" -Wait
+  when: not hosting_check.stat.exists
+
+- name: Download ARR
+  ansible.windows.win_get_url:
+    url: https://download.microsoft.com/download/e/9/8/e9849d6a-020e-47e4-9fd0-a023e99b54eb/requestRouter_amd64.msi
+    dest: "{{ ansible_env.TEMP }}\\arr.msi"
+  register: arr_dl
+
+- name: Install ARR
+  ansible.windows.win_package:
+    path: "{{ ansible_env.TEMP }}\\arr.msi"
+    state: present
+    arguments: /quiet

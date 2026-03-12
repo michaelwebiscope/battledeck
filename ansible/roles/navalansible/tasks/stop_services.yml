@@ -1,0 +1,44 @@
+---
+# Stop and remove Naval Archive services, kill processes
+
+- name: Stop and remove Naval Archive services
+  ansible.windows.win_shell: |
+    $svcs = @(
+      "NavalArchivePayment", "NavalArchiveCard", "NavalArchiveCart", "NavalArchiveWeb", "NavalArchiveImagePopulator",
+      "NavalArchiveGateway", "NavalArchiveAuth", "NavalArchiveUser", "NavalArchiveCatalog",
+      "NavalArchiveInventory", "NavalArchiveBasket", "NavalArchiveOrder", "NavalArchivePaymentChain",
+      "NavalArchiveShipping", "NavalArchiveNotification"
+    )
+    foreach ($s in $svcs) {
+      sc.exe stop $s 2>$null
+      sc.exe delete $s 2>$null
+    }
+  args:
+    executable: powershell
+  failed_when: false
+
+- name: Kill navalarchive and dotnet processes
+  ansible.windows.win_shell: |
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like "*navalarchive*" -or $_.CommandLine -like "*image-populator*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    taskkill /F /IM java.exe 2>$null
+    taskkill /F /IM dotnet.exe 2>$null
+    taskkill /F /IM NavalArchive.PaymentSimulation.exe 2>$null
+    taskkill /F /IM NavalArchive.CardService.exe 2>$null
+    taskkill /F /IM NavalArchive.CartService.exe 2>$null
+    taskkill /F /IM NavalArchive.Gateway.exe 2>$null
+    taskkill /F /IM NavalArchive.Auth.exe 2>$null
+    taskkill /F /IM NavalArchive.UserService.exe 2>$null
+    taskkill /F /IM NavalArchive.Catalog.exe 2>$null
+    taskkill /F /IM NavalArchive.Inventory.exe 2>$null
+    taskkill /F /IM NavalArchive.Basket.exe 2>$null
+    taskkill /F /IM NavalArchive.Order.exe 2>$null
+    taskkill /F /IM NavalArchive.Payment.exe 2>$null
+    taskkill /F /IM NavalArchive.Shipping.exe 2>$null
+    taskkill /F /IM NavalArchive.Notification.exe 2>$null
+  args:
+    executable: powershell
+  failed_when: false
+
+- name: Pause for processes to exit
+  ansible.builtin.pause:
+    seconds: 10

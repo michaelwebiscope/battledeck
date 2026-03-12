@@ -1,0 +1,20 @@
+---
+# Firewall rules for HTTP, HTTPS, API, services
+
+- name: Add firewall rules
+  ansible.windows.win_shell: |
+    $rules = @(
+      @{ Name="HTTP"; Port=80 },
+      @{ Name="HTTPS"; Port=443 },
+      @{ Name="API"; Port=5000 },
+      @{ Name="Payment"; Port=5001 },
+      @{ Name="Card"; Port=5002 },
+      @{ Name="Cart"; Port=5003 }
+    )
+    foreach ($r in $rules) {
+      netsh advfirewall firewall add rule name=$r.Name dir=in action=allow protocol=TCP localport=$r.Port 2>$null
+    }
+    5010..5019 | ForEach-Object { netsh advfirewall firewall add rule name="Chain$_" dir=in action=allow protocol=TCP localport=$_ 2>$null }
+  args:
+    executable: powershell
+  ignore_errors: true

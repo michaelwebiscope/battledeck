@@ -186,11 +186,16 @@ if (Test-Path $appcmd) {
 }
 
 # Ensure Java is installed (for ImagePopulator)
+# Check: Eclipse Adoptium (setup-vm), Amazon Corretto (ansible/chocolatey), then PATH
 $javaDir = $null
-$adoptiumBase = "C:\Program Files\Eclipse Adoptium"
-if (Test-Path $adoptiumBase) {
-    $jdkFolder = Get-ChildItem $adoptiumBase -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "jdk*" } | Select-Object -First 1
-    if ($jdkFolder -and (Test-Path "$($jdkFolder.FullName)\bin\java.exe")) { $javaDir = $jdkFolder.FullName }
+foreach ($base in @("C:\Program Files\Eclipse Adoptium", "C:\Program Files\Amazon Corretto")) {
+    if (Test-Path $base) {
+        $jdkFolder = Get-ChildItem $base -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "jdk*" } | Select-Object -First 1
+        if ($jdkFolder -and (Test-Path "$($jdkFolder.FullName)\bin\java.exe")) {
+            $javaDir = $jdkFolder.FullName
+            break
+        }
+    }
 }
 if (-not $javaDir) {
     Write-Host "Installing Java 17..." -ForegroundColor Yellow

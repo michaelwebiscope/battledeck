@@ -2,6 +2,7 @@
 docs/
 puppet/
 newrelic/
+NavalArchive.ImagePopulator/.newrelic-java/
 
 # Database
 *.db
@@ -27,6 +28,17 @@ NavalArchive.VideoService/videos/*.webm
 # Node
 node_modules/
 npm-debug.log*
+
+# Cloudflare Origin certs (place real files in certs/; .example files are tracked)
+certs/cloudflare-origin.pem
+certs/cloudflare-origin-key.pem
+certs/*.pfx
+
+# Terraform
+terraform-navalansible/.terraform/
+terraform-navalansible/*.tfstate
+terraform-navalansible/*.tfstate.backup
+terraform-navalansible/*.tfvars
 
 # OS
 .DS_Store

@@ -1,0 +1,9 @@
+---
+# Navalansible - deploy Naval Archive using native Ansible tasks (no PowerShell script)
+# Run: ansible-playbook playbooks/site.yml -e "ansible_host=<vm_ip>" -e "vm_admin_password=YourPass"
+
+- name: Deploy Naval Archive to navalansible VM
+  hosts: navalansible
+  gather_facts: true
+  roles:
+    - navalansible

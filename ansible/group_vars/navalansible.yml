@@ -1,0 +1,11 @@
+---
+# Navalansible VM - connection and deployment vars
+# Override ansible_host: -e "ansible_host=<terraform output vm_public_ip>"
+# Override vm_admin_password: -e "vm_admin_password=YourPassword" or use -e @secrets.yml
+
+vm_admin_username: azureadmin
+
+# GitHub repo for deployment (same as terraform setup-vm)
+github_repo_url: "https://github.com/michaelwebiscope/battledeck.git"
+github_repo_branch: main
+github_token: ""  # For private repos; use -e "github_token=ghp_xxx"

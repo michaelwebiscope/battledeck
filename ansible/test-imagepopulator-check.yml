@@ -1,0 +1,24 @@
+---
+- name: Test ImagePopulator listener endpoints
+  hosts: navalansible
+  gather_facts: false
+  tasks:
+    - name: Hit ImagePopulator /health
+      ansible.windows.win_uri:
+        url: http://localhost:5099/health
+        method: GET
+      register: img_health
+      ignore_errors: true
+
+    - name: Trigger one /run
+      ansible.windows.win_uri:
+        url: http://localhost:5099/run
+        method: POST
+      register: img_run
+      ignore_errors: true
+
+    - name: Show ImagePopulator test results
+      ansible.builtin.debug:
+        msg: |
+          /health status: {{ img_health.status_code | default('error') }}
+          /run status: {{ img_run.status_code | default('error') }}

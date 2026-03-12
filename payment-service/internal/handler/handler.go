@@ -61,6 +61,21 @@ func AuthMiddleware(accountServiceURL string, nrApp *newrelic.Application) func(
 	}
 }
 
+// optionalAuth tries to verify the API key if present; returns nil if absent or invalid.
+func optionalAuth(ctx context.Context, r *http.Request, accountServiceURL string, nrApp *newrelic.Application) *AccountInfo {
+	key := extractKey(r)
+	if key == "" {
+		return nil
+	}
+	verifyURL := accountServiceURL + "/api/auth/verify"
+	acct, err := verifyKey(ctx, verifyURL, key, nrApp)
+	if err != nil || acct == nil {
+		return nil
+	}
+	acct.APIKey = key
+	return acct
+}
+
 func verifyKey(ctx context.Context, verifyURL, key string, nrApp *newrelic.Application) (*AccountInfo, error) {
 	body, _ := json.Marshal(map[string]string{"apiKey": key})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, verifyURL, bytes.NewReader(body))
@@ -284,6 +299,10 @@ type SimulateResponse struct {
 func HandleSimulate(proc *processor.Processor, idem idempotency.IdempotencyStore, s store.Store, q queue.Queue, useQueue bool, accountServiceURL string, nrApp *newrelic.Application) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		acct := accountFromContext(r.Context())
+		// Public route: optionally authenticate if API key is present
+		if acct == nil && accountServiceURL != "" {
+			acct = optionalAuth(r.Context(), r, accountServiceURL, nrApp)
+		}
 
 		var req SimulateRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

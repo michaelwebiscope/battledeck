@@ -1,0 +1,35 @@
+---
+- name: Recreate services and test ImagePopulator listener
+  hosts: navalansible
+  gather_facts: false
+  vars_files:
+    - roles/navalansible/vars/main.yml
+  tasks:
+    - name: Re-run navalansible services.yml (recreate all services including ImagePopulator)
+      ansible.builtin.include_role:
+        name: navalansible
+        tasks_from: services.yml
+
+    - name: Wait for ImagePopulator listener to bind
+      ansible.builtin.pause:
+        seconds: 8
+
+    - name: Hit ImagePopulator /health
+      ansible.windows.win_uri:
+        url: http://localhost:5099/health
+        method: GET
+      register: img_health
+      ignore_errors: true
+
+    - name: Trigger one /run to exercise NR Java agent
+      ansible.windows.win_uri:
+        url: http://localhost:5099/run
+        method: POST
+      register: img_run
+      ignore_errors: true
+
+    - name: Show ImagePopulator test results
+      ansible.builtin.debug:
+        msg: |
+          /health status: {{ img_health.status_code | default('error') }}
+          /run status: {{ img_run.status_code | default('error') }}

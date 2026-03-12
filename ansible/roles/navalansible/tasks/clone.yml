@@ -1,0 +1,48 @@
+---
+# Clone GitHub repo. Zip extracts to clone_path/owner-repo-branch/, we use that as src_path.
+
+- name: Parse repo URL for owner and repo name
+  ansible.builtin.set_fact:
+    repo_owner: "{{ (github_repo_url | regex_replace('\\.git$', '') | regex_replace('/$', '')).split('/')[-2] }}"
+    repo_name: "{{ (github_repo_url | regex_replace('\\.git$', '') | regex_replace('/$', '')).split('/')[-1] }}"
+
+- name: Remove existing clone
+  ansible.windows.win_file:
+    path: "{{ clone_path }}"
+    state: absent
+
+- name: Create clone directory
+  ansible.windows.win_file:
+    path: "{{ clone_path }}"
+    state: directory
+
+- name: Download repo zip (with token)
+  ansible.windows.win_get_url:
+    url: "https://github.com/{{ repo_owner }}/{{ repo_name }}/archive/refs/heads/{{ github_repo_branch }}.zip"
+    dest: "{{ ansible_env.TEMP }}\\navalarchive.zip"
+    headers: "Authorization: token {{ github_token }}"
+  when: github_token is defined and github_token | length > 0
+
+- name: Download repo zip (public)
+  ansible.windows.win_get_url:
+    url: "https://github.com/{{ repo_owner }}/{{ repo_name }}/archive/refs/heads/{{ github_repo_branch }}.zip"
+    dest: "{{ ansible_env.TEMP }}\\navalarchive.zip"
+  when: github_token is not defined or github_token | default('') | length == 0
+
+- name: Expand archive
+  ansible.windows.win_shell: |
+    Expand-Archive -Path "{{ ansible_env.TEMP }}\navalarchive.zip" -DestinationPath "{{ clone_path }}" -Force
+  args:
+    executable: powershell
+
+- name: Get extracted folder path (repo-branch)
+  ansible.windows.win_shell: |
+    $dir = Get-ChildItem "{{ clone_path }}" -Directory | Select-Object -First 1
+    $dir.FullName
+  args:
+    executable: powershell
+  register: extracted_dir
+
+- name: Set src_path to extracted folder
+  ansible.builtin.set_fact:
+    src_path: "{{ extracted_dir.stdout_lines[0] | trim }}"

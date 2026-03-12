@@ -1,0 +1,10 @@
+---
+# Recreate only the ImagePopulator service (no stop_services, no clone). Use if ImagePopulator is missing after deploy.
+# Run: same -e as deploy (ansible_host, vm_admin_password, newrelic_license_key, vm_admin_username)
+- name: Recreate ImagePopulator service only
+  hosts: navalansible-vm
+  gather_facts: true
+  tasks:
+    - ansible.builtin.include_role:
+        name: navalansible
+        tasks_from: imagepopulator-service-only.yml

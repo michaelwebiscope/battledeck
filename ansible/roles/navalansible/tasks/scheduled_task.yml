@@ -1,0 +1,72 @@
+---
+# Scheduled task to start services 2 min after boot
+# NavalArchiveWeb (Node) runs via separate task - service start times out (1053)
+
+- name: Create start-node-web.ps1 (run Node directly - bypasses service timeout)
+  ansible.windows.win_copy:
+    content: |
+      $env:API_URL = "http://localhost:5000"
+      $env:GATEWAY_URL = "http://localhost:5010"
+      $env:PORT = "3000"
+      {% if newrelic_license_key is defined and newrelic_license_key | length > 0 %}
+      $env:NEW_RELIC_LICENSE_KEY = "{{ newrelic_license_key }}"
+      $env:NEW_RELIC_APP_NAME = "{{ newrelic_node_app_name | default('NavalArchiveWeb') }}"
+      $env:NEW_RELIC_NO_CONFIG_FILE = "true"
+      $env:NEW_RELIC_DISTRIBUTED_TRACING_ENABLED = "true"
+      $env:NODE_OPTIONS = "-r {{ web_path }}\node_modules\newrelic\index.js"
+      {% endif %}
+      Set-Location "{{ web_path }}"
+      & "{{ node_dir }}\node.exe" server.js
+    dest: C:\inetpub\start-node-web.ps1
+
+- name: Create NavalArchiveWeb-Node scheduled task (runs 3 min after boot)
+  ansible.windows.win_shell: |
+    $taskName = "NavalArchiveWeb-Node"
+    $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File C:\inetpub\start-node-web.ps1" -WorkingDirectory "{{ web_path }}"
+    $trigger = New-ScheduledTaskTrigger -AtStartup -RandomDelay (New-TimeSpan -Minutes 3)
+    $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 0)
+    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+  args:
+    executable: powershell
+
+- name: Run NavalArchiveWeb-Node task now (start Node)
+  ansible.windows.win_shell: |
+    Start-ScheduledTask -TaskName "NavalArchiveWeb-Node" -ErrorAction SilentlyContinue
+  args:
+    executable: powershell
+
+- name: Copy scripts from repo to inetpub
+  ansible.windows.win_shell: |
+    $scripts = @("start-all-services.ps1", "diagnose-endpoints.ps1", "refresh-web.ps1", "health-check-all.ps1")
+    foreach ($s in $scripts) {
+      $src = Get-ChildItem "{{ clone_path }}" -Filter $s -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+      if ($src) { Copy-Item $src.FullName -Destination "C:\inetpub\$s" -Force }
+    }
+  args:
+    executable: powershell
+
+- name: Create NavalArchive-StartServices scheduled task
+  ansible.windows.win_shell: |
+    $taskName = "NavalArchive-StartServices"
+    $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File C:\inetpub\start-all-services.ps1"
+    $trigger = New-ScheduledTaskTrigger -AtStartup -RandomDelay (New-TimeSpan -Minutes 2)
+    $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+  args:
+    executable: powershell
+
+- name: Create NavalArchive-HealthCheck scheduled task (every 2 minutes)
+  ansible.windows.win_shell: |
+    $taskName = "NavalArchive-HealthCheck"
+    $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File C:\inetpub\health-check-all.ps1"
+    $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 2) -RepetitionDuration (New-TimeSpan -Days 3650)
+    $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+  args:
+    executable: powershell

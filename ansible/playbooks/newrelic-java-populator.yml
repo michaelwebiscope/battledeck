@@ -1,0 +1,15 @@
+---
+# Run ImagePopulator with New Relic Java agent.
+# Run: python3 -m ansible playbook playbooks/newrelic-java-populator.yml -e "ansible_host=<vm_ip>" -e "vm_admin_password=..." -e "newrelic_license_key=<license_or_ingest_key>"
+
+- name: Run ImagePopulator with New Relic Java agent
+  hosts: navalansible
+  gather_facts: true
+  vars:
+    run_image_populator: true
+    newrelic_java_app_name: NavalArchiveImagePopulator
+  tasks:
+    - name: Include populate tasks from navalansible role
+      ansible.builtin.include_role:
+        name: navalansible
+        tasks_from: populate.yml
