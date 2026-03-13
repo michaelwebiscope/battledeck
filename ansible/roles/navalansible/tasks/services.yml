@@ -127,24 +127,36 @@
       ImagePopulator listener:
       {{ 'healthy on port ' + (image_populator_port | string) if imagepopulator_health.status_code | default(0) == 200 else 'not responding on port ' + (image_populator_port | string) + ' after 90s - check C:\\inetpub\\run-image-populator-listener.ps1 and scheduled task logs' }}
 
-# account-service: run exe directly as task action (PS1 wrapper with ErrorActionPreference=Stop
-# causes 0xFFFFD000 exit when run as SYSTEM). Machine-level env vars used instead.
-- name: Set machine-level env vars for account-service
-  ansible.windows.win_shell: |
-    [System.Environment]::SetEnvironmentVariable('HTTP_PORT', '5005', 'Machine')
-    [System.Environment]::SetEnvironmentVariable('DATABASE_URL', '{{ account_path }}\accounts.db', 'Machine')
-    {% if newrelic_license_key is defined and newrelic_license_key | length > 0 %}
-    [System.Environment]::SetEnvironmentVariable('NEW_RELIC_LICENSE_KEY', '{{ newrelic_license_key }}', 'Machine')
-    [System.Environment]::SetEnvironmentVariable('NEW_RELIC_APP_NAME', '{{ newrelic_go_account_app_name | default("NavalArchiveAccount") }}', 'Machine')
-    {% endif %}
-    Write-Output "Account env vars set"
-  args:
-    executable: powershell
+# account-service: use a PS1 wrapper without $ErrorActionPreference="Stop"
+# (that caused 0xFFFFD000 exit under SYSTEM). All env vars are process-level
+# in the wrapper so they don't pollute the machine environment and bleed into IIS.
+- name: Create run-account-service.ps1 (Go binary launcher)
+  ansible.windows.win_copy:
+    content: |
+      $env:HTTP_PORT = '5005'
+      $env:DATABASE_URL = '{{ account_path }}\accounts.db'
+      {% if newrelic_license_key is defined and newrelic_license_key | length > 0 %}
+      $env:NEW_RELIC_LICENSE_KEY = '{{ newrelic_license_key }}'
+      $env:NEW_RELIC_APP_NAME = '{{ newrelic_go_account_app_name | default("NavalArchiveAccount") }}'
+      {% endif %}
+      Set-Location '{{ account_path }}'
+      & '{{ account_path }}\account-service.exe'
+    dest: "{{ account_path }}\\run-account-service.ps1"
+
+- name: Clear machine-level NR env vars left over from account-service (no longer needed)
+  ansible.windows.win_environment:
+    name: "{{ item }}"
+    state: absent
+    level: machine
+  loop:
+    - NEW_RELIC_APP_NAME
+    - NEW_RELIC_LICENSE_KEY
+  failed_when: false
 
 - name: Create NavalArchiveAccount scheduled task (Go account-service)
   ansible.windows.win_shell: |
     $taskName = "NavalArchiveAccount"
-    $action = New-ScheduledTaskAction -Execute "{{ account_path }}\account-service.exe" -WorkingDirectory "{{ account_path }}"
+    $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -NonInteractive -File `"{{ account_path }}\run-account-service.ps1`"" -WorkingDirectory "{{ account_path }}"
     $trigger = New-ScheduledTaskTrigger -AtStartup -RandomDelay (New-TimeSpan -Seconds 30)
     $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 0) -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew

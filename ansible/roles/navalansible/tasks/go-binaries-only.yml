@@ -74,23 +74,33 @@
   args:
     executable: powershell
 
-# Set machine-level env vars for account-service (no PS1 wrapper needed — exe runs directly as task action)
-- name: Set machine-level env vars for account-service
-  ansible.windows.win_shell: |
-    [System.Environment]::SetEnvironmentVariable('HTTP_PORT', '5005', 'Machine')
-    [System.Environment]::SetEnvironmentVariable('DATABASE_URL', '{{ account_path }}\accounts.db', 'Machine')
-    {% if newrelic_license_key is defined and newrelic_license_key | length > 0 %}
-    [System.Environment]::SetEnvironmentVariable('NEW_RELIC_LICENSE_KEY', '{{ newrelic_license_key }}', 'Machine')
-    [System.Environment]::SetEnvironmentVariable('NEW_RELIC_APP_NAME', '{{ newrelic_go_account_app_name | default("NavalArchiveAccount") }}', 'Machine')
-    {% endif %}
-    Write-Output "Account env vars set"
-  args:
-    executable: powershell
+# account-service: PS1 wrapper without $ErrorActionPreference="Stop" (safe under SYSTEM)
+- name: Update run-account-service.ps1
+  ansible.windows.win_copy:
+    content: |
+      $env:HTTP_PORT = '5005'
+      $env:DATABASE_URL = '{{ account_path }}\accounts.db'
+      {% if newrelic_license_key is defined and newrelic_license_key | length > 0 %}
+      $env:NEW_RELIC_LICENSE_KEY = '{{ newrelic_license_key }}'
+      $env:NEW_RELIC_APP_NAME = '{{ newrelic_go_account_app_name | default("NavalArchiveAccount") }}'
+      {% endif %}
+      Set-Location '{{ account_path }}'
+      & '{{ account_path }}\account-service.exe'
+    dest: "{{ account_path }}\\run-account-service.ps1"
 
-# Update NavalArchiveAccount task action to run the exe directly (PS1 wrapper causes issues as SYSTEM)
-- name: Update NavalArchiveAccount task to run exe directly
+- name: Clear machine-level NR env vars left over from old account-service setup
+  ansible.windows.win_environment:
+    name: "{{ item }}"
+    state: absent
+    level: machine
+  loop:
+    - NEW_RELIC_APP_NAME
+    - NEW_RELIC_LICENSE_KEY
+  failed_when: false
+
+- name: Update NavalArchiveAccount task to use PS1 wrapper
   ansible.windows.win_shell: |
-    $action = New-ScheduledTaskAction -Execute '{{ account_path }}\account-service.exe' -WorkingDirectory '{{ account_path }}'
+    $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -NonInteractive -File `"{{ account_path }}\run-account-service.ps1`"" -WorkingDirectory '{{ account_path }}'
     $settings = New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 0)
     Set-ScheduledTask -TaskName 'NavalArchiveAccount' -Action $action -Settings $settings | Out-Null
     Write-Output "NavalArchiveAccount task updated"
