@@ -38,6 +38,63 @@
         name: newrelic.newrelic_install
       when: not nr_infra_stat.stat.exists or not nr_dotnet_stat.stat.exists
 
+    - name: Enable TLS 1.2 for .NET Framework (required for NR agent to reach collector.newrelic.com)
+      ansible.windows.win_regedit:
+        path: "{{ item }}"
+        name: SchUseStrongCrypto
+        data: 1
+        type: dword
+      loop:
+        - HKLM:\SOFTWARE\Microsoft\.NETFramework\v4.0.30319
+        - HKLM:\SOFTWARE\WOW6432Node\Microsoft\.NETFramework\v4.0.30319
+
+    - name: Enable CLR profiler at machine level (CORECLR_ENABLE_PROFILING=1 for .NET Core, COR_ENABLE_PROFILING=1 for .NET Framework)
+      ansible.windows.win_environment:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        state: present
+        level: machine
+      loop:
+        - { name: CORECLR_ENABLE_PROFILING, value: "1" }
+        - { name: COR_ENABLE_PROFILING, value: "1" }
+
+    - name: Set per-app-pool NEW_RELIC_APP_NAME and license key for IIS chain services
+      ansible.windows.win_shell: |
+        Import-Module WebAdministration -ErrorAction SilentlyContinue
+        $licenseKey = "{{ newrelic_license_key | default('') }}"
+        $pools = @{
+          "NavalArchive-API"       = "NavalArchiveApi"
+          "NavalArchive-Gateway"   = "NavalArchiveGateway"
+          "NavalArchive-Auth"      = "NavalArchiveAuth"
+          "NavalArchive-User"      = "NavalArchiveUser"
+          "NavalArchive-Catalog"   = "NavalArchiveCatalog"
+          "NavalArchive-Inventory" = "NavalArchiveInventory"
+          "NavalArchive-Basket"    = "NavalArchiveBasket"
+        }
+        foreach ($entry in $pools.GetEnumerator()) {
+          $poolName = $entry.Key
+          $appName  = $entry.Value
+          $poolPath = "IIS:\AppPools\$poolName"
+          if (-not (Test-Path $poolPath)) { continue }
+          # Remove existing entries then add fresh
+          Clear-WebConfiguration -PSPath "MACHINE/WEBROOT/APPHOST" `
+            -Filter "system.applicationHost/applicationPools/add[@name='$poolName']/environmentVariables" `
+            -ErrorAction SilentlyContinue
+          Add-WebConfigurationProperty -PSPath "MACHINE/WEBROOT/APPHOST" `
+            -Filter "system.applicationHost/applicationPools/add[@name='$poolName']/environmentVariables" `
+            -Name "." -Value @{ name = "NEW_RELIC_APP_NAME"; value = $appName }
+          if ($licenseKey) {
+            Add-WebConfigurationProperty -PSPath "MACHINE/WEBROOT/APPHOST" `
+              -Filter "system.applicationHost/applicationPools/add[@name='$poolName']/environmentVariables" `
+              -Name "." -Value @{ name = "NEW_RELIC_LICENSE_KEY"; value = $licenseKey }
+          }
+          Write-Host "Configured app pool: $poolName → $appName"
+        }
+        exit 0
+      args:
+        executable: powershell
+      failed_when: false
+
     - name: IIS reset after .NET agent install (required for CLR profiler to take effect)
       ansible.windows.win_shell: |
         $iisreset = if (Test-Path "$env:windir\SysNative\inetsrv\iisreset.exe") { "$env:windir\SysNative\inetsrv\iisreset.exe" } else { "$env:windir\System32\inetsrv\iisreset.exe" }
