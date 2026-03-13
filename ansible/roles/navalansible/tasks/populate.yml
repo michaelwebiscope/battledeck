@@ -16,13 +16,29 @@
     src_path: "{{ src_path_check.stdout_lines[0] | trim }}"
   when: (src_path is not defined or src_path == '') and src_path_check.stdout | trim | length > 0
 
+- name: Ensure IIS and NavalArchive-API site are started
+  ansible.windows.win_shell: |
+    $svc = Get-Service -Name W3SVC -ErrorAction SilentlyContinue
+    if ($svc -and $svc.Status -ne 'Running') {
+      Start-Service W3SVC -ErrorAction SilentlyContinue
+      Start-Sleep -Seconds 5
+    }
+    $appcmd = if (Test-Path "$env:windir\SysNative\inetsrv\appcmd.exe") { "$env:windir\SysNative\inetsrv\appcmd.exe" } else { "$env:windir\System32\inetsrv\appcmd.exe" }
+    if (Test-Path $appcmd) {
+      & $appcmd start apppool NavalArchive-API 2>$null
+      & $appcmd start site NavalArchive-API 2>$null
+    }
+    exit 0
+  args:
+    executable: powershell
+
 - name: Wait for API to be ready (ImagePopulator needs it)
   ansible.windows.win_uri:
     url: http://127.0.0.1:5000/health
     method: GET
   register: api_ready
   until: api_ready.status_code | default(0) == 200
-  retries: 12
+  retries: 36
   delay: 5
 
 - name: Find ImagePopulator jar in clone
