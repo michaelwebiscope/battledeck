@@ -177,3 +177,23 @@ fi
 cd ..
 
 echo "=== Done. App at https://$VM_IP ==="
+
+echo "=== Waiting 2 minutes for health checks before NR change tracking ==="
+sleep 120
+
+if [ -n "$GITHUB_TOKEN" ]; then
+  REPO_PATH=$(echo "$GITHUB_REPO_URL" | sed 's|https://github.com/||;s|\.git$||')
+  echo "=== Triggering NR change tracking workflow ==="
+  DISPATCH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+    -H "Authorization: token $GITHUB_TOKEN" \
+    -H "Accept: application/vnd.github.v3+json" \
+    "https://api.github.com/repos/$REPO_PATH/dispatches" \
+    -d "{\"event_type\":\"deploy-complete\"}")
+  if [ "$DISPATCH_STATUS" = "204" ]; then
+    echo "NR change tracking workflow triggered."
+  else
+    echo "WARNING: Failed to trigger NR workflow (HTTP $DISPATCH_STATUS) — check GITHUB_TOKEN scope"
+  fi
+else
+  echo "GITHUB_TOKEN not set — skipping NR change tracking trigger"
+fi
