@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
+    "traffic-sim": "node scripts/traffic-simulator.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

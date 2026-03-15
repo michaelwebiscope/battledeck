@@ -57,11 +57,7 @@ const defaultNavItems = [
     { href: '/logs', label: 'Daily Logs' }
   ]},
   { href: '/simulation', label: 'Live Battle' },
-  { label: 'Support', items: [
-    { href: '/donate', label: 'Donate' },
-    { href: '/payment-account', label: 'Payment Account' },
-    { href: '/login', label: 'Login' }
-  ]},
+  { href: '/donate', label: 'Support' },
   { href: '/members', label: 'Member' },
   { href: '/trace', label: 'Trace' }
 ];

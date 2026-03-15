@@ -23,7 +23,7 @@
       </div>
       <% } else if (item.href) { %>
       <a class="topbar-link<%= (currentPath === item.href || (item.href !== '/' && currentPath.startsWith(item.href))) ? ' active' : '' %>" href="<%= item.href %>">
-        <i class="bi bi-<%= item.href === '/' ? 'house-door' : item.href.includes('simulation') ? 'controller' : item.href.includes('donate') ? 'heart' : item.href.includes('cart') ? 'cart' : 'link-45deg' %>"></i>
+        <i class="bi bi-<%= item.href === '/' ? 'house-door' : item.href.includes('simulation') ? 'controller' : item.href.includes('donate') ? 'heart' : item.href.includes('members') ? 'person' : item.href.includes('cart') ? 'cart' : 'link-45deg' %>"></i>
         <span><%= item.label %></span>
       </a>
       <% } %>
@@ -32,7 +32,7 @@
     <div class="topbar-right">
       <div id="accountStatus" style="display:none; align-items:center; gap:6px; font-size:0.8rem; white-space:nowrap;">
         <i class="bi bi-person-circle"></i>
-        <span id="accountStatusName" style="max-width:120px; overflow:hidden; text-overflow:ellipsis;"></span>
+        <a href="/payment-account" id="accountStatusName" style="max-width:120px; overflow:hidden; text-overflow:ellipsis; color:inherit; text-decoration:none; cursor:pointer;" title="Account – top up, view balance &amp; ID"></a>
         <button onclick="signOutAccount()" style="background:none;border:1px solid currentColor;border-radius:4px;padding:1px 7px;font-size:0.75rem;cursor:pointer;opacity:0.8;" title="Sign out">Sign out</button>
       </div>
       <a href="/admin/images" class="topbar-link admin-only text-decoration-none">
@@ -43,11 +43,6 @@
         <i class="bi bi-plus-circle"></i>
         <span>Add from URL</span>
       </a>
-      <label class="topbar-admin" title="Admin mode" style="cursor: pointer;">
-        <input class="form-check-input" type="checkbox" id="adminModeToggle">
-        <i class="bi bi-shield-lock"></i>
-        <span>Admin</span>
-      </label>
       <button class="topbar-toggle" type="button" aria-label="Toggle menu" onclick="document.getElementById('appTopbar').classList.toggle('expanded')">
         <i class="bi bi-list"></i>
       </button>
@@ -71,23 +66,4 @@ function signOutAccount() {
   var el = document.getElementById('accountStatus');
   if (el) el.style.display = 'none';
 }
-(function(){
-  var key = 'adminMode';
-  var toggle = document.getElementById('adminModeToggle');
-  if (!toggle) return;
-  if (localStorage.getItem(key) === 'true') {
-    document.body.classList.add('admin-mode');
-    toggle.checked = true;
-  }
-  toggle.addEventListener('change', function() {
-    if (toggle.checked) {
-      localStorage.setItem(key, 'true');
-      document.body.classList.add('admin-mode');
-    } else {
-      localStorage.removeItem(key);
-      document.body.classList.remove('admin-mode');
-    }
-    window.dispatchEvent(new CustomEvent('adminModeChanged', { detail: { enabled: toggle.checked } }));
-  });
-})();
 </script>

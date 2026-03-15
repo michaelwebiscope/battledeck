@@ -112,6 +112,7 @@
           return;
         }
         setStoredKey(key);
+        if (data.name) localStorage.setItem('paymentAccountName', data.name);
         resultEl.innerHTML = '<div class="alert alert-success py-2 small">Signed in. Redirecting...</div>';
         setTimeout(function() { window.location.href = returnUrl; }, 800);
       } catch (err) {

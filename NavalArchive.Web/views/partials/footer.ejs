@@ -1,6 +1,35 @@
 <footer class="bg-dark text-light py-4 mt-5">
   <div class="container">
     <p class="mb-0 text-center">&copy; <%= new Date().getFullYear() %> WW2 Naval History Archive. All rights reserved.</p>
+    <p class="mb-0 mt-2 text-center">
+      <label class="text-secondary" title="Admin mode" style="cursor: pointer; font-size: 0.85rem;">
+        <input class="form-check-input" type="checkbox" id="adminModeToggle">
+        <i class="bi bi-shield-lock"></i>
+        <span>Admin</span>
+      </label>
+    </p>
   </div>
 </footer>
+</div>
+<script>
+(function(){
+  var key = 'adminMode';
+  var toggle = document.getElementById('adminModeToggle');
+  if (!toggle) return;
+  if (localStorage.getItem(key) === 'true') {
+    document.body.classList.add('admin-mode');
+    toggle.checked = true;
+  }
+  toggle.addEventListener('change', function() {
+    if (toggle.checked) {
+      localStorage.setItem(key, 'true');
+      document.body.classList.add('admin-mode');
+    } else {
+      localStorage.removeItem(key);
+      document.body.classList.remove('admin-mode');
+    }
+    window.dispatchEvent(new CustomEvent('adminModeChanged', { detail: { enabled: toggle.checked } }));
+  });
+})();
+</script>
 </div>
