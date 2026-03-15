@@ -49,8 +49,9 @@
                   <input type="text" id="regName" class="form-control" placeholder="e.g. Admiral Nelson" required>
                 </div>
                 <div class="mb-3">
-                  <label class="form-label fw-semibold">ID <span class="text-muted fw-normal">(unique identifier)</span></label>
-                  <input type="text" id="regEmail" class="form-control" placeholder="e.g. nelson@navy.uk" required>
+                  <label class="form-label fw-semibold">Membership Card ID <span class="text-muted fw-normal">(unique identifier)</span></label>
+                  <input type="text" id="regEmail" class="form-control font-monospace" placeholder="NAV-XXXXXXXX" required pattern="NAV-[A-Za-z0-9]{8}" title="Must be a valid membership card ID (NAV-XXXXXXXX)">
+                  <small class="text-muted">Get one from <a href="/members">Add Member</a></small>
                 </div>
                 <button type="submit" class="btn btn-modern w-100">Generate Account</button>
               </form>

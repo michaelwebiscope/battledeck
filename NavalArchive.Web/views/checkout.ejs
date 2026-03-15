@@ -4,8 +4,11 @@
   <%- include('partials/head') %>
   <style>
     .balance-badge { font-size: 1.5rem; font-weight: 700; color: #0284c7; }
-    .nav-tabs .nav-link { color: #6c757d; }
-    .nav-tabs .nav-link.active { color: #0c4a6e; font-weight: 600; }
+    .tx-row { border-bottom: 1px solid #f0f9ff; padding: 0.5rem 0; }
+    .tx-row:last-child { border-bottom: none; }
+    .badge-approved { background: #dcfce7; color: #15803d; border-radius: 6px; padding: 2px 8px; font-size: 0.78rem; font-weight: 600; }
+    .badge-pending  { background: #fef9c3; color: #a16207; border-radius: 6px; padding: 2px 8px; font-size: 0.78rem; font-weight: 600; }
+    .badge-declined { background: #fee2e2; color: #b91c1c; border-radius: 6px; padding: 2px 8px; font-size: 0.78rem; font-weight: 600; }
   </style>
 </head>
 <body>
@@ -13,78 +16,70 @@
   <main class="app-shell">
     <div class="container py-4">
       <h1 class="mb-4">Checkout</h1>
-      <p class="lead text-muted mb-4">Pay with your <strong>card</strong> (validate name + card) or <strong>Pay from Account</strong> using your wallet balance. Create an account on <a href="/payment-account">Payment Account</a> if needed.</p>
-      <div class="row">
+      <p class="lead text-muted mb-4">Pay from your wallet balance using your Payment Account. Don't have one? <a href="/payment-account">Create one here</a>.</p>
+      <div class="row g-4">
         <div class="col-lg-6">
+
+          <!-- Cart Summary -->
           <div id="cartSummary" class="card mb-3" style="display:none;">
             <div class="card-header">Cart Summary</div>
             <div id="cartSummaryBody" class="card-body"></div>
           </div>
+
+          <!-- Membership Card ID -->
           <div class="mb-3">
-            <label class="form-label">Card ID <span class="text-muted">(for cart total and clearing)</span></label>
-            <input type="text" id="cardIdInput" name="cardId" class="form-control" placeholder="NAV-XXXXXXXX" required>
+            <label class="form-label">Membership Card ID</label>
+            <input type="text" id="cardIdInput" name="cardId" class="form-control font-monospace" placeholder="NAV-XXXXXXXX" required>
             <small class="text-muted">Get one from <a href="/members">Add Member</a></small>
           </div>
-          <ul class="nav nav-tabs mb-3" id="checkoutTab" role="tablist">
-            <li class="nav-item" role="presentation">
-              <button class="nav-link active" id="card-tab" data-bs-toggle="tab" data-bs-target="#card" type="button" role="tab">Card</button>
-            </li>
-            <li class="nav-item" role="presentation">
-              <button class="nav-link" id="account-tab" data-bs-toggle="tab" data-bs-target="#account" type="button" role="tab">Pay from Account</button>
-            </li>
-          </ul>
-          <div class="tab-content">
-            <div class="tab-pane fade show active" id="card" role="tabpanel">
-              <div class="card">
-                <div class="card-body">
-                  <form id="checkoutForm">
-                    <div class="mb-3">
-                      <label class="form-label">Your Name</label>
-                      <input type="text" name="name" class="form-control" placeholder="Full name" required>
-                    </div>
-                    <div class="mb-3">
-                      <label class="form-label">Amount (USD) — leave 0 to use cart total</label>
-                      <input type="number" name="amount" class="form-control" value="0" min="0" step="0.01">
-                    </div>
-                    <button type="submit" class="btn btn-dark">Checkout</button>
-                  </form>
-                </div>
+
+          <!-- API Key load -->
+          <div class="card mb-3">
+            <div class="card-body">
+              <label class="form-label fw-semibold">Payment Account API Key</label>
+              <div class="d-flex gap-2">
+                <input type="text" id="acctKeyInput" class="form-control font-monospace" placeholder="sk_live_..." autocomplete="off">
+                <button class="btn btn-modern" type="button" onclick="loadAcct()">Load</button>
+              </div>
+              <div id="acctLoadResult" class="mt-2"></div>
+              <div class="mt-2 small text-muted">Don't have an account? <a href="/payment-account">Create one here</a>.</div>
+            </div>
+          </div>
+
+          <!-- Account dashboard (shown after key loaded) -->
+          <div id="acctDashboard" style="display:none;">
+            <div class="card mb-3">
+              <div class="card-body text-center py-3">
+                <div class="text-muted small mb-1">Account Balance</div>
+                <div class="balance-badge" id="acctBalance">$0.00</div>
+                <div class="text-muted small" id="acctLabel"></div>
               </div>
             </div>
-            <div class="tab-pane fade" id="account" role="tabpanel">
-              <div class="card mb-3" id="acctLoadCard">
-                <div class="card-body">
-                  <label class="form-label fw-semibold">API Key</label>
-                  <div class="d-flex gap-2">
-                    <input type="text" id="acctKeyInput" class="form-control font-monospace" placeholder="sk_live_..." autocomplete="off">
-                    <button class="btn btn-modern" type="button" onclick="loadAcct()">Load</button>
-                  </div>
-                  <div id="acctLoadResult" class="mt-2"></div>
-                  <div class="mt-2 small text-muted">Don't have an account? <a href="/payment-account">Create one here</a>.</div>
+            <div class="card mb-3">
+              <div class="card-body">
+                <div class="mb-3">
+                  <label class="form-label">Amount (USD) — leave 0 to use cart total</label>
+                  <input type="number" id="acctAmount" class="form-control" value="0" min="0" step="0.01">
                 </div>
+                <button class="btn btn-modern w-100" type="button" onclick="payFromAccount()">Pay from Balance</button>
+                <div id="acctPayResult" class="mt-2"></div>
               </div>
-              <div id="acctDashboard" style="display:none;">
-                <div class="card mb-3">
-                  <div class="card-body text-center py-3">
-                    <div class="text-muted small mb-1">Account Balance</div>
-                    <div class="balance-badge" id="acctBalance">$0.00</div>
-                    <div class="text-muted small" id="acctLabel"></div>
-                  </div>
-                </div>
-                <div class="card">
-                  <div class="card-body">
-                    <div class="mb-3">
-                      <label class="form-label">Amount (USD) — leave 0 to use cart total</label>
-                      <input type="number" id="acctAmount" class="form-control" value="0" min="0" step="0.01">
-                    </div>
-                    <button class="btn btn-modern w-100" type="button" onclick="payFromAccount()">Pay from Balance</button>
-                    <div id="acctPayResult" class="mt-2"></div>
-                  </div>
-                </div>
+            </div>
+
+            <!-- Transaction History (shown after first payment) -->
+            <div class="card" id="historyCard" style="display:none;">
+              <div class="card-header d-flex align-items-center justify-content-between">
+                <span>Transaction History</span>
+                <button class="btn btn-sm btn-outline-secondary" onclick="loadHistory()">
+                  <i class="bi bi-arrow-clockwise"></i> Refresh
+                </button>
+              </div>
+              <div class="card-body p-0" id="historyList">
+                <div class="p-3 text-muted text-center small">No transactions yet</div>
               </div>
             </div>
           </div>
-          <div id="result" class="mt-3" style="display:none;"></div>
+
         </div>
       </div>
     </div>
@@ -97,13 +92,10 @@
     const urlCardId = urlParams.get('cardId');
     if (urlCardId) cardIdInput.value = urlCardId.trim();
 
-    // Idempotency key: prevents same transaction from being charged twice (double-click, back button)
-    const idempotencyKey = crypto.randomUUID ? crypto.randomUUID() : 'ck-' + Date.now() + '-' + Math.random().toString(36).slice(2);
-
-    // ── Pay from Account (same key as donate) ───────────────────────────────────
     let acctApiKey = localStorage.getItem('paymentAccountKey') || '';
     if (acctApiKey) document.getElementById('acctKeyInput').value = acctApiKey;
 
+    // ── Load account ─────────────────────────────────────────────────────────
     async function loadAcct() {
       const key = document.getElementById('acctKeyInput').value.trim();
       if (!key) return;
@@ -119,51 +111,105 @@
         document.getElementById('acctBalance').textContent = '$' + (data.balance || 0).toFixed(2);
         document.getElementById('acctLabel').textContent = (data.name || '') + (data.accountId ? '  ·  ' + data.accountId : '');
         document.getElementById('acctDashboard').style.display = '';
+        loadHistory();
       } catch (err) {
         el.innerHTML = '<div class="alert alert-danger py-2 small">Account service unavailable</div>';
       }
     }
 
+    // ── Pay from account ─────────────────────────────────────────────────────
     async function payFromAccount() {
       const cardId = (cardIdInput.value || '').trim();
-      const amount = parseFloat(document.getElementById('acctAmount').value) || 0;
-      const resultEl = document.getElementById('result');
       const acctResultEl = document.getElementById('acctPayResult');
-      if (!cardId) { acctResultEl.innerHTML = '<div class="text-danger small">Enter Card ID above</div>'; return; }
+      if (!cardId) { acctResultEl.innerHTML = '<div class="text-danger small">Enter Membership Card ID above</div>'; return; }
       if (!acctApiKey) { acctResultEl.innerHTML = '<div class="text-danger small">Load your API key first</div>'; return; }
+
+      let amount = parseFloat(document.getElementById('acctAmount').value) || 0;
+
+      // Resolve cart total if amount is 0
+      if (!amount) {
+        try {
+          const totRes = await fetch('/api/cart/total/' + encodeURIComponent(cardId) + '?isMember=true');
+          const tot = await totRes.json();
+          amount = tot.total || 0;
+        } catch (e) {}
+      }
+      if (!amount || amount <= 0) {
+        acctResultEl.innerHTML = '<div class="text-danger small">Enter an amount or add items to your cart first</div>';
+        return;
+      }
+
       acctResultEl.innerHTML = '<span class="text-muted small">Processing...</span>';
-      resultEl.style.display = 'block';
-      resultEl.innerHTML = '';
       try {
-        const res = await fetch('/api/checkout/pay', {
+        const res = await fetch('/api/payments/simulate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-API-Key': acctApiKey },
-          body: JSON.stringify({ cardId, amount: amount > 0 ? amount : null, currency: 'USD', idempotencyKey, apiKey: acctApiKey })
+          body: JSON.stringify({ amount, currency: 'USD', description: 'Checkout – cart ' + cardId })
         });
         const data = await res.json();
+
         if (res.status === 402) {
           acctResultEl.innerHTML = '<div class="alert alert-danger py-2 small">Insufficient funds — top up your balance first.</div>';
           return;
         }
-        if (res.ok && data.approved) {
-          acctResultEl.innerHTML = '<div class="alert alert-success py-2 small">&#10003; Payment approved. Transaction: ' + (data.transactionId || 'N/A') + '</div>';
-          resultEl.innerHTML = '<div class="alert alert-success">✓ Payment approved. Transaction: ' + (data.transactionId || 'N/A') + '</div>';
-          setTimeout(function() { loadAcct(); }, 1500);
-        } else if (res.ok) {
-          acctResultEl.innerHTML = '<div class="alert alert-warning py-2 small">' + (data.message || 'Payment declined') + '</div>';
-        } else {
-          acctResultEl.innerHTML = '<div class="alert alert-danger py-2 small">' + (data.error || 'Checkout failed') + '</div>';
+        if (!res.ok) {
+          acctResultEl.innerHTML = '<div class="alert alert-danger py-2 small">' + (data.error || 'Payment failed') + '</div>';
+          return;
         }
+
+        const isQueued = res.status === 202 || data.status === 'queued';
+        const msg = isQueued ? (data.message || 'Payment queued') : (data.message || 'Payment approved');
+        acctResultEl.innerHTML = '<div class="alert alert-success py-2 small">&#10003; ' + msg + (data.transactionId ? ' (' + data.transactionId + ')' : '') + '</div>';
+
+        // Clear the cart on success
+        fetch('/api/cart/clear/' + encodeURIComponent(cardId), { method: 'POST' }).catch(() => {});
+
+        // Refresh balance and history
+        setTimeout(function() { loadAcct(); }, 1500);
+
+        // Show history card
+        document.getElementById('historyCard').style.display = '';
+        setTimeout(function() { loadHistory(); }, 1500);
       } catch (err) {
         acctResultEl.innerHTML = '<div class="alert alert-danger py-2 small">Checkout failed. Ensure API and services are running.</div>';
       }
     }
 
-    document.getElementById('account-tab').addEventListener('shown.bs.tab', function() {
-      if (acctApiKey && document.getElementById('acctDashboard').style.display !== 'block') loadAcct();
-    }, { once: false });
+    // ── Transaction history ───────────────────────────────────────────────────
+    async function loadHistory() {
+      if (!acctApiKey) return;
+      const el = document.getElementById('historyList');
+      try {
+        const res = await fetch('/api/accounts/history', { headers: { 'X-API-Key': acctApiKey } });
+        if (!res.ok) { el.innerHTML = '<div class="p-3 text-muted small">No history available</div>'; return; }
+        const items = await res.json();
+        if (!items || items.length === 0) {
+          el.innerHTML = '<div class="p-3 text-muted text-center small">No transactions yet</div>';
+          return;
+        }
+        document.getElementById('historyCard').style.display = '';
+        el.innerHTML = items.map(function(t) {
+          var approved = t.status === 'completed' || t.approved;
+          var queued = t.status === 'queued';
+          return '<div class="tx-row px-3 d-flex align-items-center justify-content-between">' +
+            '<div>' +
+              '<div class="fw-semibold small">' + (t.description || 'Payment') + '</div>' +
+              '<div class="text-muted" style="font-size:0.75rem">' + t.transactionId + ' · ' + new Date(t.createdAt).toLocaleString() + '</div>' +
+            '</div>' +
+            '<div class="text-end">' +
+              '<div class="fw-bold">$' + parseFloat(t.amount).toFixed(2) + '</div>' +
+              '<span class="' + (approved ? 'badge-approved' : queued ? 'badge-pending' : 'badge-declined') + '">' +
+                (approved ? 'approved' : t.status || 'pending') +
+              '</span>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+      } catch (err) {
+        el.innerHTML = '<div class="p-3 text-muted small">Could not load history</div>';
+      }
+    }
 
-    // ── Cart summary ────────────────────────────────────────────────────────────
+    // ── Cart summary ─────────────────────────────────────────────────────────
     async function loadCartSummary() {
       const cardId = (cardIdInput.value || '').trim();
       if (!cardId) return;
@@ -178,7 +224,7 @@
         const body = document.getElementById('cartSummaryBody');
         if (Array.isArray(items) && items.length) {
           body.innerHTML = '<table class="table table-sm mb-0"><tbody>' +
-            items.map(i => '<tr><td>' + i.name + '</td><td>x' + i.quantity + '</td><td>$' + i.lineTotal + '</td></tr>').join('') +
+            items.map(function(i) { return '<tr><td>' + i.name + '</td><td>x' + i.quantity + '</td><td>$' + i.lineTotal + '</td></tr>'; }).join('') +
             '</tbody></table><p class="mb-0 mt-2"><strong>Total: $' + (total.total || 0) + '</strong></p>';
           summary.style.display = 'block';
           var acctAmountEl = document.getElementById('acctAmount');
@@ -194,33 +240,8 @@
     cardIdInput.addEventListener('blur', loadCartSummary);
     if (cardIdInput.value) loadCartSummary();
 
-    // ── Card checkout ──────────────────────────────────────────────────────────
-    document.getElementById('checkoutForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const name = (document.querySelector('[name="name"]').value || '').trim();
-      const cardId = (cardIdInput.value || '').trim();
-      const amount = parseFloat(document.querySelector('[name="amount"]').value) || 0;
-      const resultEl = document.getElementById('result');
-      resultEl.style.display = 'block';
-      resultEl.innerHTML = '<span class="text-muted">Processing (App→API→Card→Cart→Payment)...</span>';
-      try {
-        const res = await fetch('/api/checkout/pay', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cardId, name, amount: amount > 0 ? amount : null, currency: 'USD', idempotencyKey })
-        });
-        const data = await res.json();
-        if (res.ok && data.approved) {
-          resultEl.innerHTML = '<div class="alert alert-success">✓ Payment approved. Transaction: ' + (data.transactionId || 'N/A') + '</div>';
-        } else if (res.ok) {
-          resultEl.innerHTML = '<div class="alert alert-warning">' + (data.message || 'Payment declined') + '</div>';
-        } else {
-          resultEl.innerHTML = '<div class="alert alert-danger">' + (data.error || 'Checkout failed') + '</div>';
-        }
-      } catch (err) {
-        resultEl.innerHTML = '<div class="alert alert-danger">Checkout failed. Ensure API and services are running.</div>';
-      }
-    });
+    // Auto-load account if key exists in localStorage
+    if (acctApiKey) loadAcct();
   </script>
 </body>
 </html>

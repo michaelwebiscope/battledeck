@@ -15,6 +15,7 @@
     url: http://localhost:5000/trace
     method: GET
     status_code: 200
+    timeout: 5
   register: api_check
   until: api_check.status_code | default(0) == 200
   retries: 12
@@ -25,6 +26,7 @@
   ansible.windows.win_uri:
     url: http://localhost:3000/
     method: GET
+    timeout: 5
   register: web_check
   until: web_check.status_code | default(0) == 200
   retries: 12
@@ -35,6 +37,7 @@
   ansible.windows.win_uri:
     url: "http://localhost:{{ image_populator_port | default(5099) }}/health"
     method: GET
+    timeout: 5
   register: populator_check
   ignore_errors: true
 

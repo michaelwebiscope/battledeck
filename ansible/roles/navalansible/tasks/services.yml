@@ -114,6 +114,7 @@
     url: "http://127.0.0.1:{{ image_populator_port }}/health"
     method: GET
     status_code: 200
+    timeout: 5
   register: imagepopulator_health
   until: imagepopulator_health.status_code | default(0) == 200
   retries: 18
@@ -170,6 +171,7 @@
     url: "http://127.0.0.1:5005/health"
     method: GET
     status_code: 200
+    timeout: 5
   register: account_health
   until: account_health.status_code | default(0) == 200
   retries: 12

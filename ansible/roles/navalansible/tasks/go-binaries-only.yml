@@ -140,6 +140,7 @@
     url: "http://127.0.0.1:5005/health"
     method: GET
     status_code: 200
+    timeout: 5
   register: account_health
   until: account_health.status_code | default(0) == 200
   retries: 12
@@ -156,6 +157,7 @@
     url: "http://127.0.0.1:5001/health"
     method: GET
     status_code: 200
+    timeout: 5
   register: payment_health
   until: payment_health.status_code | default(0) == 200
   retries: 12

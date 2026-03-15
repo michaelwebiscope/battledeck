@@ -37,15 +37,15 @@ jobs:
         id: entities
         if: steps.changed.outputs.components != ''
         run: |
-          if [ -z "${{ secrets.NR_API_KEY }}" ]; then
-            echo "NR_API_KEY secret not set — skipping change tracking"
+          if [ -z "${{ secrets.NR_API_KEY }}" ] || [ -z "${{ secrets.NR_ACCOUNT_ID }}" ]; then
+            echo "NR_API_KEY or NR_ACCOUNT_ID secret not set — skipping change tracking"
             echo "response=" >> $GITHUB_OUTPUT
             exit 0
           fi
           RESPONSE=$(curl -s -X POST https://api.newrelic.com/graphql \
             -H "API-Key: ${{ secrets.NR_API_KEY }}" \
             -H "Content-Type: application/json" \
-            -d "{\"query\": \"{ actor { entitySearch(query: \\\"accountId = '${{ secrets.NR_ACCOUNT_ID }}' AND type = 'APPLICATION' AND name LIKE 'NavalArchive%'\\\") { results { entities { guid name } } } } }\" }")
+            -d "{\"query\": \"{ actor { entitySearch(query: \\\"accountId = ${{ secrets.NR_ACCOUNT_ID }} AND type = 'APPLICATION' AND name LIKE 'NavalArchive%'\\\") { results { entities { guid name } } } } }\" }")
           if echo "$RESPONSE" | grep -q '"errors"'; then
             echo "NR API error: $RESPONSE"
             exit 1
