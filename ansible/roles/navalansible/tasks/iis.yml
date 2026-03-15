@@ -51,11 +51,7 @@
     & $appcmd add site /name:{{ item.site }} "/physicalPath:{{ chain_paths[item.path_key] }}" "/bindings:http/*:{{ item.port }}:"
     & $appcmd set app "{{ item.site }}/" /applicationPool:{{ item.apppool }}
     {% endfor %}
-    & $appcmd start site NavalArchive-API
-    & $appcmd start site NavalArchive-Web
-    {% for item in iis_chain_services %}
-    & $appcmd start site "{{ item.site }}" 2>$null
-    {% endfor %}
+    exit 0
   args:
     executable: powershell
   when: ansible_changed | default(true)
