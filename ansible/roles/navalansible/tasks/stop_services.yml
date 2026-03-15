@@ -17,6 +17,16 @@
     executable: powershell
   failed_when: false
 
+- name: Stop Go scheduled tasks before killing processes
+  ansible.windows.win_shell: |
+    Stop-ScheduledTask -TaskName "NavalArchiveAccount" -ErrorAction SilentlyContinue
+    Stop-ScheduledTask -TaskName "NavalArchivePayment" -ErrorAction SilentlyContinue
+    Stop-ScheduledTask -TaskName "NavalArchiveImagePopulator" -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+  args:
+    executable: powershell
+  failed_when: false
+
 - name: Kill navalarchive and dotnet processes
   ansible.windows.win_shell: |
     # Stop IIS first to release file locks on NavalArchive.Api directory
