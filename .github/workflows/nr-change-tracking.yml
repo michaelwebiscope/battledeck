@@ -16,30 +16,19 @@ jobs:
       - name: Determine changed components
         id: changed
         run: |
+          # Use HEAD~1..HEAD so we don't rely on github.event.before (can be missing after force-push).
+          # With fetch-depth: 2 we have the tip commit and its parent.
+          DIFF_FILES=$(git diff --name-only HEAD~1 HEAD)
           # Map repo paths to New Relic entity name substrings (lowercase)
           # Entity names are like "NavalArchive API", "NavalArchive Payment", etc.
           CHANGED=""
-          if git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -qE '^payment-service/'; then
-            CHANGED="${CHANGED}payment "
-          fi
-          if git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -qE '^account-service/'; then
-            CHANGED="${CHANGED}account "
-          fi
-          if git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -qE '^NavalArchive\.Api/|^NavalArchive\.Api\\'; then
-            CHANGED="${CHANGED}api "
-          fi
-          if git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -qE '^NavalArchive\.Web/|^NavalArchive\.Web\\'; then
-            CHANGED="${CHANGED}web "
-          fi
-          if git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -qE '^NavalArchive\.CardService/'; then
-            CHANGED="${CHANGED}card "
-          fi
-          if git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -qE '^NavalArchive\.CartService/'; then
-            CHANGED="${CHANGED}cart "
-          fi
-          if git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -qE '^NavalArchive\.ImagePopulator/|^NavalArchive\.ImagePopulator\\'; then
-            CHANGED="${CHANGED}imagepopulator "
-          fi
+          echo "$DIFF_FILES" | grep -qE '^payment-service/' && CHANGED="${CHANGED}payment "
+          echo "$DIFF_FILES" | grep -qE '^account-service/' && CHANGED="${CHANGED}account "
+          echo "$DIFF_FILES" | grep -qE '^NavalArchive\.Api/|^NavalArchive\.Api\\' && CHANGED="${CHANGED}api "
+          echo "$DIFF_FILES" | grep -qE '^NavalArchive\.Web/|^NavalArchive\.Web\\' && CHANGED="${CHANGED}web "
+          echo "$DIFF_FILES" | grep -qE '^NavalArchive\.CardService/' && CHANGED="${CHANGED}card "
+          echo "$DIFF_FILES" | grep -qE '^NavalArchive\.CartService/' && CHANGED="${CHANGED}cart "
+          echo "$DIFF_FILES" | grep -qE '^NavalArchive\.ImagePopulator/|^NavalArchive\.ImagePopulator\\' && CHANGED="${CHANGED}imagepopulator "
           # If no known components changed, skip (no markers)
           echo "components=$CHANGED" >> $GITHUB_OUTPUT
           echo "Changed components: '$CHANGED'"
