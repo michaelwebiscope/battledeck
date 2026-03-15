@@ -305,6 +305,12 @@ app.MapGet("api/videos/{shipId}", async (string shipId, HttpContext ctx, IHttpCl
 var idempotencyCache = new System.Collections.Concurrent.ConcurrentDictionary<string, (object Result, DateTime Expires)>();
 const int IdempotencyWindowMinutes = 10;
 
+// Payment service returns camelCase (e.g. "approved"); deserialize case-insensitively
+var paymentJsonOptions = new System.Text.Json.JsonSerializerOptions
+{
+    PropertyNameCaseInsensitive = true
+};
+
 // Minimal API for checkout (bypasses controller routing that 404s on POST under IIS)
 app.MapPost("api/checkout/pay", async (HttpContext ctx, IHttpClientFactory http, IConfiguration config) =>
 {
@@ -364,7 +370,7 @@ app.MapPost("api/checkout/pay", async (HttpContext ctx, IHttpClientFactory http,
             return Results.Json(new { error = "Insufficient funds in your account balance", code = "insufficient_funds" }, statusCode: 402);
         if (!payRes.IsSuccessStatusCode)
             return Results.Json(new { error = "Payment service unavailable" }, statusCode: 502);
-        var payData = await payRes.Content.ReadFromJsonAsync<PaymentPayload>();
+        var payData = await payRes.Content.ReadFromJsonAsync<PaymentPayload>(paymentJsonOptions);
         approved = payData?.Approved ?? false;
         transactionId = payData?.TransactionId;
     }
@@ -389,7 +395,7 @@ app.MapPost("api/checkout/pay", async (HttpContext ctx, IHttpClientFactory http,
         if (!payRes.IsSuccessStatusCode)
             return Results.Json(new { error = "Payment service unavailable" }, statusCode: 502);
 
-        var payData = await payRes.Content.ReadFromJsonAsync<PaymentPayload>();
+        var payData = await payRes.Content.ReadFromJsonAsync<PaymentPayload>(paymentJsonOptions);
         approved = payData?.Approved ?? false;
         transactionId = payData?.TransactionId;
     }
