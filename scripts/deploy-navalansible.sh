@@ -181,19 +181,25 @@ echo "=== Done. App at https://$VM_IP ==="
 echo "=== Waiting 2 minutes for health checks before NR change tracking ==="
 sleep 120
 
-if [ -n "$GITHUB_TOKEN" ]; then
+# Resolve GitHub token: env var → terraform.tfvars → gh CLI
+_DISPATCH_TOKEN="$GITHUB_TOKEN"
+[ -n "$_DISPATCH_TOKEN" ] || _DISPATCH_TOKEN=$(read_tfvar_any "github_token")
+[ -n "$_DISPATCH_TOKEN" ] || _DISPATCH_TOKEN=$(gh auth token 2>/dev/null || true)
+
+if [ -n "$_DISPATCH_TOKEN" ]; then
   REPO_PATH=$(echo "$GITHUB_REPO_URL" | sed 's|https://github.com/||;s|\.git$||')
   echo "=== Triggering NR change tracking workflow ==="
   DISPATCH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
-    -H "Authorization: token $GITHUB_TOKEN" \
+    -H "Authorization: token $_DISPATCH_TOKEN" \
     -H "Accept: application/vnd.github.v3+json" \
     "https://api.github.com/repos/$REPO_PATH/dispatches" \
     -d "{\"event_type\":\"deploy-complete\"}")
   if [ "$DISPATCH_STATUS" = "204" ]; then
     echo "NR change tracking workflow triggered."
   else
-    echo "WARNING: Failed to trigger NR workflow (HTTP $DISPATCH_STATUS) — check GITHUB_TOKEN scope"
+    echo "WARNING: Failed to trigger NR workflow (HTTP $DISPATCH_STATUS) — token may lack 'workflow' scope"
   fi
 else
-  echo "GITHUB_TOKEN not set — skipping NR change tracking trigger"
+  echo "WARNING: No GitHub token found — skipping NR change tracking."
+  echo "  Fix: run 'gh auth login', set GITHUB_TOKEN env var, or add github_token to terraform.tfvars"
 fi
