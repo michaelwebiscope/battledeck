@@ -86,12 +86,11 @@
       $env:NEW_RELIC_APP_NAME = "{{ newrelic_java_app_name | default('NavalArchiveImagePopulator') }}"
       $env:NEW_RELIC_DISTRIBUTED_TRACING_ENABLED = "true"
       {% endif %}
+      $env:IMAGE_POPULATOR_LISTEN = "true"
+      $env:SERVER_PORT = "{{ image_populator_port }}"
+      $env:API_URL = $apiBase
       $jvmArgs += "-jar"
       $jvmArgs += $jar
-      $jvmArgs += $apiBase
-      $jvmArgs += "--listen"
-      $jvmArgs += "--port"
-      $jvmArgs += "{{ image_populator_port }}"
       & $javaExe @jvmArgs
     dest: C:\inetpub\run-image-populator-listener.ps1
 

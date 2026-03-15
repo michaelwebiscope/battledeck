@@ -2,215 +2,109 @@ package com.navalarchive.imagepopulator;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.cert.X509Certificate;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 
-import com.google.gson.*;
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpServer;
+import org.springframework.boot.CommandLineRunner;
+import org.springframework.boot.WebApplicationType;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.builder.SpringApplicationBuilder;
 
+import com.google.gson.*;
 import okhttp3.*;
 
 /**
  * NavalArchive Image Populator.
- * Listener mode: exposes /populate, /populate/stream, /populate/ship/{id},
- *   /populate/captain/{id}, /search, /test-keys, /sync, /run, /health.
- * One-shot mode: fetches ship images from Wikipedia and uploads to API.
+ * Listener mode  (IMAGE_POPULATOR_LISTEN=true): Spring Boot web server serves /populate,
+ *   /populate/stream, /populate/ship/{id}, /populate/captain/{id}, /search, /test-keys,
+ *   /sync, /run, /health via ImagePopulatorController.
+ * One-shot mode (default): fetches ship images from Wikipedia and uploads to API, then exits.
  *
- * Usage: java -jar image-populator.jar [API_BASE_URL] [--insecure] [--listen] [--port PORT]
+ * Usage: java -jar image-populator.jar [API_BASE_URL] [--insecure]
+ * Listener: set IMAGE_POPULATOR_LISTEN=true and SERVER_PORT=5099 (or use application.properties)
  */
-public class ImagePopulatorApplication {
-
-    private static final String USER_AGENT = "NavalArchive-ImagePopulator/1.0 (https://github.com/michaelwebiscope/battledeck; educational project)";
-    private static final int POPULATE_DELAY_MS = 500;
-    private static final int RETRY_DELAY_MS = 60000;
-    private static final int MAX_RETRIES = 3;
-    private static final Gson GSON = new GsonBuilder().serializeNulls().create();
+@SpringBootApplication
+public class ImagePopulatorApplication implements CommandLineRunner {
 
     // ─── Entry Point ──────────────────────────────────────────────────────────
 
     public static void main(String[] args) {
-        int exitCode = 0;
-        try {
-            exitCode = run(args);
-        } catch (Exception e) {
-            System.err.println("FATAL: " + e.getMessage());
-            e.printStackTrace();
-            exitCode = 1;
-        }
-        System.out.println("[ImagePopulator exit code: " + exitCode + "]");
-        System.exit(exitCode);
-    }
-
-    private static int run(String[] args) throws Exception {
+        // Parse mode-switching args before Spring processes them
         String apiBase = System.getenv("API_URL");
-        if (apiBase == null || apiBase.isBlank()) apiBase = parseApiBase(args, "http://localhost:5000");
-        boolean insecure = hasArg(args, "--insecure") || "true".equals(System.getenv("INSECURE"));
-        boolean listen = hasArg(args, "--listen") || "true".equalsIgnoreCase(System.getenv("IMAGE_POPULATOR_LISTEN"));
-        int listenPort = parsePort(args, getEnvInt("IMAGE_POPULATOR_PORT", 5099));
-        if (listen) return runListener(apiBase, insecure, listenPort);
-        return runOnce(apiBase, insecure);
+        if (apiBase == null || apiBase.isBlank()) {
+            for (String a : args) {
+                if (!a.startsWith("-")) { apiBase = a; break; }
+            }
+        }
+        if (apiBase == null || apiBase.isBlank()) apiBase = "http://localhost:5000";
+
+        boolean insecure = hasArg(args, "--insecure") || "true".equalsIgnoreCase(System.getenv("INSECURE"));
+        boolean listen   = "true".equalsIgnoreCase(System.getenv("IMAGE_POPULATOR_LISTEN"))
+                        || hasArg(args, "--listen");
+
+        // Stash in system properties so the controller and CommandLineRunner can read them
+        System.setProperty("image.populator.apibase",  apiBase);
+        System.setProperty("image.populator.insecure", String.valueOf(insecure));
+        System.setProperty("image.populator.listen",   String.valueOf(listen));
+
+        SpringApplicationBuilder builder = new SpringApplicationBuilder(ImagePopulatorApplication.class);
+        if (!listen) builder.web(WebApplicationType.NONE); // no Tomcat for one-shot mode
+        builder.run(args);
     }
 
-    // ─── Listener ────────────────────────────────────────────────────────────
-
-    private static int runListener(String apiBase, boolean insecure, int listenPort) throws Exception {
-        System.out.println("[ImagePopulator] Listener mode. API: " + apiBase + " Port: " + listenPort);
-        OkHttpClient client = buildClient(insecure);
-        HttpServer server = HttpServer.create(new java.net.InetSocketAddress("0.0.0.0", listenPort), 0);
-        AtomicBoolean running = new AtomicBoolean(false);
-        ExecutorService worker = Executors.newSingleThreadExecutor();
-        ExecutorService httpExecutor = Executors.newCachedThreadPool();
-        server.setExecutor(httpExecutor);
-
-        server.createContext("/health", ex -> {
-            if (!"GET".equalsIgnoreCase(ex.getRequestMethod())) { send(ex, 405, "Method Not Allowed"); return; }
-            sendJson(ex, 200, mapOf("status", "ok", "apiBase", apiBase));
-        });
-
-        // /run — backward-compat Wikipedia-only populate
-        server.createContext("/run", ex -> {
-            if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { send(ex, 405, "Method Not Allowed"); return; }
-            if (!running.compareAndSet(false, true)) { send(ex, 409, "Already running"); return; }
-            send(ex, 202, "Accepted");
-            worker.submit(() -> {
-                try { runOnce(apiBase, insecure); }
-                catch (Exception e) { System.err.println("[/run] " + e.getMessage()); }
-                finally { running.set(false); }
-            });
-        });
-
-        // /sync — alias for /run for now (Wikipedia image URL sync)
-        server.createContext("/sync", ex -> {
-            if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { send(ex, 405, "Method Not Allowed"); return; }
-            if (!running.compareAndSet(false, true)) { send(ex, 409, "Already running"); return; }
-            send(ex, 202, "Accepted");
-            worker.submit(() -> {
-                try { runOnce(apiBase, insecure); }
-                catch (Exception e) { System.err.println("[/sync] " + e.getMessage()); }
-                finally { running.set(false); }
-            });
-        });
-
-        // /populate/ship/{id} — longer prefix wins over /populate
-        server.createContext("/populate/ship/", ex -> {
-            if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { send(ex, 405, "Method Not Allowed"); return; }
-            int id = parseIdFromPath(ex.getRequestURI().getPath(), "/populate/ship/");
-            if (id <= 0) { send(ex, 400, "Invalid id"); return; }
-            try {
-                PopulateRequest req = readBody(ex, PopulateRequest.class);
-                Map<String, Object> result = populateSingleShip(id, client, apiBase, req);
-                boolean notFound = "Ship not found".equals(result.get("reason"));
-                sendJson(ex, notFound ? 404 : 200, result);
-            } catch (Exception e) { sendJson(ex, 500, mapOf("error", e.getMessage())); }
-        });
-
-        // /populate/captain/{id}
-        server.createContext("/populate/captain/", ex -> {
-            if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { send(ex, 405, "Method Not Allowed"); return; }
-            int id = parseIdFromPath(ex.getRequestURI().getPath(), "/populate/captain/");
-            if (id <= 0) { send(ex, 400, "Invalid id"); return; }
-            try {
-                PopulateRequest req = readBody(ex, PopulateRequest.class);
-                Map<String, Object> result = populateSingleCaptain(id, client, apiBase, req);
-                boolean notFound = "Captain not found".equals(result.get("reason"));
-                sendJson(ex, notFound ? 404 : 200, result);
-            } catch (Exception e) { sendJson(ex, 500, mapOf("error", e.getMessage())); }
-        });
-
-        // /populate/stream — SSE streaming populate
-        server.createContext("/populate/stream", ex -> {
-            if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { send(ex, 405, "Method Not Allowed"); return; }
-            try {
-                PopulateRequest req = readBody(ex, PopulateRequest.class);
-                handlePopulateStream(ex, client, apiBase, req);
-            } catch (Exception e) { sendJson(ex, 500, mapOf("error", e.getMessage())); }
-        });
-
-        // /populate — full populate
-        server.createContext("/populate", ex -> {
-            if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { send(ex, 405, "Method Not Allowed"); return; }
-            try {
-                PopulateRequest req = readBody(ex, PopulateRequest.class);
-                Map<String, Object> result = populateAll(client, apiBase, req);
-                sendJson(ex, 200, result);
-            } catch (Exception e) { sendJson(ex, 500, mapOf("error", e.getMessage())); }
-        });
-
-        // /search
-        server.createContext("/search", ex -> {
-            if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { send(ex, 405, "Method Not Allowed"); return; }
-            try {
-                SearchRequest req = readBody(ex, SearchRequest.class);
-                String query = req != null && req.query != null ? req.query : "battleship";
-                int maxCount = req != null && req.maxCount != null ? req.maxCount : 12;
-                String provider = req != null ? req.provider : null;
-                List<ImageSourceConfig> sources = req != null ? req.imageSources : null;
-                Map<String, String> keys = req != null
-                    ? buildKeysMap(req.pexelsApiKey, req.pixabayApiKey, req.unsplashAccessKey, req.googleApiKey, req.googleCseId, req.customKeys)
-                    : new HashMap<>();
-                SearchResult result = searchImages(query, maxCount, provider, sources, keys, client);
-                sendJson(ex, 200, mapOf("source", result.source != null ? result.source : "", "urls", result.urls));
-            } catch (Exception e) { sendJson(ex, 500, mapOf("error", e.getMessage())); }
-        });
-
-        // /test-keys
-        server.createContext("/test-keys", ex -> {
-            if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { send(ex, 405, "Method Not Allowed"); return; }
-            try {
-                PopulateRequest req = readBody(ex, PopulateRequest.class);
-                List<ImageSourceConfig> sources = req != null ? req.imageSources : null;
-                Map<String, String> keys = req != null
-                    ? buildKeysMap(req.pexelsApiKey, req.pixabayApiKey, req.unsplashAccessKey, req.googleApiKey, req.googleCseId, req.customKeys)
-                    : new HashMap<>();
-                List<Map<String, Object>> results = testKeys(sources, keys, client);
-                sendJsonArray(ex, 200, results);
-            } catch (Exception e) { sendJson(ex, 500, mapOf("error", e.getMessage())); }
-        });
-
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            try { server.stop(1); } catch (Exception ignored) {}
-            worker.shutdownNow();
-            httpExecutor.shutdownNow();
-        }));
-
-        server.start();
-        System.out.println("[ImagePopulator] Ready on port " + listenPort);
-        Thread.currentThread().join();
-        return 0;
+    /** Called by Spring after context is ready. One-shot mode runs here then exits. */
+    @Override
+    public void run(String... args) throws Exception {
+        if (!Boolean.parseBoolean(System.getProperty("image.populator.listen", "false"))) {
+            String apiBase  = System.getProperty("image.populator.apibase",  "http://localhost:5000");
+            boolean insecure = Boolean.parseBoolean(System.getProperty("image.populator.insecure", "false"));
+            int exitCode = runOnce(apiBase, insecure);
+            System.out.println("[ImagePopulator exit code: " + exitCode + "]");
+            System.exit(exitCode);
+        }
+        // Listener mode: Tomcat is already serving; just log readiness
+        System.out.println("[ImagePopulator] Listener ready. API: "
+                + System.getProperty("image.populator.apibase"));
     }
+
+    // ─── Constants (package-private so ImagePopulatorController can use them) ─
+
+    static final String USER_AGENT      = "NavalArchive-ImagePopulator/1.0 (https://github.com/michaelwebiscope/battledeck; educational project)";
+    static final int    POPULATE_DELAY_MS = 500;
+    static final Gson   GSON            = new GsonBuilder().serializeNulls().create();
+
+    private static final int RETRY_DELAY_MS = 60000;
+    private static final int MAX_RETRIES    = 3;
 
     // ─── Populate All ─────────────────────────────────────────────────────────
 
-    private static Map<String, Object> populateAll(OkHttpClient client, String apiBase, PopulateRequest req) throws IOException {
+    static Map<String, Object> populateAll(OkHttpClient client, String apiBase, PopulateRequest req) throws IOException {
         List<ImageSourceConfig> sources = req != null ? req.imageSources : null;
         Map<String, String> keys = req != null
             ? buildKeysMap(req.pexelsApiKey, req.pixabayApiKey, req.unsplashAccessKey, req.googleApiKey, req.googleCseId, req.customKeys)
             : new HashMap<>();
-        String shipPrefix = req != null && req.shipSearchPrefix != null ? req.shipSearchPrefix : "battleship";
+        String shipPrefix    = req != null && req.shipSearchPrefix    != null ? req.shipSearchPrefix    : "battleship";
         String captainPrefix = req != null && req.captainSearchPrefix != null ? req.captainSearchPrefix : "captain";
 
         PopulateQueue queue = fetchPopulateQueue(client, apiBase);
         System.out.println("[populate] Ships: " + queue.ships.size() + ", captains: " + queue.captains.size());
 
-        List<Map<String, Object>> shipResults = new ArrayList<>();
+        List<Map<String, Object>> shipResults    = new ArrayList<>();
         List<Map<String, Object>> captainResults = new ArrayList<>();
 
         int idx = 0;
         for (Map<String, Object> ship : queue.ships) {
             idx++;
-            int id = toInt(ship.get("id"));
-            String name = str(ship.get("name"));
+            int    id       = toInt(ship.get("id"));
+            String name     = str(ship.get("name"));
             String imageUrl = str(ship.get("imageUrl"));
             System.out.println("  [ship " + idx + "/" + queue.ships.size() + "] " + name);
             Map<String, Object> result = populateEntity("ship", id, name, imageUrl, shipPrefix, sources, keys, client, apiBase);
@@ -223,8 +117,8 @@ public class ImagePopulatorApplication {
         idx = 0;
         for (Map<String, Object> captain : queue.captains) {
             idx++;
-            int id = toInt(captain.get("id"));
-            String name = str(captain.get("name"));
+            int    id       = toInt(captain.get("id"));
+            String name     = str(captain.get("name"));
             String imageUrl = str(captain.get("imageUrl"));
             System.out.println("  [captain " + idx + "/" + queue.captains.size() + "] " + name);
             Map<String, Object> result = populateEntity("captain", id, name, imageUrl, captainPrefix, sources, keys, client, apiBase);
@@ -234,62 +128,17 @@ public class ImagePopulatorApplication {
             sleep(POPULATE_DELAY_MS);
         }
 
-        long shipsStored = shipResults.stream().filter(r -> "ok".equals(r.get("status"))).count();
+        long shipsStored    = shipResults.stream().filter(r -> "ok".equals(r.get("status"))).count();
         long captainsStored = captainResults.stream().filter(r -> "ok".equals(r.get("status"))).count();
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("shipsStored", shipsStored);
+        out.put("shipsStored",    shipsStored);
         out.put("captainsStored", captainsStored);
-        out.put("shipResults", shipResults);
+        out.put("shipResults",    shipResults);
         out.put("captainResults", captainResults);
         return out;
     }
 
-    private static void handlePopulateStream(HttpExchange ex, OkHttpClient client, String apiBase, PopulateRequest req) throws IOException {
-        ex.getResponseHeaders().set("Content-Type", "text/event-stream");
-        ex.getResponseHeaders().set("Cache-Control", "no-cache");
-        ex.sendResponseHeaders(200, 0);
-
-        List<ImageSourceConfig> sources = req != null ? req.imageSources : null;
-        Map<String, String> keys = req != null
-            ? buildKeysMap(req.pexelsApiKey, req.pixabayApiKey, req.unsplashAccessKey, req.googleApiKey, req.googleCseId, req.customKeys)
-            : new HashMap<>();
-        String shipPrefix = req != null && req.shipSearchPrefix != null ? req.shipSearchPrefix : "battleship";
-        String captainPrefix = req != null && req.captainSearchPrefix != null ? req.captainSearchPrefix : "captain";
-
-        try (OutputStream os = ex.getResponseBody()) {
-            PopulateQueue queue = fetchPopulateQueue(client, apiBase);
-            sendSse(os, "info", GSON.toJson("Processing " + queue.ships.size() + " ships, " + queue.captains.size() + " captains without cached images."));
-
-            int idx = 0;
-            for (Map<String, Object> ship : queue.ships) {
-                idx++;
-                int id = toInt(ship.get("id"));
-                String name = str(ship.get("name"));
-                String imageUrl = str(ship.get("imageUrl"));
-                Map<String, Object> result = populateEntity("ship", id, name, imageUrl, shipPrefix, sources, keys, client, apiBase);
-                result.put("index", idx);
-                result.put("total", queue.ships.size());
-                sendSse(os, "ship", GSON.toJson(result));
-                sleep(POPULATE_DELAY_MS);
-            }
-
-            idx = 0;
-            for (Map<String, Object> captain : queue.captains) {
-                idx++;
-                int id = toInt(captain.get("id"));
-                String name = str(captain.get("name"));
-                String imageUrl = str(captain.get("imageUrl"));
-                Map<String, Object> result = populateEntity("captain", id, name, imageUrl, captainPrefix, sources, keys, client, apiBase);
-                result.put("index", idx);
-                result.put("total", queue.captains.size());
-                sendSse(os, "captain", GSON.toJson(result));
-                sleep(POPULATE_DELAY_MS);
-            }
-            sendSse(os, "done", "null");
-        }
-    }
-
-    private static Map<String, Object> populateSingleShip(int id, OkHttpClient client, String apiBase, PopulateRequest req) throws IOException {
+    static Map<String, Object> populateSingleShip(int id, OkHttpClient client, String apiBase, PopulateRequest req) throws IOException {
         List<ImageSourceConfig> sources = req != null ? req.imageSources : null;
         Map<String, String> keys = req != null
             ? buildKeysMap(req.pexelsApiKey, req.pixabayApiKey, req.unsplashAccessKey, req.googleApiKey, req.googleCseId, req.customKeys)
@@ -300,7 +149,7 @@ public class ImagePopulatorApplication {
         return populateEntity("ship", id, str(ship.get("name")), str(ship.get("imageUrl")), shipPrefix, sources, keys, client, apiBase);
     }
 
-    private static Map<String, Object> populateSingleCaptain(int id, OkHttpClient client, String apiBase, PopulateRequest req) throws IOException {
+    static Map<String, Object> populateSingleCaptain(int id, OkHttpClient client, String apiBase, PopulateRequest req) throws IOException {
         List<ImageSourceConfig> sources = req != null ? req.imageSources : null;
         Map<String, String> keys = req != null
             ? buildKeysMap(req.pexelsApiKey, req.pixabayApiKey, req.unsplashAccessKey, req.googleApiKey, req.googleCseId, req.customKeys)
@@ -311,7 +160,7 @@ public class ImagePopulatorApplication {
         return populateEntity("captain", id, str(captain.get("name")), str(captain.get("imageUrl")), captainPrefix, sources, keys, client, apiBase);
     }
 
-    private static Map<String, Object> populateEntity(String type, int id, String name, String imageUrl,
+    static Map<String, Object> populateEntity(String type, int id, String name, String imageUrl,
             String prefix, List<ImageSourceConfig> sources, Map<String, String> keys,
             OkHttpClient client, String apiBase) {
         try {
@@ -360,7 +209,7 @@ public class ImagePopulatorApplication {
 
     // ─── Image Search ─────────────────────────────────────────────────────────
 
-    private static SearchResult searchImages(String query, int maxCount, String providerFilter,
+    static SearchResult searchImages(String query, int maxCount, String providerFilter,
             List<ImageSourceConfig> sources, Map<String, String> keys, OkHttpClient client) {
         if (sources == null || sources.isEmpty()) return new SearchResult(new ArrayList<>(), null);
         List<ImageSourceConfig> ordered = sources.stream()
@@ -503,7 +352,7 @@ public class ImagePopulatorApplication {
             if (!queryObj.has("search")) return urls;
             for (JsonElement el : queryObj.getAsJsonArray("search")) {
                 if (urls.size() >= maxCount) break;
-                String title = el.getAsJsonObject().get("title").getAsString();
+                String title    = el.getAsJsonObject().get("title").getAsString();
                 String imageUrl = fetchWikipediaPageImage(title, client);
                 if (isValidUrl(imageUrl)) { urls.add(imageUrl); sleep(150); }
             }
@@ -518,7 +367,7 @@ public class ImagePopulatorApplication {
             Request req = new Request.Builder().url(url).header("User-Agent", USER_AGENT).get().build();
             try (Response res = client.newCall(req).execute()) {
                 if (!res.isSuccessful() || res.body() == null) return null;
-                JsonObject root = GSON.fromJson(res.body().string(), JsonObject.class);
+                JsonObject root  = GSON.fromJson(res.body().string(), JsonObject.class);
                 JsonObject pages = root.getAsJsonObject("query").getAsJsonObject("pages");
                 for (Map.Entry<String, JsonElement> entry : pages.entrySet()) {
                     JsonObject page = entry.getValue().getAsJsonObject();
@@ -568,7 +417,7 @@ public class ImagePopulatorApplication {
 
     // ─── Test Keys ────────────────────────────────────────────────────────────
 
-    private static List<Map<String, Object>> testKeys(List<ImageSourceConfig> sources,
+    static List<Map<String, Object>> testKeys(List<ImageSourceConfig> sources,
             Map<String, String> keys, OkHttpClient client) {
         List<Map<String, Object>> results = new ArrayList<>();
         if (sources == null || sources.isEmpty()) {
@@ -606,7 +455,7 @@ public class ImagePopulatorApplication {
 
     // ─── Wikipedia-only populate (one-shot) ───────────────────────────────────
 
-    private static int runOnce(String apiBase, boolean insecure) throws Exception {
+    static int runOnce(String apiBase, boolean insecure) throws Exception {
         System.out.println("[ImagePopulator] Wikipedia populate. API: " + apiBase);
         OkHttpClient client = buildClient(insecure);
         List<Map<String, Object>> ships = fetchShips(client, apiBase);
@@ -624,7 +473,7 @@ public class ImagePopulatorApplication {
         for (Map<String, Object> ship : withImageList) {
             Object imageUrl = ship.get("imageUrl");
             index++;
-            int id = toInt(ship.get("id"));
+            int    id   = toInt(ship.get("id"));
             String name = str(ship.getOrDefault("name", "Ship " + id));
             try {
                 FetchResult imgResult = fetchImageWithRetry(client, imageUrl.toString(), name, index, total);
@@ -650,7 +499,7 @@ public class ImagePopulatorApplication {
 
     // ─── API Client Helpers ───────────────────────────────────────────────────
 
-    private static PopulateQueue fetchPopulateQueue(OkHttpClient client, String apiBase) throws IOException {
+    static PopulateQueue fetchPopulateQueue(OkHttpClient client, String apiBase) throws IOException {
         String url = apiBase.replaceAll("/$", "") + "/api/images/populate-queue";
         Request req = new Request.Builder().url(url).header("Accept", "application/json").get().build();
         try (Response res = client.newCall(req).execute()) {
@@ -664,10 +513,10 @@ public class ImagePopulatorApplication {
         List<Map<String, Object>> list = new ArrayList<>();
         if (root.has(key) && root.get(key).isJsonArray()) {
             for (JsonElement el : root.getAsJsonArray(key)) {
-                JsonObject obj = el.getAsJsonObject();
+                JsonObject obj  = el.getAsJsonObject();
                 Map<String, Object> item = new HashMap<>();
                 if (obj.has("id")) item.put("id", obj.get("id").getAsInt());
-                if (obj.has("name") && !obj.get("name").isJsonNull()) item.put("name", obj.get("name").getAsString());
+                if (obj.has("name")     && !obj.get("name").isJsonNull())     item.put("name",     obj.get("name").getAsString());
                 if (obj.has("imageUrl") && !obj.get("imageUrl").isJsonNull()) item.put("imageUrl", obj.get("imageUrl").getAsString());
                 list.add(item);
             }
@@ -680,10 +529,10 @@ public class ImagePopulatorApplication {
         Request req = new Request.Builder().url(url).header("Accept", "application/json").get().build();
         try (Response res = client.newCall(req).execute()) {
             if (!res.isSuccessful() || res.body() == null) return null;
-            JsonObject obj = GSON.fromJson(res.body().string(), JsonObject.class);
+            JsonObject obj  = GSON.fromJson(res.body().string(), JsonObject.class);
             Map<String, Object> item = new HashMap<>();
             if (obj.has("id")) item.put("id", obj.get("id").getAsInt());
-            if (obj.has("name") && !obj.get("name").isJsonNull()) item.put("name", obj.get("name").getAsString());
+            if (obj.has("name")     && !obj.get("name").isJsonNull())     item.put("name",     obj.get("name").getAsString());
             if (obj.has("imageUrl") && !obj.get("imageUrl").isJsonNull()) item.put("imageUrl", obj.get("imageUrl").getAsString());
             return item;
         }
@@ -706,7 +555,7 @@ public class ImagePopulatorApplication {
                     Map<String, Object> m = new HashMap<>();
                     JsonObject o = el.getAsJsonObject();
                     if (o.has("id")) m.put("id", o.get("id").getAsInt());
-                    if (o.has("name") && !o.get("name").isJsonNull()) m.put("name", o.get("name").getAsString());
+                    if (o.has("name")     && !o.get("name").isJsonNull())     m.put("name",     o.get("name").getAsString());
                     if (o.has("imageUrl") && !o.get("imageUrl").isJsonNull()) m.put("imageUrl", o.get("imageUrl").getAsString());
                     all.add(m);
                 }
@@ -743,15 +592,15 @@ public class ImagePopulatorApplication {
     private static FetchResult fetchImageWithStatus(OkHttpClient client, String url) throws IOException {
         Request req = new Request.Builder().url(url).header("User-Agent", USER_AGENT).get().build();
         try (Response res = client.newCall(req).execute()) {
-            int code = res.code();
+            int    code = res.code();
             byte[] data = (res.body() != null && res.isSuccessful()) ? res.body().bytes() : null;
             return new FetchResult(code, data);
         }
     }
 
-    // ─── HTTP Utilities ───────────────────────────────────────────────────────
+    // ─── HTTP / OkHttp Utilities ──────────────────────────────────────────────
 
-    private static OkHttpClient buildClient(boolean insecure) {
+    static OkHttpClient buildClient(boolean insecure) {
         OkHttpClient.Builder builder = new OkHttpClient.Builder()
                 .connectTimeout(15, TimeUnit.SECONDS)
                 .readTimeout(30, TimeUnit.SECONDS)
@@ -773,65 +622,28 @@ public class ImagePopulatorApplication {
         return builder.build();
     }
 
-    private static void send(HttpExchange ex, int status, String body) throws IOException {
-        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
-        ex.getResponseHeaders().set("Content-Type", "text/plain; charset=utf-8");
-        ex.sendResponseHeaders(status, bytes.length);
-        try (OutputStream os = ex.getResponseBody()) { os.write(bytes); }
-        ex.close();
-    }
-
-    private static void sendJson(HttpExchange ex, int status, Object obj) throws IOException {
-        byte[] bytes = GSON.toJson(obj).getBytes(StandardCharsets.UTF_8);
-        ex.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
-        ex.sendResponseHeaders(status, bytes.length);
-        try (OutputStream os = ex.getResponseBody()) { os.write(bytes); }
-        ex.close();
-    }
-
-    private static void sendJsonArray(HttpExchange ex, int status, List<?> list) throws IOException {
-        byte[] bytes = GSON.toJson(list).getBytes(StandardCharsets.UTF_8);
-        ex.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
-        ex.sendResponseHeaders(status, bytes.length);
-        try (OutputStream os = ex.getResponseBody()) { os.write(bytes); }
-        ex.close();
-    }
-
-    private static void sendSse(OutputStream os, String type, String dataJson) throws IOException {
-        String line = "data: {\"type\":\"" + type + "\",\"data\":" + dataJson + "}\n\n";
-        os.write(line.getBytes(StandardCharsets.UTF_8));
-        os.flush();
-    }
-
-    private static <T> T readBody(HttpExchange ex, Class<T> cls) {
-        try (InputStream is = ex.getRequestBody()) {
-            String body = new String(is.readAllBytes(), StandardCharsets.UTF_8);
-            if (body.isBlank()) return null;
-            return GSON.fromJson(body, cls);
-        } catch (Exception e) { return null; }
-    }
-
     // ─── Misc Helpers ─────────────────────────────────────────────────────────
 
-    private static int parseIdFromPath(String path, String prefix) {
-        try {
-            String rest = path.substring(prefix.length());
-            int slash = rest.indexOf('/');
-            String idStr = slash >= 0 ? rest.substring(0, slash) : rest;
-            return Integer.parseInt(idStr.trim());
-        } catch (Exception e) { return -1; }
-    }
-
-    private static Map<String, String> buildKeysMap(String pexels, String pixabay, String unsplash,
+    static Map<String, String> buildKeysMap(String pexels, String pixabay, String unsplash,
             String google, String googleCseId, Map<String, String> customKeys) {
         Map<String, String> m = new HashMap<>();
-        if (pexels != null && !pexels.isBlank())       m.put("PEXELS_API_KEY", pexels);
-        if (pixabay != null && !pixabay.isBlank())     m.put("PIXABAY_API_KEY", pixabay);
-        if (unsplash != null && !unsplash.isBlank())   m.put("UNSPLASH_ACCESS_KEY", unsplash);
-        if (google != null && !google.isBlank())       m.put("GOOGLE_API_KEY", google);
-        if (googleCseId != null && !googleCseId.isBlank()) m.put("GOOGLE_CSE_ID", googleCseId);
-        if (customKeys != null) m.putAll(customKeys);
+        if (pexels      != null && !pexels.isBlank())      m.put("PEXELS_API_KEY",       pexels);
+        if (pixabay     != null && !pixabay.isBlank())     m.put("PIXABAY_API_KEY",      pixabay);
+        if (unsplash    != null && !unsplash.isBlank())    m.put("UNSPLASH_ACCESS_KEY",  unsplash);
+        if (google      != null && !google.isBlank())      m.put("GOOGLE_API_KEY",       google);
+        if (googleCseId != null && !googleCseId.isBlank()) m.put("GOOGLE_CSE_ID",        googleCseId);
+        if (customKeys  != null) m.putAll(customKeys);
         return m;
+    }
+
+    static Map<String, Object> mapOf(Object... kv) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        for (int i = 0; i + 1 < kv.length; i += 2) m.put((String) kv[i], kv[i + 1]);
+        return m;
+    }
+
+    static void sleep(long ms) {
+        try { Thread.sleep(ms); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
     }
 
     private static String enc(String s) {
@@ -855,18 +667,8 @@ public class ImagePopulatorApplication {
 
     private static String str(Object o) { return o != null ? o.toString() : null; }
 
-    private static Map<String, Object> mapOf(Object... kv) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        for (int i = 0; i + 1 < kv.length; i += 2) m.put((String) kv[i], kv[i + 1]);
-        return m;
-    }
-
     private static boolean isValidUrl(String url) {
         return url != null && (url.startsWith("http://") || url.startsWith("https://"));
-    }
-
-    private static void sleep(long ms) {
-        try { Thread.sleep(ms); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
     }
 
     private static boolean hasArg(String[] args, String flag) {
@@ -874,82 +676,59 @@ public class ImagePopulatorApplication {
         return false;
     }
 
-    private static String parseApiBase(String[] args, String def) {
-        for (int i = 0; i < args.length; i++) {
-            if (!args[i].startsWith("--")) return args[i];
-            if ("--port".equals(args[i])) i++;
-        }
-        return def;
-    }
-
-    private static int parsePort(String[] args, int def) {
-        for (int i = 0; i + 1 < args.length; i++) {
-            if ("--port".equals(args[i])) {
-                try { return Integer.parseInt(args[i + 1]); } catch (NumberFormatException ignored) {}
-            }
-        }
-        return def;
-    }
-
-    private static int getEnvInt(String key, int def) {
-        String raw = System.getenv(key);
-        if (raw == null || raw.isBlank()) return def;
-        try { return Integer.parseInt(raw.trim()); } catch (NumberFormatException ignored) { return def; }
-    }
-
     // ─── Inner Models ─────────────────────────────────────────────────────────
 
     private static class FetchResult {
-        final int httpCode;
+        final int    httpCode;
         final byte[] data;
         FetchResult(int httpCode, byte[] data) { this.httpCode = httpCode; this.data = data; }
     }
 
     static class PopulateRequest {
-        String pexelsApiKey;
-        String pixabayApiKey;
-        String unsplashAccessKey;
-        String googleApiKey;
-        String googleCseId;
-        String shipSearchPrefix;
-        String captainSearchPrefix;
-        List<ImageSourceConfig> imageSources;
-        Map<String, String> customKeys;
+        public String pexelsApiKey;
+        public String pixabayApiKey;
+        public String unsplashAccessKey;
+        public String googleApiKey;
+        public String googleCseId;
+        public String shipSearchPrefix;
+        public String captainSearchPrefix;
+        public List<ImageSourceConfig> imageSources;
+        public Map<String, String> customKeys;
     }
 
     static class SearchRequest {
-        String query;
-        Integer maxCount;
-        String provider;
-        String pexelsApiKey;
-        String pixabayApiKey;
-        String unsplashAccessKey;
-        String googleApiKey;
-        String googleCseId;
-        List<ImageSourceConfig> imageSources;
-        Map<String, String> customKeys;
+        public String query;
+        public Integer maxCount;
+        public String provider;
+        public String pexelsApiKey;
+        public String pixabayApiKey;
+        public String unsplashAccessKey;
+        public String googleApiKey;
+        public String googleCseId;
+        public List<ImageSourceConfig> imageSources;
+        public Map<String, String> customKeys;
     }
 
     static class ImageSourceConfig {
-        String id;
-        String name;
-        String providerType;
-        int retryCount = 2;
-        int sortOrder;
-        boolean enabled = true;
-        String authKeyRef;
-        CustomApiConfig customConfig;
+        public String id;
+        public String name;
+        public String providerType;
+        public int    retryCount = 2;
+        public int    sortOrder;
+        public boolean enabled   = true;
+        public String authKeyRef;
+        public CustomApiConfig customConfig;
     }
 
     static class CustomApiConfig {
-        String baseUrl = "";
-        String queryParam = "q";
-        String authType = "none";
-        String authHeaderName;
-        String authQueryParam;
-        String authValueFromKey;
-        String responsePath = "results";
-        String imageUrlPath = "";
+        public String baseUrl         = "";
+        public String queryParam      = "q";
+        public String authType        = "none";
+        public String authHeaderName;
+        public String authQueryParam;
+        public String authValueFromKey;
+        public String responsePath    = "results";
+        public String imageUrlPath    = "";
     }
 
     static class SearchResult {
