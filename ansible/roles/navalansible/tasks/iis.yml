@@ -69,17 +69,17 @@
   args:
     executable: powershell
 
-- name: Add HTTPS binding to NavalArchive-API
+- name: Add HTTPS binding to NavalArchive-Web
   ansible.windows.win_shell: |
     try {
       Import-Module IISAdministration -ErrorAction SilentlyContinue
-      $existing = Get-IISSiteBinding -Name "NavalArchive-API" -ErrorAction SilentlyContinue | Where-Object { $_.Protocol -eq "https" }
+      $existing = Get-IISSiteBinding -Name "NavalArchive-Web" -ErrorAction SilentlyContinue | Where-Object { $_.Protocol -eq "https" }
       if (-not $existing) {
-        New-IISSiteBinding -Name "NavalArchive-API" -BindingInformation "*:443:" -CertificateThumbPrint "{{ cert_thumbprint }}" -CertStoreLocation "Cert:\LocalMachine\My" -Protocol https -ErrorAction Stop
+        New-IISSiteBinding -Name "NavalArchive-Web" -BindingInformation "*:443:" -CertificateThumbPrint "{{ cert_thumbprint }}" -CertStoreLocation "Cert:\LocalMachine\My" -Protocol https -ErrorAction Stop
       }
     } catch {
-      New-WebBinding -Name "NavalArchive-API" -Protocol https -Port 443 -ErrorAction SilentlyContinue
-      $b = Get-WebBinding -Name "NavalArchive-API" -Protocol "https" -ErrorAction SilentlyContinue
+      New-WebBinding -Name "NavalArchive-Web" -Protocol https -Port 443 -ErrorAction SilentlyContinue
+      $b = Get-WebBinding -Name "NavalArchive-Web" -Protocol "https" -ErrorAction SilentlyContinue
       if ($b) { $b.AddSslCertificate("{{ cert_thumbprint }}", "My") }
     }
   args:
