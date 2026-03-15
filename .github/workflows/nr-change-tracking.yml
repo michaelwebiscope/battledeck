@@ -1,8 +1,8 @@
 name: NR Change Tracking
 
 on:
-  repository_dispatch:
-    types: [deploy-complete]
+  push:
+    branches: [main]
 
 jobs:
   change-tracking:
