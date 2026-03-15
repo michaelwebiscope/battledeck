@@ -335,6 +335,16 @@ func HandleSimulate(proc *processor.Processor, idem idempotency.IdempotencyStore
 				writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Account service unavailable"})
 				return
 			}
+			// Balance deducted successfully — return approved immediately (do not run random card processor)
+			txID := generateTxID()
+			writeJSON(w, http.StatusOK, SimulateResponse{
+				Approved:      true,
+				TransactionID: txID,
+				Amount:        req.Amount,
+				Currency:      req.Currency,
+				Message:       "Payment approved",
+			})
+			return
 		}
 
 		// Validate payment method belongs to this account
