@@ -309,14 +309,19 @@ const int IdempotencyWindowMinutes = 10;
 app.MapPost("api/checkout/pay", async (HttpContext ctx, IHttpClientFactory http, IConfiguration config) =>
 {
     var req = await ctx.Request.ReadFromJsonAsync<CheckoutPayload>();
-    if (string.IsNullOrWhiteSpace(req?.CardId) || string.IsNullOrWhiteSpace(req?.Name))
-        return Results.BadRequest(new { error = "CardId and Name required" });
+    if (string.IsNullOrWhiteSpace(req?.CardId))
+        return Results.BadRequest(new { error = "CardId required" });
 
     var cardId = req.CardId!.Trim();
     var cardUrl = config["CardService:Url"] ?? "http://localhost:5002";
     var cartUrl = config["CartService:Url"] ?? "http://localhost:5003";
     var paymentUrl = config["PaymentService:Url"] ?? "http://localhost:5001";
     var client = http.CreateClient();
+    var payFromAccount = !string.IsNullOrWhiteSpace(req.ApiKey);
+
+    // Name required only when paying with card (not when paying from account)
+    if (!payFromAccount && string.IsNullOrWhiteSpace(req?.Name))
+        return Results.BadRequest(new { error = "Name required for card checkout" });
 
     // Idempotency: if we already successfully processed this key, return cached result (no re-charge)
     var idempotencyKey = req.IdempotencyKey?.Trim();
@@ -326,14 +331,6 @@ app.MapPost("api/checkout/pay", async (HttpContext ctx, IHttpClientFactory http,
             return Results.Json(cached.Result);
         idempotencyCache.TryRemove(idempotencyKey, out _);
     }
-
-    var validateRes = await client.PostAsJsonAsync($"{cardUrl}/api/card/validate-with-name", new { cardId, name = req.Name });
-    if (!validateRes.IsSuccessStatusCode)
-        return Results.Json(new { error = await validateRes.Content.ReadAsStringAsync() }, statusCode: (int)validateRes.StatusCode);
-
-    var validateData = await validateRes.Content.ReadFromJsonAsync<ValidatePayload>();
-    if (validateData?.Valid != true)
-        return Results.Ok(new { approved = false, message = validateData?.Message ?? "Card validation failed" });
 
     decimal amount = req.Amount ?? 0;
     if (amount <= 0)
@@ -348,32 +345,66 @@ app.MapPost("api/checkout/pay", async (HttpContext ctx, IHttpClientFactory http,
     if (amount <= 0)
         return Results.BadRequest(new { error = "No cart total and no amount provided" });
 
-    var payRes = await client.PostAsJsonAsync($"{paymentUrl}/api/payment/simulate", new
-    {
-        amount,
-        currency = req.Currency ?? "USD",
-        description = req.Description ?? "Museum checkout",
-        cardId
-    });
-    if (!payRes.IsSuccessStatusCode)
-        return Results.Json(new { error = "Payment service unavailable" }, statusCode: 502);
+    bool approved;
+    string? transactionId = null;
 
-    var payData = await payRes.Content.ReadFromJsonAsync<PaymentPayload>();
-    var approved = payData?.Approved ?? false;
+    if (payFromAccount)
+    {
+        // Pay from account balance: call payment service with X-API-Key (no cardId → deducts balance)
+        using var payReq = new HttpRequestMessage(HttpMethod.Post, $"{paymentUrl}/api/payment/simulate");
+        payReq.Headers.TryAddWithoutValidation("X-API-Key", req.ApiKey!.Trim());
+        payReq.Content = JsonContent.Create(new
+        {
+            amount,
+            currency = req.Currency ?? "USD",
+            description = req.Description ?? "Museum checkout"
+        });
+        var payRes = await client.SendAsync(payReq);
+        if (payRes.StatusCode == System.Net.HttpStatusCode.PaymentRequired)
+            return Results.Json(new { error = "Insufficient funds in your account balance", code = "insufficient_funds" }, statusCode: 402);
+        if (!payRes.IsSuccessStatusCode)
+            return Results.Json(new { error = "Payment service unavailable" }, statusCode: 502);
+        var payData = await payRes.Content.ReadFromJsonAsync<PaymentPayload>();
+        approved = payData?.Approved ?? false;
+        transactionId = payData?.TransactionId;
+    }
+    else
+    {
+        // Card checkout: validate card then charge via payment service with cardId
+        var validateRes = await client.PostAsJsonAsync($"{cardUrl}/api/card/validate-with-name", new { cardId, name = req!.Name });
+        if (!validateRes.IsSuccessStatusCode)
+            return Results.Json(new { error = await validateRes.Content.ReadAsStringAsync() }, statusCode: (int)validateRes.StatusCode);
+
+        var validateData = await validateRes.Content.ReadFromJsonAsync<ValidatePayload>();
+        if (validateData?.Valid != true)
+            return Results.Ok(new { approved = false, message = validateData?.Message ?? "Card validation failed" });
+
+        var payRes = await client.PostAsJsonAsync($"{paymentUrl}/api/payment/simulate", new
+        {
+            amount,
+            currency = req.Currency ?? "USD",
+            description = req.Description ?? "Museum checkout",
+            cardId
+        });
+        if (!payRes.IsSuccessStatusCode)
+            return Results.Json(new { error = "Payment service unavailable" }, statusCode: 502);
+
+        var payData = await payRes.Content.ReadFromJsonAsync<PaymentPayload>();
+        approved = payData?.Approved ?? false;
+        transactionId = payData?.TransactionId;
+    }
+
     var result = new
     {
         approved,
-        transactionId = payData?.TransactionId,
+        transactionId,
         amount,
         message = approved ? "Payment approved" : "Payment declined"
     };
 
     if (approved)
     {
-        // Clear cart so same items cannot be paid again
         await client.PostAsync($"{cartUrl}/api/cart/clear/{Uri.EscapeDataString(cardId)}", null);
-
-        // Cache successful result for idempotency (prevents double charge on retry)
         if (!string.IsNullOrEmpty(idempotencyKey))
             idempotencyCache[idempotencyKey] = (result, DateTime.UtcNow.AddMinutes(IdempotencyWindowMinutes));
     }
@@ -383,7 +414,7 @@ app.MapPost("api/checkout/pay", async (HttpContext ctx, IHttpClientFactory http,
 
 app.Run();
 
-record CheckoutPayload(string? CardId, string? Name, decimal? Amount, string? Currency, string? Description, string? IdempotencyKey);
+record CheckoutPayload(string? CardId, string? Name, decimal? Amount, string? Currency, string? Description, string? IdempotencyKey, string? ApiKey);
 record ValidatePayload(bool Valid, string? Message);
 record CartTotalPayload(decimal Total);
 record PaymentPayload(bool Approved, string? TransactionId);

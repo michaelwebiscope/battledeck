@@ -15,7 +15,7 @@
         <div class="topbar-dropdown-menu" role="menu">
           <% item.items.forEach(function(sub) { %>
           <a href="<%= sub.href %>" role="menuitem" class="<%= (currentPath === sub.href || (sub.href !== '/' && currentPath.startsWith(sub.href))) ? ' active' : '' %>">
-            <i class="bi bi-<%= sub.href.includes('fleet') ? 'ship' : sub.href.includes('captains') ? 'person' : sub.href.includes('timeline') ? 'calendar' : sub.href.includes('gallery') ? 'images' : sub.href.includes('stats') ? 'bar-chart' : sub.href.includes('logs') ? 'journal' : sub.href.includes('classes') ? 'collection' : sub.href.includes('compare') ? 'arrow-left-right' : 'folder' %>"></i>
+            <i class="bi bi-<%= sub.href.includes('fleet') ? 'ship' : sub.href.includes('captains') ? 'person' : sub.href.includes('timeline') ? 'calendar' : sub.href.includes('gallery') ? 'images' : sub.href.includes('stats') ? 'bar-chart' : sub.href.includes('logs') ? 'journal' : sub.href.includes('classes') ? 'collection' : sub.href.includes('compare') ? 'arrow-left-right' : sub.href.includes('login') ? 'box-arrow-in-right' : sub.href.includes('donate') ? 'heart' : sub.href.includes('payment-account') ? 'wallet2' : 'folder' %>"></i>
             <%= sub.label %>
           </a>
           <% }); %>

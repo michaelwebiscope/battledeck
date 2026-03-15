@@ -60,6 +60,7 @@ const defaultNavItems = [
   { label: 'Support', items: [
     { href: '/donate', label: 'Donate' },
     { href: '/payment-account', label: 'Payment Account' },
+    { href: '/login', label: 'Login' },
     { href: '/membership', label: 'Membership' }
   ]},
   { label: 'Member', items: [
@@ -1474,6 +1475,10 @@ app.get('/donate', (req, res) => {
 
 app.get('/payment-account', (req, res) => {
   res.render('payment-account', { title: 'Payment Account' });
+});
+
+app.get('/login', (req, res) => {
+  res.render('login', { title: 'Login' });
 });
 
 app.get('/membership', (req, res) => {
