@@ -60,17 +60,10 @@ const defaultNavItems = [
   { label: 'Support', items: [
     { href: '/donate', label: 'Donate' },
     { href: '/payment-account', label: 'Payment Account' },
-    { href: '/login', label: 'Login' },
-    { href: '/membership', label: 'Membership' }
+    { href: '/login', label: 'Login' }
   ]},
-  { label: 'Member', items: [
-    { href: '/members', label: 'Add Member' },
-    { href: '/verify-member', label: 'Verify Member' }
-  ]},
-  { label: 'Cart', items: [
-    { href: '/cart', label: 'View Cart' },
-    { href: '/checkout', label: 'Checkout' }
-  ]},
+  { href: '/members', label: 'Member' },
+  { href: '/checkout', label: 'Checkout' },
   { href: '/trace', label: 'Trace' }
 ];
 
@@ -1490,7 +1483,8 @@ app.get('/members', (req, res) => {
 });
 
 app.get('/cart', (req, res) => {
-  res.render('cart', { title: 'Cart', cardId: req.query.cardId || '' });
+  const cardId = req.query.cardId || '';
+  res.redirect('/members' + (cardId ? '?cardId=' + encodeURIComponent(cardId) : ''));
 });
 
 app.get('/checkout', (req, res) => {
@@ -1498,7 +1492,7 @@ app.get('/checkout', (req, res) => {
 });
 
 app.get('/verify-member', (req, res) => {
-  res.render('verify-member', { title: 'Verify Member ID' });
+  res.redirect('/members');
 });
 
 app.get('/simulation', (req, res) => {

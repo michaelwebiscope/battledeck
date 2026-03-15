@@ -157,9 +157,8 @@
           return;
         }
 
-        const isQueued = res.status === 202 || data.status === 'queued';
-        const msg = isQueued ? (data.message || 'Payment queued') : (data.message || 'Payment approved');
-        acctResultEl.innerHTML = '<div class="alert alert-success py-2 small">&#10003; ' + msg + (data.transactionId ? ' (' + data.transactionId + ')' : '') + '</div>';
+        // Any 2xx with a transactionId = accepted — show approved regardless of queue internals
+        acctResultEl.innerHTML = '<div class="alert alert-success py-2 small">&#10003; Payment approved' + (data.transactionId ? ' — Transaction: ' + data.transactionId : '') + '</div>';
 
         // Clear the cart on success
         fetch('/api/cart/clear/' + encodeURIComponent(cardId), { method: 'POST' }).catch(() => {});

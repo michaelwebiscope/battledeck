@@ -3,12 +3,13 @@
 <head>
   <%- include('partials/head') %>
   <style>
-    .card-popup {
+    /* ── Floating cart blob ───────────────────────────────────────────── */
+    .cart-blob {
       position: fixed;
       top: 72px;
       right: 0;
-      width: 320px;
-      max-height: calc(100vh - 80px);
+      width: 300px;
+      max-height: calc(100vh - 88px);
       background: linear-gradient(135deg, var(--blue-deep) 0%, var(--blue) 100%);
       color: white;
       border-radius: 12px 0 0 12px;
@@ -16,16 +17,13 @@
       z-index: 900;
       display: flex;
       flex-direction: column;
-      transition: transform 0.3s ease, width 0.3s ease;
+      transition: width 0.3s ease;
       overflow: hidden;
     }
-    .card-popup.minimized {
-      width: 48px;
-      transform: translateX(0);
-    }
-    .card-popup.minimized .card-popup-body,
-    .card-popup.minimized .card-popup-title { display: none; }
-    .card-popup.minimized .card-popup-tab {
+    .cart-blob.minimized { width: 48px; }
+    .cart-blob.minimized .blob-body,
+    .cart-blob.minimized .blob-title { display: none; }
+    .cart-blob.minimized .blob-tab {
       display: flex;
       writing-mode: vertical-rl;
       text-orientation: mixed;
@@ -35,7 +33,7 @@
       font-weight: 600;
       cursor: pointer;
     }
-    .card-popup-header {
+    .blob-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -43,9 +41,9 @@
       border-bottom: 1px solid rgba(255,255,255,0.2);
       flex-shrink: 0;
     }
-    .card-popup-title { font-weight: 600; font-size: 1rem; }
-    .card-popup-tab { display: none; }
-    .card-popup-minimize {
+    .blob-title { font-weight: 600; font-size: 1rem; }
+    .blob-tab { display: none; }
+    .blob-minimize {
       background: rgba(255,255,255,0.2);
       border: none;
       color: white;
@@ -59,35 +57,48 @@
       font-size: 1.2rem;
       line-height: 1;
     }
-    .card-popup-minimize:hover { background: rgba(255,255,255,0.3); }
-    .card-popup-body {
-      padding: 16px;
+    .blob-minimize:hover { background: rgba(255,255,255,0.3); }
+    .blob-body {
+      padding: 14px 16px;
       overflow-y: auto;
       flex: 1;
+      font-size: 0.87rem;
     }
-    .card-popup .member-card {
-      background: rgba(255,255,255,0.12);
-      border-radius: 10px;
-      padding: 16px;
-      margin-bottom: 12px;
-      border: 1px solid rgba(255,255,255,0.2);
+    .blob-item { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.12); }
+    .blob-item:last-child { border-bottom: none; }
+    .blob-total { font-weight: 700; font-size: 1rem; margin-top: 8px; }
+    .blob-card-id { font-family: monospace; font-size: 0.8rem; opacity: 0.8; margin-bottom: 10px; }
+    .btn-checkout-blob {
+      width: 100%;
+      margin-top: 12px;
+      background: white;
+      color: var(--blue-deep);
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      padding: 8px;
+      cursor: pointer;
+      text-decoration: none;
+      display: block;
+      text-align: center;
     }
-    .card-popup .member-card .card-id { font-family: monospace; font-size: 1rem; font-weight: 600; letter-spacing: 0.05em; }
-    .card-popup .member-card .card-name { font-size: 0.95rem; opacity: 0.95; margin-top: 4px; }
-    .card-popup .member-card .card-tier { font-size: 0.8rem; opacity: 0.8; margin-top: 2px; }
-    .card-popup .btn-go { width: 100%; margin-top: 12px; background: white; color: var(--blue-deep); font-weight: 600; border: none; }
-    .card-popup .btn-go:hover { background: var(--cyan-light); color: var(--blue-deep); }
+    .btn-checkout-blob:hover { background: var(--cyan-light); color: var(--blue-deep); }
+    .empty-cart { opacity: 0.7; font-size: 0.82rem; text-align: center; padding: 8px 0; }
   </style>
 </head>
 <body>
   <%- include('partials/header') %>
   <main class="app-shell">
-    <div class="container py-4">
-      <h1 class="mb-4">Add Member</h1>
-      <p class="lead text-muted mb-4">Create a member and auto-issue a card. Chain: App → API → Card</p>
-      <div class="row">
+    <div class="container py-4" style="padding-right: calc(1rem + 310px);">
+      <h1 class="mb-4">Member</h1>
+
+      <div class="row g-4">
+
+        <!-- ── Left: Add Member + Verify ─────────────────────────────── -->
         <div class="col-lg-6">
-          <div class="card">
+
+          <div class="card mb-4">
+            <div class="card-header fw-semibold">Add Member</div>
             <div class="card-body">
               <form id="memberForm">
                 <div class="mb-3">
@@ -102,94 +113,226 @@
                     <option value="Fleet">Fleet Admiral</option>
                   </select>
                 </div>
-                <button type="submit" class="btn btn-dark">Add Member</button>
+                <button type="submit" class="btn btn-modern">Add Member</button>
               </form>
-              <div id="result" class="mt-3" style="display:none;"></div>
+              <div id="memberResult" class="mt-3" style="display:none;"></div>
+            </div>
+          </div>
+
+          <div class="card mb-4">
+            <div class="card-header fw-semibold">Verify Member</div>
+            <div class="card-body">
+              <form id="verifyForm">
+                <div class="mb-3">
+                  <label class="form-label">Card ID</label>
+                  <input type="text" id="verifyCardId" name="cardId" class="form-control font-monospace" placeholder="NAV-XXXXXXXX" required>
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">Your Name</label>
+                  <input type="text" name="name" class="form-control" placeholder="Full name" required>
+                </div>
+                <button type="submit" class="btn btn-modern">Verify</button>
+              </form>
+              <div id="verifyResult" class="mt-3" style="display:none;"></div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ── Right: Add to Cart ──────────────────────────────────────── -->
+        <div class="col-lg-6">
+          <div class="card">
+            <div class="card-header fw-semibold">Add to Cart</div>
+            <div class="card-body">
+              <div class="mb-3">
+                <label class="form-label">Card ID</label>
+                <input type="text" id="cartCardId" class="form-control font-monospace" placeholder="NAV-XXXXXXXX" value="<%= typeof cardId !== 'undefined' ? cardId : '' %>">
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Product</label>
+                <select id="productId" class="form-select">
+                  <option value="1">Museum Admission — $15 ($10 member)</option>
+                  <option value="2">Annual Membership — $50 ($35 member)</option>
+                  <option value="3">Donation — $25 ($20 member)</option>
+                </select>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Quantity</label>
+                <input type="number" id="quantity" class="form-control" value="1" min="1">
+              </div>
+              <div class="mb-3 form-check">
+                <input type="checkbox" id="isMember" class="form-check-input" checked>
+                <label class="form-check-label" for="isMember">Member price</label>
+              </div>
+              <button type="button" class="btn btn-modern" onclick="addToCart()">Add to Cart</button>
             </div>
           </div>
         </div>
+
       </div>
     </div>
   </main>
 
-  <div id="cardPopup" class="card-popup" style="display: none;">
-    <div class="card-popup-header">
-      <span class="card-popup-title">My Card</span>
-      <span class="card-popup-tab" role="button" tabindex="0" title="Click to expand">My Card</span>
-      <button type="button" class="card-popup-minimize" id="cardPopupMinimize" title="Minimize">−</button>
+  <!-- ── Floating Cart Blob ─────────────────────────────────────────────── -->
+  <div id="cartBlob" class="cart-blob">
+    <div class="blob-header">
+      <span class="blob-title">🛒 Cart</span>
+      <span class="blob-tab" id="blobTab" role="button" tabindex="0">Cart</span>
+      <button type="button" class="blob-minimize" id="blobMinimize" title="Minimize">−</button>
     </div>
-    <div class="card-popup-body">
-      <div id="cardPopupContent"></div>
+    <div class="blob-body" id="blobBody">
+      <div class="blob-card-id" id="blobCardId">No card loaded</div>
+      <div id="blobItems"><div class="empty-cart">Enter a Card ID and add items</div></div>
+      <div class="blob-total" id="blobTotal" style="display:none;"></div>
+      <a href="/checkout" id="blobCheckout" class="btn-checkout-blob" style="display:none;">Checkout →</a>
     </div>
   </div>
 
   <%- include('partials/footer') %>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   <script>
-    (function() {
-      var popup = document.getElementById('cardPopup');
-      var content = document.getElementById('cardPopupContent');
-      var minimizeBtn = document.getElementById('cardPopupMinimize');
+    // ── Cart blob minimize ─────────────────────────────────────────────────
+    const blob = document.getElementById('cartBlob');
+    const blobMin = document.getElementById('blobMinimize');
+    const blobTab = document.getElementById('blobTab');
+    blobMin.addEventListener('click', function() {
+      blob.classList.toggle('minimized');
+      blobMin.textContent = blob.classList.contains('minimized') ? '+' : '−';
+    });
+    blobTab.addEventListener('click', function() {
+      blob.classList.remove('minimized');
+      blobMin.textContent = '−';
+    });
+    blobTab.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); blobTab.click(); }
+    });
 
-      function showCardPopup(data) {
-        content.innerHTML = '<div class="member-card">' +
-          '<div class="card-id">' + (data.cardId || '') + '</div>' +
-          '<div class="card-name">' + (data.name || '') + '</div>' +
-          '<div class="card-tier">' + (data.tier || 'Standard') + '</div>' +
-          '<a href="/cart?cardId=' + encodeURIComponent(data.cardId || '') + '" class="btn btn-go">Go to card</a>' +
-          '</div>';
-        popup.style.display = 'flex';
-        popup.classList.remove('minimized');
-        minimizeBtn.textContent = '−';
-        minimizeBtn.title = 'Minimize';
+    // ── Shared card ID ────────────────────────────────────────────────────
+    const cartCardIdEl = document.getElementById('cartCardId');
+
+    // Pre-fill from URL
+    const urlCardId = new URLSearchParams(location.search).get('cardId');
+    if (urlCardId) { cartCardIdEl.value = urlCardId.trim(); }
+
+    function getCardId() { return (cartCardIdEl.value || '').trim(); }
+
+    // ── Refresh cart blob ─────────────────────────────────────────────────
+    async function refreshCart() {
+      const cardId = getCardId();
+      document.getElementById('blobCardId').textContent = cardId || 'No card loaded';
+      if (!cardId) {
+        document.getElementById('blobItems').innerHTML = '<div class="empty-cart">Enter a Card ID and add items</div>';
+        document.getElementById('blobTotal').style.display = 'none';
+        document.getElementById('blobCheckout').style.display = 'none';
+        return;
       }
-
-      minimizeBtn.addEventListener('click', function() {
-        popup.classList.toggle('minimized');
-        minimizeBtn.textContent = popup.classList.contains('minimized') ? '+' : '−';
-        minimizeBtn.title = popup.classList.contains('minimized') ? 'Expand' : 'Minimize';
-      });
-
-      var tab = popup.querySelector('.card-popup-tab');
-      tab.addEventListener('click', function() {
-        if (popup.classList.contains('minimized')) {
-          popup.classList.remove('minimized');
-          minimizeBtn.textContent = '−';
-          minimizeBtn.title = 'Minimize';
+      try {
+        const [itemsRes, totalRes] = await Promise.all([
+          fetch('/api/cart/items/' + encodeURIComponent(cardId)),
+          fetch('/api/cart/total/' + encodeURIComponent(cardId) + '?isMember=true')
+        ]);
+        const items = await itemsRes.json();
+        const total = await totalRes.json();
+        const itemsEl = document.getElementById('blobItems');
+        if (Array.isArray(items) && items.length) {
+          itemsEl.innerHTML = items.map(function(i) {
+            return '<div class="blob-item"><span>' + i.name + ' ×' + i.quantity + '</span><span>$' + i.lineTotal + '</span></div>';
+          }).join('');
+          document.getElementById('blobTotal').textContent = 'Total: $' + (total.total || 0);
+          document.getElementById('blobTotal').style.display = 'block';
+          document.getElementById('blobCheckout').href = '/checkout?cardId=' + encodeURIComponent(cardId);
+          document.getElementById('blobCheckout').style.display = 'block';
+        } else {
+          itemsEl.innerHTML = '<div class="empty-cart">Cart is empty</div>';
+          document.getElementById('blobTotal').style.display = 'none';
+          document.getElementById('blobCheckout').style.display = 'none';
         }
-      });
-      tab.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          tab.click();
-        }
-      });
+      } catch (e) {
+        document.getElementById('blobItems').innerHTML = '<div class="empty-cart">Could not load cart</div>';
+      }
+    }
 
-      document.getElementById('memberForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const name = document.querySelector('[name="name"]').value;
-        const tier = document.querySelector('[name="tier"]').value;
-        const resultEl = document.getElementById('result');
-        resultEl.style.display = 'block';
-        resultEl.innerHTML = '<span class="text-muted">Creating member...</span>';
-        try {
-          const res = await fetch('/api/members', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, tier })
-          });
-          const data = await res.json();
-          if (res.ok) {
-            resultEl.innerHTML = '<div class="alert alert-success">✓ ' + data.message + '<br><a href="/cart?cardId=' + data.cardId + '">Add to cart</a> | <a href="/checkout?cardId=' + data.cardId + '">Checkout</a></div>';
-            showCardPopup({ cardId: data.cardId, name: data.name, tier: data.tier });
-          } else {
-            resultEl.innerHTML = '<div class="alert alert-danger">' + (data.error || 'Failed') + '</div>';
-          }
-        } catch (err) {
-          resultEl.innerHTML = '<div class="alert alert-danger">API unavailable.</div>';
+    cartCardIdEl.addEventListener('blur', refreshCart);
+    if (cartCardIdEl.value) refreshCart();
+
+    // ── Add to cart ───────────────────────────────────────────────────────
+    async function addToCart() {
+      const cardId = getCardId();
+      if (!cardId) { alert('Enter a Card ID first'); return; }
+      const productId = parseInt(document.getElementById('productId').value);
+      const quantity = parseInt(document.getElementById('quantity').value) || 1;
+      const isMember = document.getElementById('isMember').checked;
+      try {
+        await fetch('/api/cart/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cardId, productId, quantity, isMember })
+        });
+        refreshCart();
+      } catch (err) {
+        alert('Failed to add item.');
+      }
+    }
+
+    // ── Add Member ────────────────────────────────────────────────────────
+    document.getElementById('memberForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const name = e.target.querySelector('[name="name"]').value;
+      const tier = e.target.querySelector('[name="tier"]').value;
+      const el = document.getElementById('memberResult');
+      el.style.display = 'block';
+      el.innerHTML = '<span class="text-muted">Creating member...</span>';
+      try {
+        const res = await fetch('/api/members', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, tier })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          el.innerHTML = '<div class="alert alert-success">✓ ' + data.message + '<br>' +
+            '<span class="font-monospace fw-bold">' + data.cardId + '</span></div>';
+          // Auto-fill Card ID fields and refresh cart
+          cartCardIdEl.value = data.cardId;
+          document.getElementById('verifyCardId').value = data.cardId;
+          refreshCart();
+          blob.classList.remove('minimized');
+          blobMin.textContent = '−';
+        } else {
+          el.innerHTML = '<div class="alert alert-danger">' + (data.error || 'Failed') + '</div>';
         }
-      });
-    })();
+      } catch (err) {
+        el.innerHTML = '<div class="alert alert-danger">API unavailable.</div>';
+      }
+    });
+
+    // ── Verify Member ─────────────────────────────────────────────────────
+    document.getElementById('verifyForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const cardId = e.target.querySelector('[name="cardId"]').value;
+      const name = e.target.querySelector('[name="name"]').value;
+      const el = document.getElementById('verifyResult');
+      el.style.display = 'block';
+      el.innerHTML = '<span class="text-muted">Verifying...</span>';
+      try {
+        const res = await fetch('/api/members/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cardId, name })
+        });
+        const data = await res.json();
+        if (res.ok && data.valid) {
+          el.innerHTML = '<div class="alert alert-success">✓ Verified — ' + data.name + ' (' + data.tier + ')</div>';
+          // Auto-fill cart Card ID and load
+          cartCardIdEl.value = cardId;
+          refreshCart();
+        } else {
+          el.innerHTML = '<div class="alert alert-warning">' + (data.message || 'Verification failed') + '</div>';
+        }
+      } catch (err) {
+        el.innerHTML = '<div class="alert alert-danger">API unavailable.</div>';
+      }
+    });
   </script>
 </body>
 </html>
