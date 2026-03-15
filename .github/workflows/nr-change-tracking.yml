@@ -11,13 +11,23 @@ jobs:
       - name: Query NavalArchive entity GUIDs
         id: entities
         run: |
+          if [ -z "${{ secrets.NR_API_KEY }}" ]; then
+            echo "NR_API_KEY secret not set — skipping change tracking"
+            echo "response=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
           RESPONSE=$(curl -s -X POST https://api.newrelic.com/graphql \
             -H "API-Key: ${{ secrets.NR_API_KEY }}" \
             -H "Content-Type: application/json" \
             -d "{\"query\": \"{ actor { entitySearch(query: \\\"accountId = '${{ secrets.NR_ACCOUNT_ID }}' AND type = 'APPLICATION' AND name LIKE 'NavalArchive%'\\\") { results { entities { guid name } } } } }\" }")
+          if echo "$RESPONSE" | grep -q '"errors"'; then
+            echo "NR API error: $RESPONSE"
+            exit 1
+          fi
           echo "response=$RESPONSE" >> $GITHUB_OUTPUT
 
       - name: Create deployment markers
+        if: steps.entities.outputs.response != ''
         run: |
           ENTITIES=$(echo '${{ steps.entities.outputs.response }}' | \
             jq -r '.data.actor.entitySearch.results.entities[] | .guid + ":" + .name')
