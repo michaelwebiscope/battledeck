@@ -107,6 +107,7 @@
         if (!res.ok) { el.innerHTML = '<div class="alert alert-danger py-2 small">' + (data.error || 'Invalid key') + '</div>'; return; }
         acctApiKey = key;
         localStorage.setItem('paymentAccountKey', key);
+        localStorage.setItem('paymentAccountName', data.name || '');
         el.innerHTML = '<div class="alert alert-success py-2 small">&#10003; Loaded: ' + data.name + '</div>';
         document.getElementById('acctBalance').textContent = '$' + (data.balance || 0).toFixed(2);
         document.getElementById('acctLabel').textContent = (data.name || '') + (data.accountId ? '  ·  ' + data.accountId : '');

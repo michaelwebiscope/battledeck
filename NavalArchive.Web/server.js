@@ -63,7 +63,6 @@ const defaultNavItems = [
     { href: '/login', label: 'Login' }
   ]},
   { href: '/members', label: 'Member' },
-  { href: '/checkout', label: 'Checkout' },
   { href: '/trace', label: 'Trace' }
 ];
 
@@ -1475,7 +1474,7 @@ app.get('/login', (req, res) => {
 });
 
 app.get('/membership', (req, res) => {
-  res.render('membership', { title: 'Membership' });
+  res.redirect('/members');
 });
 
 app.get('/members', (req, res) => {

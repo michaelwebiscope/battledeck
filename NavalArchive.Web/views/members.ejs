@@ -210,9 +210,14 @@
     // ── Shared card ID ────────────────────────────────────────────────────
     const cartCardIdEl = document.getElementById('cartCardId');
 
-    // Pre-fill from URL
+    // Pre-fill from URL or localStorage
     const urlCardId = new URLSearchParams(location.search).get('cardId');
-    if (urlCardId) { cartCardIdEl.value = urlCardId.trim(); }
+    if (urlCardId) {
+      cartCardIdEl.value = urlCardId.trim();
+    } else {
+      const saved = localStorage.getItem('memberCardId');
+      if (saved) cartCardIdEl.value = saved;
+    }
 
     function getCardId() { return (cartCardIdEl.value || '').trim(); }
 
@@ -252,8 +257,14 @@
       }
     }
 
-    cartCardIdEl.addEventListener('blur', refreshCart);
-    if (cartCardIdEl.value) refreshCart();
+    cartCardIdEl.addEventListener('blur', function() {
+      if (cartCardIdEl.value.trim()) localStorage.setItem('memberCardId', cartCardIdEl.value.trim());
+      refreshCart();
+    });
+    if (cartCardIdEl.value) {
+      document.getElementById('verifyCardId').value = cartCardIdEl.value;
+      refreshCart();
+    }
 
     // ── Add to cart ───────────────────────────────────────────────────────
     async function addToCart() {

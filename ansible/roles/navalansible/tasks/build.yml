@@ -100,26 +100,36 @@
 
 - name: Publish Card (self-contained)
   ansible.windows.win_shell: |
+    # Preserve card.db across publish (dotnet publish may overwrite the dir)
+    $db = "{{ card_path }}\card.db"
+    $bak = "$env:TEMP\card.db.bak"
+    if (Test-Path $db) { Copy-Item $db $bak -Force }
     $csproj = Get-ChildItem "{{ src_path }}" -Filter "NavalArchive.CardService.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($csproj) {
       Push-Location $csproj.DirectoryName
       & "{{ dotnet_dir }}\dotnet.exe" publish -c Release -r win-x64 --self-contained true -o "{{ card_path }}"
-      if ($LASTEXITCODE -ne 0) { throw "Card publish failed" }
+      if ($LASTEXITCODE -ne 0) { Pop-Location; throw "Card publish failed" }
       Pop-Location
     }
+    if (Test-Path $bak) { Copy-Item $bak $db -Force }
   args:
     executable: powershell
   when: card_changed | default(true)
 
 - name: Publish Cart (self-contained)
   ansible.windows.win_shell: |
+    # Preserve cart.db across publish
+    $db = "{{ cart_path }}\cart.db"
+    $bak = "$env:TEMP\cart.db.bak"
+    if (Test-Path $db) { Copy-Item $db $bak -Force }
     $csproj = Get-ChildItem "{{ src_path }}" -Filter "NavalArchive.CartService.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($csproj) {
       Push-Location $csproj.DirectoryName
       & "{{ dotnet_dir }}\dotnet.exe" publish -c Release -r win-x64 --self-contained true -o "{{ cart_path }}"
-      if ($LASTEXITCODE -ne 0) { throw "Cart publish failed" }
+      if ($LASTEXITCODE -ne 0) { Pop-Location; throw "Cart publish failed" }
       Pop-Location
     }
+    if (Test-Path $bak) { Copy-Item $bak $db -Force }
   args:
     executable: powershell
   when: cart_changed | default(true)

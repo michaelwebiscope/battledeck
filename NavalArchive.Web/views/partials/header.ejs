@@ -30,6 +30,11 @@
       <% }); %>
     </nav>
     <div class="topbar-right">
+      <div id="accountStatus" style="display:none; align-items:center; gap:6px; font-size:0.8rem; white-space:nowrap;">
+        <i class="bi bi-person-circle"></i>
+        <span id="accountStatusName" style="max-width:120px; overflow:hidden; text-overflow:ellipsis;"></span>
+        <button onclick="signOutAccount()" style="background:none;border:1px solid currentColor;border-radius:4px;padding:1px 7px;font-size:0.75rem;cursor:pointer;opacity:0.8;" title="Sign out">Sign out</button>
+      </div>
       <a href="/admin/images" class="topbar-link admin-only text-decoration-none">
         <i class="bi bi-images"></i>
         <span>Audit</span>
@@ -51,6 +56,21 @@
 </header>
 <div class="main-content">
 <script>
+(function(){
+  var name = localStorage.getItem('paymentAccountName');
+  var acctKey = localStorage.getItem('paymentAccountKey');
+  if (name && acctKey) {
+    var el = document.getElementById('accountStatus');
+    var nameEl = document.getElementById('accountStatusName');
+    if (el && nameEl) { nameEl.textContent = name; el.style.display = 'flex'; }
+  }
+})();
+function signOutAccount() {
+  localStorage.removeItem('paymentAccountKey');
+  localStorage.removeItem('paymentAccountName');
+  var el = document.getElementById('accountStatus');
+  if (el) el.style.display = 'none';
+}
 (function(){
   var key = 'adminMode';
   var toggle = document.getElementById('adminModeToggle');

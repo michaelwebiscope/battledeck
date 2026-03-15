@@ -4,8 +4,6 @@
   <%- include('partials/head') %>
   <style>
     .balance-badge { font-size: 1.5rem; font-weight: 700; color: #0284c7; }
-    .nav-tabs .nav-link { color: #6c757d; }
-    .nav-tabs .nav-link.active { color: #0c4a6e; font-weight: 600; }
   </style>
 </head>
 <body>
@@ -13,79 +11,48 @@
   <main class="app-shell">
     <div class="container py-4">
       <h1 class="mb-1">Support the Museum</h1>
-      <p class="text-muted mb-4">Make a simulated donation to the Naval Archive. Use <strong>Quick Donation</strong> for a one-off payment, or <strong>Pay from Account</strong> to use your wallet balance (create an account first on <a href="/payment-account">Payment Account</a>).</p>
+      <p class="text-muted mb-4">Donate to the Naval Archive using your wallet balance. Don't have an account? <a href="/payment-account">Create one here</a>.</p>
 
       <div class="row">
-        <div class="col-lg-7">
-          <ul class="nav nav-tabs mb-4" id="donateTab" role="tablist">
-            <li class="nav-item" role="presentation">
-              <button class="nav-link active" id="quick-tab" data-bs-toggle="tab" data-bs-target="#quick" type="button" role="tab">Quick Donation</button>
-            </li>
-            <li class="nav-item" role="presentation">
-              <button class="nav-link" id="account-tab" data-bs-toggle="tab" data-bs-target="#account" type="button" role="tab">Pay from Account</button>
-            </li>
-          </ul>
+        <div class="col-lg-6">
 
-          <div class="tab-content">
-            <!-- Quick anonymous donation -->
-            <div class="tab-pane fade show active" id="quick" role="tabpanel">
-              <div class="card">
-                <div class="card-body">
-                  <form id="donateForm">
-                    <div class="mb-3">
-                      <label class="form-label">Amount (USD)</label>
-                      <input type="number" name="amount" class="form-control" value="25" min="1" step="0.01" required>
-                    </div>
-                    <div class="mb-3">
-                      <label class="form-label">Description</label>
-                      <input type="text" name="description" class="form-control" value="Museum donation" placeholder="Optional">
-                    </div>
-                    <button type="submit" class="btn btn-modern w-100">Simulate Payment</button>
-                  </form>
-                  <div id="quickResult" class="mt-3"></div>
-                </div>
+          <!-- Load account -->
+          <div class="card mb-3" id="acctLoadCard">
+            <div class="card-body">
+              <label class="form-label fw-semibold">Payment Account API Key</label>
+              <div class="d-flex gap-2">
+                <input type="text" id="acctKeyInput" class="form-control font-monospace" placeholder="sk_live_..." autocomplete="off">
+                <button class="btn btn-modern" type="button" onclick="loadAcct()">Load</button>
+              </div>
+              <div id="acctLoadResult" class="mt-2"></div>
+            </div>
+          </div>
+
+          <!-- Account dashboard -->
+          <div id="acctDashboard" style="display:none;">
+            <div class="card mb-3">
+              <div class="card-body text-center py-3">
+                <div class="text-muted small mb-1">Account Balance</div>
+                <div class="balance-badge" id="acctBalance">$0.00</div>
+                <div class="text-muted small" id="acctLabel"></div>
               </div>
             </div>
-
-            <!-- Account-based payment -->
-            <div class="tab-pane fade" id="account" role="tabpanel">
-              <div class="card mb-3" id="acctLoadCard">
-                <div class="card-body">
-                  <label class="form-label fw-semibold">API Key</label>
-                  <div class="d-flex gap-2">
-                    <input type="text" id="acctKeyInput" class="form-control font-monospace" placeholder="sk_live_..." autocomplete="off">
-                    <button class="btn btn-modern" onclick="loadAcct()">Load</button>
-                  </div>
-                  <div id="acctLoadResult" class="mt-2"></div>
-                  <div class="mt-2 small text-muted">Don't have an account? <a href="/payment-account">Create one here</a>.</div>
+            <div class="card">
+              <div class="card-body">
+                <div class="mb-3">
+                  <label class="form-label fw-semibold">Amount (USD)</label>
+                  <input type="number" id="acctAmount" class="form-control" value="25" min="0.01" step="0.01">
                 </div>
-              </div>
-
-              <div id="acctDashboard" style="display:none;">
-                <div class="card mb-3">
-                  <div class="card-body text-center py-3">
-                    <div class="text-muted small mb-1">Account Balance</div>
-                    <div class="balance-badge" id="acctBalance">$0.00</div>
-                    <div class="text-muted small" id="acctLabel"></div>
-                  </div>
+                <div class="mb-3">
+                  <label class="form-label fw-semibold">Description</label>
+                  <input type="text" id="acctDesc" class="form-control" value="Museum donation">
                 </div>
-                <div class="card">
-                  <div class="card-body">
-                    <div class="mb-3">
-                      <label class="form-label">Amount (USD)</label>
-                      <input type="number" id="acctAmount" class="form-control" value="25" min="0.01" step="0.01">
-                    </div>
-                    <div class="mb-3">
-                      <label class="form-label">Description</label>
-                      <input type="text" id="acctDesc" class="form-control" value="Museum donation">
-                    </div>
-                    <button class="btn btn-modern w-100" onclick="payFromAccount()">Pay from Balance</button>
-                    <div id="acctPayResult" class="mt-2"></div>
-                  </div>
-                </div>
+                <button class="btn btn-modern w-100" type="button" onclick="payFromAccount()">Donate from Balance</button>
+                <div id="acctPayResult" class="mt-2"></div>
               </div>
             </div>
           </div>
+
         </div>
       </div>
     </div>
@@ -93,39 +60,8 @@
   <%- include('partials/footer') %>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   <script>
-    // ── Quick donation ──────────────────────────────────────────────────────────
-    document.getElementById('donateForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const amount = parseFloat(document.querySelector('[name="amount"]').value);
-      const description = document.querySelector('[name="description"]').value;
-      const el = document.getElementById('quickResult');
-      el.innerHTML = '<span class="text-muted">Processing...</span>';
-      try {
-        const res = await fetch('/api/payments/simulate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ amount, currency: 'USD', description })
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          el.innerHTML = `<div class="alert alert-danger">${(data.message || data.error || 'Payment failed')}</div>`;
-        } else if (res.status === 202 || data.status === 'queued') {
-          el.innerHTML = `<div class="alert alert-info">&#10003; ${data.message || 'Payment queued for processing'}${data.transactionId ? ' (Transaction: ' + data.transactionId + ')' : ''}</div>`;
-        } else if (data.approved) {
-          el.innerHTML = `<div class="alert alert-success">&#10003; ${data.message || 'Payment approved'}${data.transactionId ? ' (Transaction: ' + data.transactionId + ')' : ''}</div>`;
-        } else {
-          el.innerHTML = `<div class="alert alert-warning">${data.message || 'Payment declined'}</div>`;
-        }
-      } catch (err) {
-        el.innerHTML = '<div class="alert alert-danger">Payment service unavailable.</div>';
-      }
-    });
-
-    // ── Account-based payment ───────────────────────────────────────────────────
     let acctApiKey = localStorage.getItem('paymentAccountKey') || '';
-    if (acctApiKey) {
-      document.getElementById('acctKeyInput').value = acctApiKey;
-    }
+    if (acctApiKey) document.getElementById('acctKeyInput').value = acctApiKey;
 
     async function loadAcct() {
       const key = document.getElementById('acctKeyInput').value.trim();
@@ -135,12 +71,13 @@
       try {
         const res = await fetch('/api/accounts/me', { headers: { 'X-API-Key': key } });
         const data = await res.json();
-        if (!res.ok) { el.innerHTML = `<div class="alert alert-danger py-2 small">${data.error || 'Invalid key'}</div>`; return; }
+        if (!res.ok) { el.innerHTML = '<div class="alert alert-danger py-2 small">' + (data.error || 'Invalid key') + '</div>'; return; }
         acctApiKey = key;
         localStorage.setItem('paymentAccountKey', key);
-        el.innerHTML = `<div class="alert alert-success py-2 small">&#10003; Loaded: ${data.name}</div>`;
+        localStorage.setItem('paymentAccountName', data.name || '');
+        el.innerHTML = '<div class="alert alert-success py-2 small">&#10003; Loaded: ' + data.name + '</div>';
         document.getElementById('acctBalance').textContent = '$' + (data.balance || 0).toFixed(2);
-        document.getElementById('acctLabel').textContent = data.name + (data.accountId ? '  ·  ' + data.accountId : '');
+        document.getElementById('acctLabel').textContent = (data.name || '') + (data.accountId ? '  ·  ' + data.accountId : '');
         document.getElementById('acctDashboard').style.display = '';
       } catch (err) {
         el.innerHTML = '<div class="alert alert-danger py-2 small">Account service unavailable</div>';
@@ -152,6 +89,7 @@
       const description = document.getElementById('acctDesc').value || 'Museum donation';
       const el = document.getElementById('acctPayResult');
       if (!amount || amount <= 0) { el.innerHTML = '<div class="text-danger small">Enter a valid amount</div>'; return; }
+      if (!acctApiKey) { el.innerHTML = '<div class="text-danger small">Load your API key first</div>'; return; }
       el.innerHTML = '<span class="text-muted small">Processing...</span>';
       try {
         const res = await fetch('/api/payments/simulate', {
@@ -161,23 +99,18 @@
         });
         const data = await res.json();
         if (res.status === 402) {
-          el.innerHTML = '<div class="alert alert-danger py-2 small">Insufficient funds — top up your balance first.</div>';
+          el.innerHTML = '<div class="alert alert-danger py-2 small">Insufficient funds — top up on Payment Account page first.</div>';
           return;
         }
         if (!res.ok) {
-          el.innerHTML = `<div class="alert alert-danger py-2 small">${data.error || 'Payment failed'}</div>`;
+          el.innerHTML = '<div class="alert alert-danger py-2 small">' + (data.error || 'Payment failed') + '</div>';
           return;
         }
-        var msg = (res.status === 202 || data.status === 'queued') ? (data.message || 'Payment queued') : (data.message || 'Payment approved');
-        el.innerHTML = `<div class="alert alert-success py-2 small">&#10003; ${msg}${data.transactionId ? ' (' + data.transactionId + ')' : ''}</div>`;
-        // Refresh balance
-        setTimeout(async () => {
+        el.innerHTML = '<div class="alert alert-success py-2 small">&#10003; Donation approved' + (data.transactionId ? ' — ' + data.transactionId : '') + '</div>';
+        setTimeout(async function() {
           try {
             const r = await fetch('/api/accounts/me', { headers: { 'X-API-Key': acctApiKey } });
-            if (r.ok) {
-              const d = await r.json();
-              document.getElementById('acctBalance').textContent = '$' + (d.balance || 0).toFixed(2);
-            }
+            if (r.ok) { const d = await r.json(); document.getElementById('acctBalance').textContent = '$' + (d.balance || 0).toFixed(2); }
           } catch (_) {}
         }, 1500);
       } catch (err) {
@@ -185,11 +118,7 @@
       }
     }
 
-    // Auto-load account if key already stored
-    if (acctApiKey) {
-      const tab = document.getElementById('account-tab');
-      tab.addEventListener('shown.bs.tab', () => { if (!document.getElementById('acctDashboard').style.display || document.getElementById('acctDashboard').style.display === 'none') loadAcct(); }, { once: true });
-    }
+    if (acctApiKey) loadAcct();
   </script>
 </body>
 </html>
