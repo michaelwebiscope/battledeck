@@ -1,0 +1,18 @@
+---
+- name: New Relic - infrastructure, logs, and .NET APM
+  hosts: navalansible
+  gather_facts: true
+  vars:
+    targets:
+      - infrastructure
+      - logs
+      - apm-dotnet
+    install_timeout_seconds: 1800
+  environment:
+    NEW_RELIC_API_KEY: "{{ newrelic_api_key }}"
+    NEW_RELIC_ACCOUNT_ID: "{{ newrelic_account_id | default('7534908') }}"
+    NEW_RELIC_REGION: "{{ newrelic_region | default('US') }}"
+  tasks:
+    - name: Install infrastructure, logs, and .NET APM agent
+      ansible.builtin.include_role:
+        name: newrelic.newrelic_install

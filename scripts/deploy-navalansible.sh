@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Deploy navalansible: Ansible playbook (run terraform apply separately for first-time VM creation)
-# Usage: ./scripts/deploy-navalansible.sh [-newrelic] [-skip-services]
+# Usage: ./scripts/deploy-navalansible.sh [-newrelic] [-skip-services] [-go-only] [-newrelic-only]
 # Requires: ansible, pywinrm (pip install pywinrm)
 
 set -e
@@ -10,11 +10,17 @@ TFVARS_FILE="$REPO_ROOT/terraform-navalansible/terraform.tfvars"
 TFVARS_FALLBACK_FILE="$REPO_ROOT/terraform/terraform.tfvars"
 
 ENABLE_NEWRELIC=false
+NEWRELIC_ONLY=false
 UPDATE_SERVICES=true
 GO_ONLY=false
 while [ $# -gt 0 ]; do
   case "$1" in
     -newrelic|--newrelic)
+      ENABLE_NEWRELIC=true
+      shift
+      ;;
+    -newrelic-only|--newrelic-only)
+      NEWRELIC_ONLY=true
       ENABLE_NEWRELIC=true
       shift
       ;;
@@ -31,8 +37,9 @@ while [ $# -gt 0 ]; do
       shift
       ;;
     -h|--help)
-      echo "Usage: ./scripts/deploy-navalansible.sh [-newrelic] [-skip-services] [-go-only]"
+      echo "Usage: ./scripts/deploy-navalansible.sh [-newrelic] [-newrelic-only] [-skip-services] [-go-only]"
       echo "  -newrelic        also run ansible/playbooks/newrelic.yml after site deploy"
+      echo "  -newrelic-only   run only newrelic.yml (skip site.yml entirely — ~2 min)"
       echo "  -skip-services   skip services.yml (faster repeated deploys)"
       echo "  -update-services force services.yml run (default)"
       echo "  -go-only         hot-swap Go binaries only (~2 min, no full redeploy)"
@@ -40,7 +47,7 @@ while [ $# -gt 0 ]; do
       ;;
     *)
       echo "Unknown argument: $1"
-      echo "Usage: ./scripts/deploy-navalansible.sh [-newrelic] [-skip-services]"
+      echo "Usage: ./scripts/deploy-navalansible.sh [-newrelic] [-newrelic-only] [-skip-services] [-go-only]"
       exit 1
       ;;
   esac
@@ -83,6 +90,9 @@ fi
 GITHUB_REPO_URL=$(read_tfvar_any "github_repo_url")
 [ -n "$GITHUB_REPO_URL" ] || GITHUB_REPO_URL="https://github.com/michaelwebiscope/battledeck.git"
 
+# Read github_token for private repo auth (optional — omit for public repos)
+[ -n "$GITHUB_TOKEN" ] || GITHUB_TOKEN=$(read_tfvar_any "github_token")
+
 # macOS: avoid fork safety when running Ansible
 export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
 
@@ -96,6 +106,9 @@ SITE_ARGS=(
   -e "github_repo_url=$GITHUB_REPO_URL"
   -e "update_services=$UPDATE_SERVICES"
 )
+if [ -n "$GITHUB_TOKEN" ]; then
+  SITE_ARGS+=( -e "github_token=$GITHUB_TOKEN" )
+fi
 if [ -n "$NEWRELIC_LICENSE_KEY" ]; then
   SITE_ARGS+=( -e "newrelic_license_key=$NEWRELIC_LICENSE_KEY" )
 fi
@@ -115,7 +128,9 @@ run_ansible() {
   exit $rc
 }
 
-if [ "$GO_ONLY" = true ]; then
+if [ "$NEWRELIC_ONLY" = true ]; then
+  : # skip site.yml — jump straight to NR playbook below
+elif [ "$GO_ONLY" = true ]; then
   echo "=== 2. Ansible playbook (Go binaries only - ~2 min) ==="
   run_ansible playbooks/go-binaries-only.yml "${SITE_ARGS[@]}"
 else
@@ -151,7 +166,12 @@ if [ "$ENABLE_NEWRELIC" = true ]; then
     NR_ARGS+=( -e "newrelic_license_key=$NEWRELIC_LICENSE_KEY" )
   fi
 
-  python3 -m ansible playbook playbooks/newrelic.yml "${NR_ARGS[@]}"
+  if [ "$NEWRELIC_ONLY" = true ]; then
+    echo "=== Skipping infra/logs/.NET agent (already installed) ==="
+    python3 -m ansible playbook playbooks/newrelic-app.yml "${NR_ARGS[@]}"
+  else
+    python3 -m ansible playbook playbooks/newrelic.yml "${NR_ARGS[@]}"
+  fi
 fi
 
 cd ..

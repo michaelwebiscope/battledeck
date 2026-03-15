@@ -41,14 +41,6 @@
     & $appcmd add apppool /name:NavalArchive-API "/managedRuntimeVersion:"
     & $appcmd add site /name:NavalArchive-API "/physicalPath:{{ api_path }}" "/bindings:http/*:5000:"
     & $appcmd set app "NavalArchive-API/" /applicationPool:NavalArchive-API
-    try {
-      Import-Module IISAdministration -ErrorAction SilentlyContinue
-      New-IISSiteBinding -Name "NavalArchive-API" -BindingInformation "*:443:" -CertificateThumbPrint "{{ cert_thumbprint }}" -CertStoreLocation "Cert:\LocalMachine\My" -Protocol https -ErrorAction SilentlyContinue
-    } catch {
-      New-WebBinding -Name "NavalArchive-API" -Protocol https -Port 443 -ErrorAction SilentlyContinue
-      $b = Get-WebBinding -Name "NavalArchive-API" -Protocol "https" -ErrorAction SilentlyContinue
-      if ($b) { $b.AddSslCertificate("{{ cert_thumbprint }}", "My") }
-    }
     & $appcmd add site /name:NavalArchive-Web "/physicalPath:{{ web_path }}" "/bindings:http/*:80:"
     & $appcmd set app "NavalArchive-Web/" /applicationPool:DefaultAppPool 2>$null
     {% for item in iis_chain_services %}
@@ -76,6 +68,23 @@
     }
   args:
     executable: powershell
+
+- name: Add HTTPS binding to NavalArchive-API
+  ansible.windows.win_shell: |
+    try {
+      Import-Module IISAdministration -ErrorAction SilentlyContinue
+      $existing = Get-IISSiteBinding -Name "NavalArchive-API" -ErrorAction SilentlyContinue | Where-Object { $_.Protocol -eq "https" }
+      if (-not $existing) {
+        New-IISSiteBinding -Name "NavalArchive-API" -BindingInformation "*:443:" -CertificateThumbPrint "{{ cert_thumbprint }}" -CertStoreLocation "Cert:\LocalMachine\My" -Protocol https -ErrorAction Stop
+      }
+    } catch {
+      New-WebBinding -Name "NavalArchive-API" -Protocol https -Port 443 -ErrorAction SilentlyContinue
+      $b = Get-WebBinding -Name "NavalArchive-API" -Protocol "https" -ErrorAction SilentlyContinue
+      if ($b) { $b.AddSslCertificate("{{ cert_thumbprint }}", "My") }
+    }
+  args:
+    executable: powershell
+  failed_when: false
 
 - name: IIS reset
   ansible.windows.win_shell: |

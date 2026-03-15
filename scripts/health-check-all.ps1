@@ -1,8 +1,7 @@
 $ErrorActionPreference = "Continue"
 
+# Windows services (sc.exe services — NOT scheduled tasks)
 $services = @(
-    "NavalArchiveImagePopulator",
-    "NavalArchivePayment",
     "NavalArchiveCard",
     "NavalArchiveCart",
     "NavalArchiveOrder",
@@ -11,20 +10,29 @@ $services = @(
     "NavalArchiveNotification"
 )
 
+# Scheduled tasks (Go + Java — use task state, not Get-Service)
+$scheduledTasks = @(
+    "NavalArchiveAccount",
+    "NavalArchivePayment",
+    "NavalArchiveImagePopulator"
+)
+
 $endpoints = @(
-    @{ Name = "Frontend"; Url = "http://localhost:3000/" },
-    @{ Name = "Backend API"; Url = "http://localhost:5000/health" },
+    @{ Name = "Frontend";       Url = "http://localhost:3000/" },
+    @{ Name = "Backend API";    Url = "http://localhost:5000/health" },
+    @{ Name = "GoAccount";      Url = "http://localhost:5005/health" },
+    @{ Name = "GoPayment";      Url = "http://localhost:5001/health" },
     @{ Name = "ImagePopulator"; Url = "http://localhost:5099/health" },
-    @{ Name = "Gateway"; Url = "http://localhost:5010/health" },
-    @{ Name = "Auth"; Url = "http://localhost:5011/health" },
-    @{ Name = "User"; Url = "http://localhost:5012/health" },
-    @{ Name = "Catalog"; Url = "http://localhost:5013/health" },
-    @{ Name = "Inventory"; Url = "http://localhost:5014/health" },
-    @{ Name = "Basket"; Url = "http://localhost:5015/health" },
-    @{ Name = "Order"; Url = "http://localhost:5016/health" },
-    @{ Name = "PaymentChain"; Url = "http://localhost:5017/health" },
-    @{ Name = "Shipping"; Url = "http://localhost:5018/health" },
-    @{ Name = "Notification"; Url = "http://localhost:5019/health" }
+    @{ Name = "Gateway";        Url = "http://localhost:5010/health" },
+    @{ Name = "Auth";           Url = "http://localhost:5011/health" },
+    @{ Name = "User";           Url = "http://localhost:5012/health" },
+    @{ Name = "Catalog";        Url = "http://localhost:5013/health" },
+    @{ Name = "Inventory";      Url = "http://localhost:5014/health" },
+    @{ Name = "Basket";         Url = "http://localhost:5015/health" },
+    @{ Name = "Order";          Url = "http://localhost:5016/health" },
+    @{ Name = "PaymentChain";   Url = "http://localhost:5017/health" },
+    @{ Name = "Shipping";       Url = "http://localhost:5018/health" },
+    @{ Name = "Notification";   Url = "http://localhost:5019/health" }
 )
 
 $issues = New-Object System.Collections.Generic.List[string]
@@ -46,6 +54,17 @@ foreach ($name in $services) {
         } catch {
             $issues.Add("Service start failed: $name ($($_.Exception.Message))")
         }
+    }
+}
+
+foreach ($taskName in $scheduledTasks) {
+    $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    if (-not $task) {
+        $issues.Add("Missing scheduled task: $taskName")
+        continue
+    }
+    if ($task.State -notin @("Running", "Ready")) {
+        Start-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
     }
 }
 

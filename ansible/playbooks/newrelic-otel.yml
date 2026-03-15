@@ -1,0 +1,35 @@
+---
+- name: New Relic - OTEL (Card, Cart, Order, Payment, Shipping, Notification)
+  hosts: navalansible
+  gather_facts: false
+  tasks:
+    - name: Patch OTEL api-key header in service registry and restart
+      ansible.windows.win_shell: |
+        $svc = "{{ item }}"
+        $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\$svc"
+        if (Test-Path $regPath) {
+          $current = (Get-ItemProperty -Path $regPath -Name "Environment" -ErrorAction SilentlyContinue).Environment
+          if ($current) {
+            $updated = @($current | Where-Object { $_ -notlike "OTEL_EXPORTER_OTLP_HEADERS=*" })
+            $updated += "OTEL_EXPORTER_OTLP_HEADERS=api-key={{ newrelic_license_key }}"
+            Set-ItemProperty -Path $regPath -Name "Environment" -Value $updated -Type MultiString -Force
+            sc.exe stop $svc 2>$null
+            $waited = 0
+            while ($waited -lt 10) {
+              $state = (Get-Service -Name $svc -ErrorAction SilentlyContinue).Status
+              if ($state -eq 'Stopped') { break }
+              Start-Sleep -Seconds 1; $waited++
+            }
+            sc.exe start $svc
+          }
+        }
+      args:
+        executable: powershell
+      loop:
+        - NavalArchiveCard
+        - NavalArchiveCart
+        - NavalArchiveOrder
+        - NavalArchivePaymentChain
+        - NavalArchiveShipping
+        - NavalArchiveNotification
+      when: newrelic_license_key is defined and newrelic_license_key | length > 0

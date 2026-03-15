@@ -1,0 +1,44 @@
+---
+- name: New Relic - Node.js (NavalArchiveWeb)
+  hosts: navalansible
+  gather_facts: false
+  vars_files:
+    - ../roles/navalansible/vars/main.yml
+  tasks:
+    - name: Install New Relic Node.js package
+      ansible.windows.win_shell: |
+        Push-Location "{{ web_path }}"
+        & "{{ node_dir }}\npm.cmd" install newrelic --omit=dev --no-audit --no-fund
+        Pop-Location
+      args:
+        executable: powershell
+      when: newrelic_license_key is defined and newrelic_license_key | length > 0
+
+    - name: Add New Relic vars to NavalArchiveWeb service registry
+      ansible.windows.win_shell: |
+        $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\NavalArchiveWeb"
+        if (Test-Path $regPath) {
+          $current = (Get-ItemProperty -Path $regPath -Name "Environment" -ErrorAction SilentlyContinue).Environment
+          $updated = @($current | Where-Object { $_ -notlike "NEW_RELIC_*" -and $_ -notlike "NODE_OPTIONS=*" })
+          $updated += @(
+            "NEW_RELIC_LICENSE_KEY={{ newrelic_license_key }}",
+            "NEW_RELIC_APP_NAME={{ newrelic_node_app_name | default('NavalArchiveWeb') }}",
+            "NEW_RELIC_NO_CONFIG_FILE=true",
+            "NEW_RELIC_DISTRIBUTED_TRACING_ENABLED=true",
+            "NODE_OPTIONS=-r {{ web_path }}\node_modules\newrelic\index.js"
+          )
+          Set-ItemProperty -Path $regPath -Name "Environment" -Value $updated -Type MultiString -Force
+        }
+      args:
+        executable: powershell
+      when: newrelic_license_key is defined and newrelic_license_key | length > 0
+
+    - name: Restart NavalArchiveWeb service
+      ansible.windows.win_shell: |
+        sc.exe stop NavalArchiveWeb 2>$null
+        Start-Sleep -Seconds 2
+        sc.exe start NavalArchiveWeb
+      args:
+        executable: powershell
+      failed_when: false
+      when: newrelic_license_key is defined and newrelic_license_key | length > 0

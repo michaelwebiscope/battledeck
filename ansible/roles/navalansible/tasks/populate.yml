@@ -36,10 +36,12 @@
   ansible.windows.win_uri:
     url: http://127.0.0.1:5000/health
     method: GET
+    timeout: 5
   register: api_ready
   until: api_ready.status_code | default(0) == 200
   retries: 36
   delay: 5
+  failed_when: false
 
 - name: Find ImagePopulator jar in clone
   ansible.windows.win_shell: |

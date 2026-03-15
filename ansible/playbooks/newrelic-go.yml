@@ -1,0 +1,76 @@
+---
+- name: New Relic - Go services (account-service, payment-service)
+  hosts: navalansible
+  gather_facts: false
+  vars_files:
+    - ../roles/navalansible/vars/main.yml
+  tasks:
+    - name: Update run-account-service.ps1 with New Relic env vars
+      ansible.windows.win_copy:
+        content: |
+          $env:HTTP_PORT = '5005'
+          $env:DATABASE_URL = '{{ account_path }}\accounts.db'
+          $env:NEW_RELIC_LICENSE_KEY = '{{ newrelic_license_key }}'
+          $env:NEW_RELIC_APP_NAME = '{{ newrelic_go_account_app_name | default("NavalArchiveAccount") }}'
+          Set-Location '{{ account_path }}'
+          & '{{ account_path }}\account-service.exe'
+        dest: "{{ account_path }}\\run-account-service.ps1"
+      when: newrelic_license_key is defined and newrelic_license_key | length > 0
+
+    - name: Restart NavalArchiveAccount
+      ansible.windows.win_shell: |
+        Stop-ScheduledTask -TaskName "NavalArchiveAccount" -ErrorAction SilentlyContinue
+        Get-Process -Name "account-service" -ErrorAction SilentlyContinue | Stop-Process -Force
+        Start-Sleep -Seconds 2
+        Start-ScheduledTask -TaskName "NavalArchiveAccount"
+      args:
+        executable: powershell
+      when: newrelic_license_key is defined and newrelic_license_key | length > 0
+
+    - name: Wait for account-service to be healthy
+      ansible.windows.win_uri:
+        url: "http://127.0.0.1:5005/health"
+        method: GET
+        status_code: 200
+      register: account_health
+      until: account_health.status_code | default(0) == 200
+      retries: 12
+      delay: 5
+      when: newrelic_license_key is defined and newrelic_license_key | length > 0
+
+    - name: Update run-payment-service.ps1 with New Relic env vars
+      ansible.windows.win_copy:
+        content: |
+          $env:HTTP_PORT = '5001'
+          $env:DATABASE_URL = '{{ payment_path }}\payment.db'
+          $env:DATABASE_TYPE = 'sqlite'
+          $env:USE_QUEUE = 'true'
+          $env:ACCOUNT_SERVICE_URL = 'http://localhost:5005'
+          $env:IDEMPOTENCY = 'db'
+          $env:NEW_RELIC_LICENSE_KEY = '{{ newrelic_license_key }}'
+          $env:NEW_RELIC_APP_NAME = '{{ newrelic_go_payment_app_name | default("NavalArchivePayment") }}'
+          Set-Location '{{ payment_path }}'
+          & '{{ payment_path }}\payment-service.exe'
+        dest: "{{ payment_path }}\\run-payment-service.ps1"
+      when: newrelic_license_key is defined and newrelic_license_key | length > 0
+
+    - name: Restart NavalArchivePayment
+      ansible.windows.win_shell: |
+        Stop-ScheduledTask -TaskName "NavalArchivePayment" -ErrorAction SilentlyContinue
+        Get-Process -Name "payment-service" -ErrorAction SilentlyContinue | Stop-Process -Force
+        Start-Sleep -Seconds 2
+        Start-ScheduledTask -TaskName "NavalArchivePayment"
+      args:
+        executable: powershell
+      when: newrelic_license_key is defined and newrelic_license_key | length > 0
+
+    - name: Wait for payment-service to be healthy
+      ansible.windows.win_uri:
+        url: "http://127.0.0.1:5001/health"
+        method: GET
+        status_code: 200
+      register: payment_health
+      until: payment_health.status_code | default(0) == 200
+      retries: 12
+      delay: 5
+      when: newrelic_license_key is defined and newrelic_license_key | length > 0

@@ -29,6 +29,11 @@
     name: corretto17jdk
     state: present
 
+- name: Install Git
+  chocolatey.chocolatey.win_chocolatey:
+    name: git
+    state: present
+
 - name: Install IIS and features
   ansible.windows.win_feature:
     name: "{{ item }}"

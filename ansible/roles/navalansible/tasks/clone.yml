@@ -1,48 +1,56 @@
 ---
-# Clone GitHub repo. Zip extracts to clone_path/owner-repo-branch/, we use that as src_path.
+# Clone GitHub repo via git. First run: shallow clone. Subsequent runs: fetch + reset.
+# Sets code_changed=true if HEAD moved (or first clone), so build.yml can skip unchanged deploys.
 
 - name: Parse repo URL for owner and repo name
   ansible.builtin.set_fact:
     repo_owner: "{{ (github_repo_url | regex_replace('\\.git$', '') | regex_replace('/$', '')).split('/')[-2] }}"
     repo_name: "{{ (github_repo_url | regex_replace('\\.git$', '') | regex_replace('/$', '')).split('/')[-1] }}"
 
-- name: Remove existing clone
+- name: Build authenticated git clone URL
+  ansible.builtin.set_fact:
+    git_clone_url: "{{ 'https://' + github_token + '@github.com/' + repo_owner + '/' + repo_name + '.git' if (github_token is defined and github_token | length > 0) else github_repo_url }}"
+
+- name: Check if repo already cloned
+  ansible.windows.win_stat:
+    path: "{{ clone_path }}\\.git"
+  register: git_dir
+
+- name: Remove leftover clone dir if not a git repo (e.g. from a failed previous clone)
   ansible.windows.win_file:
     path: "{{ clone_path }}"
     state: absent
+  when: not git_dir.stat.exists
 
-- name: Create clone directory
-  ansible.windows.win_file:
-    path: "{{ clone_path }}"
-    state: directory
-
-- name: Download repo zip (with token)
-  ansible.windows.win_get_url:
-    url: "https://github.com/{{ repo_owner }}/{{ repo_name }}/archive/refs/heads/{{ github_repo_branch }}.zip"
-    dest: "{{ ansible_env.TEMP }}\\navalarchive.zip"
-    headers: "Authorization: token {{ github_token }}"
-  when: github_token is defined and github_token | length > 0
-
-- name: Download repo zip (public)
-  ansible.windows.win_get_url:
-    url: "https://github.com/{{ repo_owner }}/{{ repo_name }}/archive/refs/heads/{{ github_repo_branch }}.zip"
-    dest: "{{ ansible_env.TEMP }}\\navalarchive.zip"
-  when: github_token is not defined or github_token | default('') | length == 0
-
-- name: Expand archive
+- name: Git clone (first run - shallow)
   ansible.windows.win_shell: |
-    Expand-Archive -Path "{{ ansible_env.TEMP }}\navalarchive.zip" -DestinationPath "{{ clone_path }}" -Force
+    $env:Path = [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User")
+    git clone "{{ git_clone_url }}" "{{ clone_path }}" --branch {{ github_repo_branch }} --depth 1
+    exit $LASTEXITCODE
   args:
     executable: powershell
+  when: not git_dir.stat.exists
 
-- name: Get extracted folder path (repo-branch)
+- name: Git fetch and detect changes (subsequent runs)
   ansible.windows.win_shell: |
-    $dir = Get-ChildItem "{{ clone_path }}" -Directory | Select-Object -First 1
-    $dir.FullName
+    $env:Path = [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User")
+    cd "{{ clone_path }}"
+    $before = git rev-parse HEAD
+    git fetch origin {{ github_repo_branch }} --depth 1
+    git reset --hard origin/{{ github_repo_branch }}
+    $after = git rev-parse HEAD
+    if ($before -ne $after) { Write-Output "changed" } else { Write-Output "unchanged" }
   args:
     executable: powershell
-  register: extracted_dir
+  register: git_pull_result
+  when: git_dir.stat.exists
 
-- name: Set src_path to extracted folder
+- name: Set code_changed fact
   ansible.builtin.set_fact:
-    src_path: "{{ extracted_dir.stdout_lines[0] | trim }}"
+    code_changed: >-
+      {{ not git_dir.stat.exists or
+         'changed' in (git_pull_result.stdout | default('changed')) }}
+
+- name: Set src_path to clone directory
+  ansible.builtin.set_fact:
+    src_path: "{{ clone_path }}"

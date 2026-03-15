@@ -1,5 +1,6 @@
 ---
-# Create deploy dirs, dotnet publish API and all services
+# Create deploy dirs, dotnet publish API and all services.
+# Skips all publish steps if code_changed=false (git HEAD unchanged since last run).
 
 - name: Create deploy directories
   ansible.windows.win_file:
@@ -35,6 +36,7 @@
   args:
     executable: powershell
   ignore_errors: true
+  when: code_changed | default(true)
 
 - name: Stop IIS chain sites/app pools before publish (avoid locked dlls)
   ansible.windows.win_shell: |
@@ -48,6 +50,7 @@
   args:
     executable: powershell
   ignore_errors: true
+  when: code_changed | default(true)
 
 - name: Clear API output (except logs)
   ansible.windows.win_shell: |
@@ -56,6 +59,7 @@
     }
   args:
     executable: powershell
+  when: code_changed | default(true)
 
 - name: Publish API
   ansible.windows.win_shell: |
@@ -68,6 +72,7 @@
     }
   args:
     executable: powershell
+  when: code_changed | default(true)
 
 - name: Publish Payment (self-contained)
   ansible.windows.win_shell: |
@@ -91,6 +96,7 @@
     }
   args:
     executable: powershell
+  when: code_changed | default(true)
 
 - name: Publish Card (self-contained)
   ansible.windows.win_shell: |
@@ -103,6 +109,7 @@
     }
   args:
     executable: powershell
+  when: code_changed | default(true)
 
 - name: Publish Cart (self-contained)
   ansible.windows.win_shell: |
@@ -115,6 +122,7 @@
     }
   args:
     executable: powershell
+  when: code_changed | default(true)
 
 - name: Deploy NavalArchive.Web (copy + npm install)
   ansible.windows.win_shell: |
@@ -133,6 +141,7 @@
     }
   args:
     executable: powershell
+  when: code_changed | default(true)
 
 - name: Deploy Go payment-service binary
   ansible.windows.win_shell: |
@@ -143,6 +152,7 @@
     }
   args:
     executable: powershell
+  when: code_changed | default(true)
 
 - name: Deploy Go account-service binary
   ansible.windows.win_shell: |
@@ -153,7 +163,7 @@
     }
   args:
     executable: powershell
-
+  when: code_changed | default(true)
 
 - name: Deploy ImagePopulator jar
   ansible.windows.win_shell: |
@@ -164,6 +174,7 @@
     }
   args:
     executable: powershell
+  when: code_changed | default(true)
 
 - name: Publish chain microservices
   ansible.windows.win_shell: |
@@ -186,3 +197,4 @@
     label: "{{ item.csproj }}"
   ignore_unreachable: true
   ignore_errors: true
+  when: code_changed | default(true)
