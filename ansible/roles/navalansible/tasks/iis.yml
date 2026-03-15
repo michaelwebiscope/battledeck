@@ -56,18 +56,29 @@
     {% for item in iis_chain_services %}
     & $appcmd start site "{{ item.site }}" 2>$null
     {% endfor %}
+  args:
+    executable: powershell
+  when: ansible_changed | default(true)
+
+# Only set ACLs on dirs that were actually rebuilt this run.
+# icacls /T is recursive and slow — skipping unchanged dirs saves significant time.
+- name: Set IIS directory permissions (icacls)
+  ansible.windows.win_shell: |
+    {% if api_changed | default(true) %}
     icacls "{{ api_path }}" /grant "IIS AppPool\NavalArchive-API:(OI)(CI)M" /T 2>$null
-    $apiAclRc = $LASTEXITCODE
+    {% endif %}
+    {% if web_changed | default(true) %}
     icacls "{{ web_path }}" /grant "IIS AppPool\DefaultAppPool:(OI)(CI)RX" /T 2>$null
-    $webAclRc = $LASTEXITCODE
+    {% endif %}
+    {% if chain_changed | default(true) %}
     {% for item in iis_chain_services %}
     icacls "{{ chain_paths[item.path_key] }}" /grant "IIS AppPool\{{ item.apppool }}:(OI)(CI)M" /T 2>$null
     {% endfor %}
-    if ($apiAclRc -ne 0 -or $webAclRc -ne 0) {
-      Write-Host "Warning: icacls returned non-zero (api=$apiAclRc, web=$webAclRc). Continuing."
-    }
+    {% endif %}
+    exit 0
   args:
     executable: powershell
+  when: api_changed | default(true) or web_changed | default(true) or chain_changed | default(true)
 
 - name: Add HTTPS binding to NavalArchive-Web
   ansible.windows.win_shell: |
@@ -85,6 +96,7 @@
   args:
     executable: powershell
   failed_when: false
+  when: ansible_changed | default(true)
 
 - name: IIS reset
   ansible.windows.win_shell: |
@@ -100,3 +112,4 @@
   args:
     executable: powershell
   failed_when: false
+  when: code_changed | default(true)

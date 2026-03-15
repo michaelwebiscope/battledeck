@@ -36,7 +36,7 @@
   args:
     executable: powershell
   ignore_errors: true
-  when: code_changed | default(true)
+  when: api_changed | default(true)
 
 - name: Stop IIS chain sites/app pools before publish (avoid locked dlls)
   ansible.windows.win_shell: |
@@ -50,7 +50,7 @@
   args:
     executable: powershell
   ignore_errors: true
-  when: code_changed | default(true)
+  when: chain_changed | default(true)
 
 - name: Clear API output (except logs)
   ansible.windows.win_shell: |
@@ -59,7 +59,7 @@
     }
   args:
     executable: powershell
-  when: code_changed | default(true)
+  when: api_changed | default(true)
 
 - name: Publish API
   ansible.windows.win_shell: |
@@ -72,7 +72,7 @@
     }
   args:
     executable: powershell
-  when: code_changed | default(true)
+  when: api_changed | default(true)
 
 - name: Publish Payment (self-contained)
   ansible.windows.win_shell: |
@@ -96,7 +96,7 @@
     }
   args:
     executable: powershell
-  when: code_changed | default(true)
+  when: payment_sim_changed | default(true)
 
 - name: Publish Card (self-contained)
   ansible.windows.win_shell: |
@@ -109,7 +109,7 @@
     }
   args:
     executable: powershell
-  when: code_changed | default(true)
+  when: card_changed | default(true)
 
 - name: Publish Cart (self-contained)
   ansible.windows.win_shell: |
@@ -122,7 +122,7 @@
     }
   args:
     executable: powershell
-  when: code_changed | default(true)
+  when: cart_changed | default(true)
 
 - name: Deploy NavalArchive.Web (copy + npm install)
   ansible.windows.win_shell: |
@@ -141,7 +141,7 @@
     }
   args:
     executable: powershell
-  when: code_changed | default(true)
+  when: web_changed | default(true)
 
 - name: Deploy Go payment-service binary
   ansible.windows.win_shell: |
@@ -152,7 +152,7 @@
     }
   args:
     executable: powershell
-  when: code_changed | default(true)
+  when: go_payment_changed | default(true)
 
 # Write PS1 here (not only in services.yml) so it survives when services.yml is skipped (-skip-services).
 # build.yml wipes payment_path during .NET PaymentSimulation publish, destroying the old PS1.
@@ -172,7 +172,7 @@
       Set-Location '{{ payment_path }}'
       & '{{ payment_path }}\payment-service.exe'
     dest: "{{ payment_path }}\\run-payment-service.ps1"
-  when: code_changed | default(true)
+  when: go_payment_changed | default(true)
 
 - name: Deploy Go account-service binary
   ansible.windows.win_shell: |
@@ -183,7 +183,7 @@
     }
   args:
     executable: powershell
-  when: code_changed | default(true)
+  when: go_account_changed | default(true)
 
 - name: Deploy ImagePopulator jar
   ansible.windows.win_shell: |
@@ -194,7 +194,7 @@
     }
   args:
     executable: powershell
-  when: code_changed | default(true)
+  when: image_populator_changed | default(true)
 
 - name: Publish chain microservices
   ansible.windows.win_shell: |
@@ -217,4 +217,4 @@
     label: "{{ item.csproj }}"
   ignore_unreachable: true
   ignore_errors: true
-  when: code_changed | default(true)
+  when: chain_changed | default(true)
