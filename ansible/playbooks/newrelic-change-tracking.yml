@@ -1,0 +1,61 @@
+---
+# Standalone playbook — called manually or from deploy scripts when code actually changes.
+# NOT imported by newrelic.yml / newrelic-app.yml (NR config runs != code deploys).
+- name: New Relic - record deployment (change tracking)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    nr_entity_search_query: >-
+      accountId = '{{ newrelic_account_id | default('7534908') }}'
+      AND type = 'APPLICATION' AND name LIKE 'NavalArchive%'
+  tasks:
+    - name: Skip if no API key
+      ansible.builtin.meta: end_play
+      when: newrelic_api_key is not defined or newrelic_api_key | length == 0
+
+    - name: Get current git SHA
+      ansible.builtin.command: git rev-parse --short HEAD
+      register: git_sha
+      changed_when: false
+
+    - name: Get current git branch
+      ansible.builtin.command: git rev-parse --abbrev-ref HEAD
+      register: git_branch
+      changed_when: false
+
+    - name: Query NavalArchive entity GUIDs
+      ansible.builtin.uri:
+        url: https://api.newrelic.com/graphql
+        method: POST
+        headers:
+          API-Key: "{{ newrelic_api_key }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          query: >
+            { actor { entitySearch(query: "{{ nr_entity_search_query }}") {
+            results { entities { guid name } } } } }
+      register: entity_search
+
+    - name: Create deployment marker for each entity
+      ansible.builtin.uri:
+        url: https://api.newrelic.com/graphql
+        method: POST
+        headers:
+          API-Key: "{{ newrelic_api_key }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          query: >
+            mutation { changeTrackingCreateDeployment(deployment: {
+            entityGuid: "{{ item.guid }}", version: "{{ git_sha.stdout | trim }}",
+            description: "Ansible deploy ({{ git_branch.stdout | trim }})",
+            user: "ansible", deploymentType: BASIC }) { deploymentId } }
+        status_code:
+          - 200
+      loop: "{{ entity_search.json.data.actor.entitySearch.results.entities }}"
+      loop_control:
+        label: "{{ item.name }}"
+      changed_when: true
+      failed_when: false

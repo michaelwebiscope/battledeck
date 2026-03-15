@@ -1,0 +1,32 @@
+name: NR Change Tracking
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  change-tracking:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Query NavalArchive entity GUIDs
+        id: entities
+        run: |
+          RESPONSE=$(curl -s -X POST https://api.newrelic.com/graphql \
+            -H "API-Key: ${{ secrets.NR_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"query\": \"{ actor { entitySearch(query: \\\"accountId = '${{ secrets.NR_ACCOUNT_ID }}' AND type = 'APPLICATION' AND name LIKE 'NavalArchive%'\\\") { results { entities { guid name } } } } }\" }")
+          echo "response=$RESPONSE" >> $GITHUB_OUTPUT
+
+      - name: Create deployment markers
+        run: |
+          ENTITIES=$(echo '${{ steps.entities.outputs.response }}' | \
+            jq -r '.data.actor.entitySearch.results.entities[] | .guid + ":" + .name')
+          for ENTRY in $ENTITIES; do
+            GUID="${ENTRY%%:*}"
+            NAME="${ENTRY##*:}"
+            echo "Marking $NAME ($GUID)"
+            curl -s -X POST https://api.newrelic.com/graphql \
+              -H "API-Key: ${{ secrets.NR_API_KEY }}" \
+              -H "Content-Type: application/json" \
+              -d "{\"query\": \"mutation { changeTrackingCreateDeployment(deployment: { entityGuid: \\\"$GUID\\\", version: \\\"${{ github.sha }}\\\", description: \\\"Push to main by ${{ github.actor }}\\\", user: \\\"${{ github.actor }}\\\", deploymentType: BASIC }) { deploymentId } }\" }"
+          done
