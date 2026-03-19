@@ -225,8 +225,12 @@
       "OTEL_EXPORTER_OTLP_PROTOCOL={{ otel_exporter_otlp_protocol }}",
       "OTEL_EXPORTER_OTLP_HEADERS=api-key={{ newrelic_license_key }}",
       "OTEL_TRACES_EXPORTER=otlp",
+      "OTEL_METRICS_EXPORTER=otlp",
+      "OTEL_LOGS_EXPORTER=otlp",
       "OTEL_RESOURCE_ATTRIBUTES=service.name=NavalArchiveCard,service.namespace=NavalArchive,deployment.environment=prod",
       "OTEL_DOTNET_AUTO_TRACES_ENABLED=true",
+      "OTEL_DOTNET_AUTO_METRICS_ENABLED=true",
+      "OTEL_DOTNET_AUTO_LOGS_ENABLED=true",
       "CORECLR_ENABLE_PROFILING=1",
       "CORECLR_PROFILER={918728DD-259F-4A6A-AC2B-B85E1B658318}",
       "CORECLR_PROFILER_PATH_64={{ otel_dotnet_auto_home }}\win-x64\OpenTelemetry.AutoInstrumentation.Native.dll",
@@ -255,8 +259,12 @@
       "OTEL_EXPORTER_OTLP_PROTOCOL={{ otel_exporter_otlp_protocol }}",
       "OTEL_EXPORTER_OTLP_HEADERS=api-key={{ newrelic_license_key }}",
       "OTEL_TRACES_EXPORTER=otlp",
+      "OTEL_METRICS_EXPORTER=otlp",
+      "OTEL_LOGS_EXPORTER=otlp",
       "OTEL_RESOURCE_ATTRIBUTES=service.name=NavalArchiveCart,service.namespace=NavalArchive,deployment.environment=prod",
       "OTEL_DOTNET_AUTO_TRACES_ENABLED=true",
+      "OTEL_DOTNET_AUTO_METRICS_ENABLED=true",
+      "OTEL_DOTNET_AUTO_LOGS_ENABLED=true",
       "CORECLR_ENABLE_PROFILING=1",
       "CORECLR_PROFILER={918728DD-259F-4A6A-AC2B-B85E1B658318}",
       "CORECLR_PROFILER_PATH_64={{ otel_dotnet_auto_home }}\win-x64\OpenTelemetry.AutoInstrumentation.Native.dll",
@@ -299,13 +307,7 @@
         "DOTNET_SHARED_STORE={{ otel_dotnet_auto_home }}\store",
         "DOTNET_STARTUP_HOOKS={{ otel_dotnet_auto_home }}\net\OpenTelemetry.AutoInstrumentation.StartupHook.dll"
       )
-      if ($svc -eq "NavalArchiveOrder") {
-        $envVars += @(
-          "OTEL_TRACES_EXPORTER=otlp",
-          "OTEL_RESOURCE_ATTRIBUTES=service.name=NavalArchiveOrder,service.namespace=NavalArchive,deployment.environment=prod",
-          "OTEL_DOTNET_AUTO_TRACES_ENABLED=true"
-        ) + $commonAuto
-      } elseif ($svc -eq "NavalArchivePaymentChain" -or $svc -eq "NavalArchiveShipping" -or $svc -eq "NavalArchiveNotification") {
+      if ($svc -eq "NavalArchiveOrder" -or $svc -eq "NavalArchivePaymentChain" -or $svc -eq "NavalArchiveShipping" -or $svc -eq "NavalArchiveNotification") {
         $envVars += @(
           "OTEL_TRACES_EXPORTER=otlp",
           "OTEL_METRICS_EXPORTER=otlp",
