@@ -251,6 +251,22 @@ app.UseSwagger();
 app.UseSwaggerUI();
 app.UseCors();
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "api" }));
+
+// /api/health: deeper check that verifies DB connectivity (used by verify.yml, Node proxy, external monitors)
+app.MapGet("api/health", async (NavalArchiveDbContext db) =>
+{
+    try
+    {
+        var canConnect = await db.Database.CanConnectAsync();
+        var shipCount = canConnect ? await db.Ships.CountAsync() : -1;
+        return Results.Ok(new { status = "ok", service = "api", db = canConnect ? "connected" : "unreachable", shipCount });
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new { status = "error", service = "api", db = "error", error = ex.Message }, statusCode: 503);
+    }
+});
+
 app.MapControllers();
 
 // Trace page (served when /trace goes through API)

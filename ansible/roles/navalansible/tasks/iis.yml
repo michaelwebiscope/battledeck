@@ -1,6 +1,23 @@
 ---
 # Configure IIS: app pool, sites, bindings, cert, proxy
 
+# Remove NR .NET profiler env vars from W3SVC and machine level.
+# The NR .NET agent installer (apm-dotnet) sets CORECLR_ENABLE_PROFILING=1
+# machine-wide and on W3SVC, which crashes all IIS-hosted .NET apps if the
+# 64-bit profiler DLL is missing. Chain services use OTEL instead.
+- name: Remove NR .NET profiler vars from W3SVC and machine (prevents 500.30)
+  ansible.windows.win_shell: |
+    # W3SVC service registry
+    Remove-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\W3SVC" -Name "Environment" -Force -ErrorAction SilentlyContinue
+    # Machine-level env vars
+    foreach ($v in @("COR_ENABLE_PROFILING","COR_PROFILER","COR_PROFILER_PATH_32","COR_PROFILER_PATH_64","CORECLR_ENABLE_PROFILING","CORECLR_PROFILER","CORECLR_PROFILER_PATH_32","CORECLR_PROFILER_PATH_64","CORECLR_NEWRELIC_HOME","NEWRELIC_INSTALL_PATH")) {
+      [Environment]::SetEnvironmentVariable($v,$null,"Machine")
+    }
+    exit 0
+  args:
+    executable: powershell
+  failed_when: false
+
 - name: Enable IIS proxy
   ansible.windows.win_shell: |
     Import-Module WebAdministration -ErrorAction SilentlyContinue

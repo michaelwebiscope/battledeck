@@ -10,16 +10,38 @@
     executable: powershell
   failed_when: false
 
-- name: Wait for API to be ready
+- name: Wait for API /health (lightweight, no DB)
   ansible.windows.win_uri:
-    url: http://localhost:5000/trace
+    url: http://localhost:5000/health
     method: GET
     status_code: 200
     timeout: 5
-  register: api_check
-  until: api_check.status_code | default(0) == 200
+  register: api_health
+  until: api_health.status_code | default(0) == 200
   retries: 12
   delay: 5
+  ignore_errors: true
+
+- name: Check API /api/health (DB connectivity)
+  ansible.windows.win_uri:
+    url: http://localhost:5000/api/health
+    method: GET
+    status_code: 200
+    timeout: 10
+    return_content: true
+  register: api_db_check
+  retries: 6
+  delay: 5
+  until: api_db_check.status_code | default(0) == 200
+  ignore_errors: true
+
+- name: Check API /api/ships (data endpoint)
+  ansible.windows.win_uri:
+    url: http://localhost:5000/api/ships?page=1&pageSize=1
+    method: GET
+    status_code: 200
+    timeout: 10
+  register: api_ships_check
   ignore_errors: true
 
 - name: Wait for Node to respond (retry up to 12 times, 5s apart = 60s max)
@@ -44,6 +66,17 @@
 - name: Report status
   ansible.builtin.debug:
     msg: >-
-      API: {{ 'OK' if api_check.status_code | default(0) == 200 else 'Check manually' }} |
+      API health: {{ 'OK' if api_health.status_code | default(0) == 200 else 'FAIL' }} |
+      API DB: {{ 'OK' if api_db_check.status_code | default(0) == 200 else 'FAIL - check C:\inetpub\navalarchive-api\logs\stdout*.log' }} |
+      API /api/ships: {{ 'OK' if api_ships_check.status_code | default(0) == 200 else 'FAIL (' + (api_ships_check.status_code | default('N/A') | string) + ')' }} |
       Web: {{ 'OK' if web_check.status_code | default(0) == 200 else 'Check manually' }} |
-      ImagePopulator listener: {{ 'OK' if populator_check.status_code | default(0) == 200 else 'Check manually' }}
+      ImagePopulator: {{ 'OK' if populator_check.status_code | default(0) == 200 else 'Check manually' }}
+
+- name: Warn if API DB check failed
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: API database connectivity check failed.
+      Check stdout logs at C:\inetpub\navalarchive-api\logs\stdout*.log for exceptions.
+      Common causes: DB file permissions, locked DB, or schema migration error.
+      Response: {{ api_db_check.content | default('no response') }}
+  when: api_db_check.status_code | default(0) != 200

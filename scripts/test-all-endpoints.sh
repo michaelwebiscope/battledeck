@@ -48,7 +48,18 @@ test_get_no_session() {
 echo ""
 echo "=== Public (no session) ==="
 code=$(curl -sk -o /tmp/out -w "%{http_code}" "$BASE/health")
-[ "$code" = "200" ] && pass "GET /health" || fail "GET /health" "got $code"
+[ "$code" = "200" ] && pass "GET /health (Node)" || fail "GET /health (Node)" "got $code"
+
+# /api/health checks DB connectivity - public, no session needed
+code=$(curl -sk -o /tmp/out -w "%{http_code}" "$BASE/api/health")
+if [ "$code" = "200" ]; then
+  pass "GET /api/health (API+DB)"
+  cat /tmp/out | python3 -m json.tool 2>/dev/null || cat /tmp/out
+  echo ""
+else
+  fail "GET /api/health" "got $code - DB may be unreachable"
+  cat /tmp/out 2>/dev/null; echo ""
+fi
 
 echo ""
 echo "=== Session required (401 without cookie) ==="

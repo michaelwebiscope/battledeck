@@ -52,10 +52,10 @@
   ignore_errors: true
   when: chain_changed | default(true)
 
-- name: Clear API output (except logs)
+- name: Clear API output (except logs and DB files)
   ansible.windows.win_shell: |
     if (Test-Path "{{ api_path }}") {
-      Get-ChildItem "{{ api_path }}" -Exclude logs | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+      Get-ChildItem "{{ api_path }}" -Exclude logs, "*.db", "*.db-shm", "*.db-wal" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
     }
   args:
     executable: powershell

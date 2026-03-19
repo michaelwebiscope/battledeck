@@ -49,7 +49,8 @@ public class SessionGateMiddleware
         }
 
         var path = context.Request.Path.Value ?? "";
-        var isPublic = path.Equals("/health", StringComparison.OrdinalIgnoreCase);
+        var isPublic = path.Equals("/health", StringComparison.OrdinalIgnoreCase) ||
+                       path.Equals("/api/health", StringComparison.OrdinalIgnoreCase);
 
         if (isPublic)
         {

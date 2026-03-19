@@ -25,7 +25,7 @@ try {
 
 # 3. API (5000)
 Write-Host "`n--- API (localhost:5000) ---" -ForegroundColor Yellow
-$apiEndpoints = @("/trace", "/api/trace", "/api/ships", "/swagger/index.html", "/health")
+$apiEndpoints = @("/health", "/api/health", "/api/trace", "/api/ships", "/api/stats", "/swagger/index.html")
 foreach ($ep in $apiEndpoints) {
     try {
         $r = Invoke-WebRequest -Uri "http://localhost:5000$ep" -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
