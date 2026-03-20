@@ -5,7 +5,7 @@
   environment:
     NEW_RELIC_API_KEY: "{{ newrelic_api_key }}"
     NEW_RELIC_ACCOUNT_ID: "{{ newrelic_account_id | default('7534908') }}"
-    NEW_RELIC_REGION: "{{ newrelic_region | default('US') }}"
+    NEW_RELIC_REGION: "{{ newrelic_region | default('EU') }}"
   tasks:
     # Skip the slow NR CLI install if agents are already present
     - name: Check if NR agents are already installed

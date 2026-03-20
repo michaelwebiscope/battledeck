@@ -54,8 +54,9 @@ iis_hosted_service_names:
   - NavalArchiveBasket
 
 # OpenTelemetry (.NET auto-instrumentation) defaults for non-IIS services
-# Send OTLP directly to New Relic (US region); requires api-key header via OTEL_EXPORTER_OTLP_HEADERS
-otel_exporter_otlp_endpoint: https://otlp.nr-data.net
+# Send OTLP directly to New Relic; requires api-key header via OTEL_EXPORTER_OTLP_HEADERS
+# US: https://otlp.nr-data.net | EU: https://otlp.eu01.nr-data.net
+otel_exporter_otlp_endpoint: https://otlp.eu01.nr-data.net
 otel_exporter_otlp_protocol: http/protobuf
 otel_dotnet_auto_home: C:\Program Files\OpenTelemetry .NET AutoInstrumentation
 # Pin to v1.9.0 — last release using DiagnosticSource 8.x (compatible with self-contained .NET 8 apps)
