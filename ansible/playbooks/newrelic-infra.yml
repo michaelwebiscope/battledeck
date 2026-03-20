@@ -7,12 +7,39 @@
       - infrastructure
       - logs
       - apm-dotnet
-    install_timeout_seconds: 1800
+    # 5 min timeout (install takes 2-3 min normally; 30 min was way too long)
+    install_timeout_seconds: 300
   environment:
     NEW_RELIC_API_KEY: "{{ newrelic_api_key }}"
     NEW_RELIC_ACCOUNT_ID: "{{ newrelic_account_id | default('7534908') }}"
     NEW_RELIC_REGION: "{{ newrelic_region | default('US') }}"
   tasks:
+    # Skip the slow NR CLI install if agents are already present
+    - name: Check if NR agents are already installed
+      ansible.windows.win_shell: |
+        $infra = Test-Path "C:\Program Files\New Relic\New Relic CLI\newrelic.exe"
+        $dotnet = Test-Path "C:\Program Files\New Relic\.NET Agent\netcore\NewRelic.Agent.Core.dll"
+        if ($infra -and $dotnet) { "installed" } else { "missing" }
+      args:
+        executable: powershell
+      register: nr_check
+      changed_when: false
+
+    - name: Report NR agent status
+      ansible.builtin.debug:
+        msg: "NR agents: {{ nr_check.stdout | trim }}{{ ' — skipping install (use -e force_nr_install=true to reinstall)' if nr_check.stdout | trim == 'installed' and not (force_nr_install | default(false) | bool) else '' }}"
+
     - name: Install infrastructure, logs, and .NET APM agent
       ansible.builtin.include_role:
         name: newrelic.newrelic_install
+      when: nr_check.stdout | trim != 'installed' or (force_nr_install | default(false) | bool)
+      ignore_errors: true
+      register: nr_install_result
+
+    - name: Report NR install result
+      ansible.builtin.debug:
+        msg: >-
+          NR install: {{ 'skipped (already installed)'
+            if nr_check.stdout | trim == 'installed' and not (force_nr_install | default(false) | bool)
+            else ('completed' if not (nr_install_result.failed | default(false)) else 'FAILED — check VM logs at C:\ProgramData\New Relic\newrelic-cli\newrelic-cli.log') }}
+      when: true
