@@ -10,21 +10,32 @@
         if (Test-Path $regPath) {
           $current = (Get-ItemProperty -Path $regPath -Name "Environment" -ErrorAction SilentlyContinue).Environment
           if ($current) {
-            $updated = @($current | Where-Object { $_ -notlike "OTEL_EXPORTER_OTLP_HEADERS=*" })
+            $updated = @($current | Where-Object { $_ -notlike "OTEL_EXPORTER_OTLP_HEADERS=*" -and $_ -notlike "OTEL_EXPORTER_OTLP_ENDPOINT=*" })
             $updated += "OTEL_EXPORTER_OTLP_HEADERS=api-key={{ newrelic_license_key }}"
+            $updated += "OTEL_EXPORTER_OTLP_ENDPOINT={{ otel_exporter_otlp_endpoint | default('https://otlp.eu01.nr-data.net') }}"
             Set-ItemProperty -Path $regPath -Name "Environment" -Value $updated -Type MultiString -Force
             sc.exe stop $svc 2>$null
+            # Wait up to 30s for service to fully stop (STOP_PENDING can take time)
             $waited = 0
-            while ($waited -lt 10) {
+            while ($waited -lt 30) {
               $state = (Get-Service -Name $svc -ErrorAction SilentlyContinue).Status
-              if ($state -eq 'Stopped') { break }
+              if ($state -eq 'Stopped' -or $state -eq $null) { break }
               Start-Sleep -Seconds 1; $waited++
+            }
+            # Force-kill if still running
+            if ((Get-Service -Name $svc -ErrorAction SilentlyContinue).Status -ne 'Stopped') {
+              $proc = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like "*$svc*" -or $_.CommandLine -like "*{{ item }}*" }
+              if ($proc) { Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue }
+              Start-Sleep -Seconds 2
             }
             sc.exe start $svc
           }
         }
       args:
         executable: powershell
+      async: 60
+      poll: 5
+      failed_when: false
       loop:
         - NavalArchiveCard
         - NavalArchiveCart
