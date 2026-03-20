@@ -8,6 +8,8 @@
     sc.exe start NavalArchiveWeb 2>$null
   args:
     executable: powershell
+  async: 60
+  poll: 5
   failed_when: false
 
 - name: Wait for API /health (lightweight, no DB)

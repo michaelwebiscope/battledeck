@@ -1,5 +1,6 @@
 ---
 # Create and start Windows services (sc.exe for custom binPath with args)
+# All service creation tasks have async timeouts to prevent deploy hangs.
 
 - name: Create NavalArchiveWeb service (Node) - use 8.3 path to avoid sc.exe quoting
   ansible.windows.win_shell: |
@@ -29,6 +30,8 @@
     sc.exe start NavalArchiveWeb
   args:
     executable: powershell
+  async: 120
+  poll: 5
   failed_when: false
 
 - name: Ensure New Relic Java agent directory exists (for ImagePopulator service)
@@ -108,6 +111,8 @@
     Start-ScheduledTask -TaskName $taskName
   args:
     executable: powershell
+  async: 60
+  poll: 5
 
 - name: Wait for ImagePopulator listener to be healthy
   ansible.windows.win_uri:
@@ -165,6 +170,8 @@
     Start-ScheduledTask -TaskName $taskName
   args:
     executable: powershell
+  async: 60
+  poll: 5
 
 - name: Wait for account-service to be healthy
   ansible.windows.win_uri:
@@ -211,6 +218,8 @@
     Start-ScheduledTask -TaskName $taskName
   args:
     executable: powershell
+  async: 60
+  poll: 5
 
 - name: Create NavalArchiveCard service
   ansible.windows.win_shell: |
@@ -245,6 +254,8 @@
     sc.exe start NavalArchiveCard
   args:
     executable: powershell
+  async: 60
+  poll: 5
 
 - name: Create NavalArchiveCart service
   ansible.windows.win_shell: |
@@ -279,6 +290,8 @@
     sc.exe start NavalArchiveCart
   args:
     executable: powershell
+  async: 60
+  poll: 5
 
 - name: Create chain microservice
   ansible.windows.win_shell: |
@@ -323,6 +336,8 @@
     }
   args:
     executable: powershell
+  async: 60
+  poll: 5
   loop: "{{ chain_services }}"
   loop_control:
     label: "{{ item.svc }}"

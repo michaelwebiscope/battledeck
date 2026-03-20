@@ -1,5 +1,6 @@
 ---
 # Configure IIS: app pool, sites, bindings, cert, proxy
+# All win_shell tasks have async timeouts to prevent deploy hangs.
 
 # Remove NR .NET profiler env vars from W3SVC and machine level.
 # The NR .NET agent installer (apm-dotnet) sets CORECLR_ENABLE_PROFILING=1
@@ -16,6 +17,8 @@
     exit 0
   args:
     executable: powershell
+  async: 30
+  poll: 5
   failed_when: false
 
 - name: Enable IIS proxy
@@ -24,6 +27,8 @@
     Set-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST' -filter "system.webServer/proxy" -name "enabled" -value "True" -ErrorAction SilentlyContinue
   args:
     executable: powershell
+  async: 30
+  poll: 5
 
 - name: Create NavalArchive HTTPS cert if not exists
   ansible.windows.win_shell: |
@@ -33,6 +38,8 @@
     }
   args:
     executable: powershell
+  async: 30
+  poll: 5
 
 - name: Get cert thumbprint
   ansible.windows.win_shell: |
@@ -40,6 +47,8 @@
   args:
     executable: powershell
   register: thumbprint_out
+  async: 15
+  poll: 5
 
 - name: Set cert thumbprint fact
   ansible.builtin.set_fact:
@@ -71,6 +80,8 @@
     exit 0
   args:
     executable: powershell
+  async: 60
+  poll: 5
   when: ansible_changed | default(true)
 
 # Only set ACLs on dirs that were actually rebuilt this run.
@@ -91,6 +102,8 @@
     exit 0
   args:
     executable: powershell
+  async: 120
+  poll: 5
   when: api_changed | default(true) or web_changed | default(true) or chain_changed | default(true)
 
 - name: Add HTTPS binding to NavalArchive-Web
@@ -108,6 +121,8 @@
     }
   args:
     executable: powershell
+  async: 30
+  poll: 5
   failed_when: false
   when: ansible_changed | default(true)
 
@@ -124,5 +139,7 @@
     exit 0
   args:
     executable: powershell
+  async: 60
+  poll: 5
   failed_when: false
   when: code_changed | default(true)

@@ -15,6 +15,8 @@
     }
   args:
     executable: powershell
+  async: 120
+  poll: 5
   failed_when: false
 
 - name: Stop Go scheduled tasks before killing processes
@@ -25,6 +27,8 @@
     Start-Sleep -Seconds 2
   args:
     executable: powershell
+  async: 60
+  poll: 5
   failed_when: false
 
 - name: Kill navalarchive and dotnet processes
@@ -51,6 +55,8 @@
     taskkill /F /IM NavalArchive.Notification.exe 2>$null
   args:
     executable: powershell
+  async: 60
+  poll: 5
   failed_when: false
 
 - name: Pause for processes to exit

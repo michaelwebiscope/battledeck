@@ -30,12 +30,16 @@
     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
   args:
     executable: powershell
+  async: 30
+  poll: 5
 
 - name: Run NavalArchiveWeb-Node task now (start Node)
   ansible.windows.win_shell: |
     Start-ScheduledTask -TaskName "NavalArchiveWeb-Node" -ErrorAction SilentlyContinue
   args:
     executable: powershell
+  async: 15
+  poll: 5
 
 - name: Copy scripts from repo to inetpub
   ansible.windows.win_shell: |
@@ -46,6 +50,8 @@
     }
   args:
     executable: powershell
+  async: 30
+  poll: 5
 
 - name: Create NavalArchive-StartServices scheduled task
   ansible.windows.win_shell: |
@@ -58,6 +64,8 @@
     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
   args:
     executable: powershell
+  async: 30
+  poll: 5
 
 - name: Create NavalArchive-HealthCheck scheduled task (every 2 minutes)
   ansible.windows.win_shell: |
@@ -70,3 +78,5 @@
     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
   args:
     executable: powershell
+  async: 30
+  poll: 5
