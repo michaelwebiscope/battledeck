@@ -1,5 +1,6 @@
 ---
 # Stop and remove Naval Archive services, kill processes
+# Uses ignore_unreachable on all tasks to survive WinRM drops.
 
 - name: Stop and remove Naval Archive services
   ansible.windows.win_shell: |
@@ -18,6 +19,7 @@
   async: 120
   poll: 5
   failed_when: false
+  ignore_unreachable: true
 
 - name: Stop Go scheduled tasks before killing processes
   ansible.windows.win_shell: |
@@ -30,16 +32,25 @@
   async: 60
   poll: 5
   failed_when: false
+  ignore_unreachable: true
 
-- name: Kill navalarchive and dotnet processes
+- name: Stop IIS API site and kill processes (release file locks for build)
   ansible.windows.win_shell: |
-    # Stop IIS first to release file locks on NavalArchive.Api directory
-    iisreset /stop 2>$null
-    taskkill /F /IM w3wp.exe 2>$null
+    $appcmd = if (Test-Path "$env:windir\SysNative\inetsrv\appcmd.exe") { "$env:windir\SysNative\inetsrv\appcmd.exe" } else { "$env:windir\System32\inetsrv\appcmd.exe" }
+    # Only stop the API site/pool — keep W3SVC running so WinRM stays responsive
+    if (Test-Path $appcmd) {
+      & $appcmd stop site NavalArchive-API 2>$null
+      & $appcmd stop apppool NavalArchive-API 2>$null
+      {% for item in iis_chain_services %}
+      & $appcmd stop site "{{ item.site }}" 2>$null
+      & $appcmd stop apppool "{{ item.apppool }}" 2>$null
+      {% endfor %}
+    }
+    Start-Sleep -Seconds 2
+    # Kill processes that may hold file locks
     taskkill /F /IM node.exe 2>$null
     Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like "*navalarchive*" -or $_.CommandLine -like "*image-populator*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
     taskkill /F /IM java.exe 2>$null
-    taskkill /F /IM dotnet.exe 2>$null
     taskkill /F /IM NavalArchive.PaymentSimulation.exe 2>$null
     taskkill /F /IM NavalArchive.CardService.exe 2>$null
     taskkill /F /IM NavalArchive.CartService.exe 2>$null
@@ -58,7 +69,8 @@
   async: 60
   poll: 5
   failed_when: false
+  ignore_unreachable: true
 
 - name: Pause for processes to exit
   ansible.builtin.pause:
-    seconds: 15
+    seconds: 10

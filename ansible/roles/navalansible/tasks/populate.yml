@@ -1,6 +1,7 @@
 ---
 # Run ImagePopulator (Java) to fetch ship images from Wikipedia and upload to API
 # Requires: Java 17 (Corretto or Adoptium), API running on localhost:5000
+# All tasks use ignore_unreachable to prevent WinRM timeouts from killing the deploy.
 
 - name: Get src_path from clone (for populate-only runs)
   ansible.windows.win_shell: |
@@ -18,19 +19,22 @@
 
 - name: Ensure IIS and NavalArchive-API site are started
   ansible.windows.win_shell: |
-    $svc = Get-Service -Name W3SVC -ErrorAction SilentlyContinue
-    if ($svc -and $svc.Status -ne 'Running') {
-      Start-Service W3SVC -ErrorAction SilentlyContinue
-      Start-Sleep -Seconds 5
-    }
+    # Full IIS restart to pick up any env var / config changes
+    iisreset /restart 2>$null
+    Start-Sleep -Seconds 5
     $appcmd = if (Test-Path "$env:windir\SysNative\inetsrv\appcmd.exe") { "$env:windir\SysNative\inetsrv\appcmd.exe" } else { "$env:windir\System32\inetsrv\appcmd.exe" }
     if (Test-Path $appcmd) {
       & $appcmd start apppool NavalArchive-API 2>$null
       & $appcmd start site NavalArchive-API 2>$null
+      & $appcmd stop site "Default Web Site" 2>$null
     }
     exit 0
   args:
     executable: powershell
+  async: 60
+  poll: 5
+  ignore_unreachable: true
+  failed_when: false
 
 - name: Wait for API to be ready (ImagePopulator needs it)
   ansible.windows.win_uri:
@@ -39,8 +43,9 @@
     timeout: 5
   register: api_ready
   until: api_ready.status_code | default(0) == 200
-  retries: 36
+  retries: 24
   delay: 5
+  ignore_unreachable: true
   failed_when: false
 
 - name: Find ImagePopulator jar in clone
@@ -50,6 +55,7 @@
   args:
     executable: powershell
   register: jar_result
+  ignore_unreachable: true
 
 - name: Find Java 17 (Corretto or Adoptium)
   ansible.windows.win_shell: |
@@ -67,6 +73,7 @@
   args:
     executable: powershell
   register: java_result
+  ignore_unreachable: true
 
 - name: Ensure New Relic Java agent directory exists
   ansible.windows.win_file:
@@ -106,7 +113,7 @@
     executable: powershell
   when:
     - run_image_populator | default(false)
-    - jar_result.stdout | trim | length > 0
+    - jar_result.stdout | default('') | trim | length > 0
   failed_when: false
   register: populate_result
 
@@ -114,5 +121,5 @@
   ansible.builtin.debug:
     msg: >-
       ImagePopulator:
-      {{ 'Ran with New Relic Java agent' if (run_image_populator | default(false)) and (jar_result.stdout | trim | length > 0) else 'Skipped' }}
-  when: jar_result.stdout | trim | length > 0
+      {{ 'Ran with New Relic Java agent' if (run_image_populator | default(false)) and (jar_result.stdout | default('') | trim | length > 0) else 'Skipped' }}
+  when: jar_result.stdout | default('') | trim | length > 0

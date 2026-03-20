@@ -462,13 +462,24 @@ Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like "*navalarchi
 
 ### WinRM timeout during deploy
 
-Long-running `dotnet publish` (especially Catalog — 15+ min on cold build) can exceed WinRM timeouts.
+WinRM can drop mid-deploy if the VM is under heavy load (IIS restarting, all services starting, dotnet publish). When this happens, all tasks after the dropped one never run — services stay dead.
+
+**Prevention (applied):**
+- All `win_shell` tasks have `ignore_unreachable: true` — WinRM drops don't kill the play
+- `stop_services.yml` no longer runs `iisreset /stop` (which killed W3SVC and made the VM sluggish) — instead stops individual IIS sites/pools while keeping W3SVC alive
+- `populate.yml` does `iisreset /restart` to bring everything back up cleanly
+- All health-check tasks (`win_uri`) have `ignore_unreachable: true`
+- Deploy script tolerates exit code 4 (unreachable) and continues to NR playbook
 
 **Current settings** (`ansible/inventory.yml`):
 - `ansible_winrm_operation_timeout_sec: 600`
 - `ansible_winrm_read_timeout_sec: 1200`
 
-**If still timing out:** The deploy script (`run_ansible()`) tolerates exit code 4 (unreachable). The task that timed out may have completed on the VM even though Ansible reported failure. Re-run the deploy — incremental runs skip completed steps.
+**If the deploy still fails with UNREACHABLE:** The VM services are likely already running (the task completed on the VM even though Ansible lost the connection). Just re-run — incremental deploys skip unchanged steps. Or restart services manually:
+```powershell
+& C:\inetpub\start-all-services.ps1
+iisreset /restart
+```
 
 ---
 

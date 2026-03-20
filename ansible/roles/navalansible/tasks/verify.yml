@@ -1,5 +1,6 @@
 ---
 # Verify API and Web are responding
+# All tasks use ignore_unreachable so WinRM drops don't kill the deploy.
 
 - name: Restart NavalArchiveWeb (may timeout - Node slow to start)
   ansible.windows.win_shell: |
@@ -11,6 +12,7 @@
   async: 60
   poll: 5
   failed_when: false
+  ignore_unreachable: true
 
 - name: Wait for API /health (lightweight, no DB)
   ansible.windows.win_uri:
@@ -23,6 +25,7 @@
   retries: 12
   delay: 5
   ignore_errors: true
+  ignore_unreachable: true
 
 - name: Check API /api/health (DB connectivity)
   ansible.windows.win_uri:
@@ -36,6 +39,7 @@
   delay: 5
   until: api_db_check.status_code | default(0) == 200
   ignore_errors: true
+  ignore_unreachable: true
 
 - name: Check API /api/ships (data endpoint)
   ansible.windows.win_uri:
@@ -45,6 +49,7 @@
     timeout: 10
   register: api_ships_check
   ignore_errors: true
+  ignore_unreachable: true
 
 - name: Wait for Node to respond (retry up to 12 times, 5s apart = 60s max)
   ansible.windows.win_uri:
@@ -56,6 +61,7 @@
   retries: 12
   delay: 5
   ignore_errors: true
+  ignore_unreachable: true
 
 - name: Check ImagePopulator listener health
   ansible.windows.win_uri:
@@ -64,6 +70,7 @@
     timeout: 5
   register: populator_check
   ignore_errors: true
+  ignore_unreachable: true
 
 - name: Report status
   ansible.builtin.debug:

@@ -35,7 +35,10 @@
     }
   args:
     executable: powershell
+  async: 30
+  poll: 5
   ignore_errors: true
+  ignore_unreachable: true
   when: api_changed | default(true)
 
 - name: Stop IIS chain sites/app pools before publish (avoid locked dlls)
@@ -49,7 +52,10 @@
     }
   args:
     executable: powershell
+  async: 30
+  poll: 5
   ignore_errors: true
+  ignore_unreachable: true
   when: chain_changed | default(true)
 
 - name: Clear API output (except logs and DB files)
