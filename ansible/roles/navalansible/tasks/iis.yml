@@ -2,15 +2,24 @@
 # Configure IIS: app pool, sites, bindings, cert, proxy
 # All win_shell tasks have async timeouts to prevent deploy hangs.
 
-# Remove NR .NET profiler env vars from W3SVC and machine level.
-# The NR .NET agent installer (apm-dotnet) sets CORECLR_ENABLE_PROFILING=1
-# machine-wide and on W3SVC, which crashes all IIS-hosted .NET apps if the
-# 64-bit profiler DLL is missing. Chain services use OTEL instead.
-- name: Remove NR .NET profiler vars from W3SVC and machine (prevents 500.30)
+# NR .NET profiler: only safe if the 64-bit profiler DLL exists.
+# The NR apm-dotnet installer sets CORECLR_ENABLE_PROFILING=1 machine-wide,
+# but sometimes only installs the 32-bit DLL. IIS runs 64-bit → CLR crash → 500.30.
+# If the 64-bit DLL exists, leave profiler vars alone (NR .NET APM works).
+# If missing, remove them to prevent 500.30.
+- name: Check NR .NET 64-bit profiler DLL
   ansible.windows.win_shell: |
-    # W3SVC service registry
+    $path64 = "C:\Program Files\New Relic\.NET Agent\NewRelic.Profiler.dll"
+    if (Test-Path $path64) { "present" } else { "missing" }
+  args:
+    executable: powershell
+  register: nr_profiler_64
+  changed_when: false
+
+- name: Remove NR .NET profiler vars (64-bit DLL missing — prevents 500.30)
+  ansible.windows.win_shell: |
+    Write-Host "64-bit profiler DLL missing — removing profiler vars to prevent 500.30"
     Remove-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\W3SVC" -Name "Environment" -Force -ErrorAction SilentlyContinue
-    # Machine-level env vars
     foreach ($v in @("COR_ENABLE_PROFILING","COR_PROFILER","COR_PROFILER_PATH_32","COR_PROFILER_PATH_64","CORECLR_ENABLE_PROFILING","CORECLR_PROFILER","CORECLR_PROFILER_PATH_32","CORECLR_PROFILER_PATH_64","CORECLR_NEWRELIC_HOME","NEWRELIC_INSTALL_PATH")) {
       [Environment]::SetEnvironmentVariable($v,$null,"Machine")
     }
@@ -20,6 +29,11 @@
   async: 30
   poll: 5
   failed_when: false
+  when: nr_profiler_64.stdout | trim == 'missing'
+
+- name: Report NR .NET profiler status
+  ansible.builtin.debug:
+    msg: "NR .NET profiler: {{ 'OK — 64-bit DLL present, IIS APM active' if nr_profiler_64.stdout | trim == 'present' else 'REMOVED — 64-bit DLL missing, run deploy with -newrelic to install' }}"
 
 - name: Enable IIS proxy
   ansible.windows.win_shell: |
