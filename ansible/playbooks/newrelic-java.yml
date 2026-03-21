@@ -2,67 +2,8 @@
 - name: New Relic - Java (NavalArchiveImagePopulator)
   hosts: navalansible
   gather_facts: false
-  vars_files:
-    - ../roles/navalansible/vars/main.yml
-  vars:
-    newrelic_java_agent_dir: C:\ProgramData\NewRelic\java
   tasks:
-    - name: Ensure New Relic Java agent directory exists
-      ansible.windows.win_file:
-        path: "{{ newrelic_java_agent_dir }}"
-        state: directory
-      when: newrelic_license_key is defined and newrelic_license_key | length > 0
-
-    - name: Download New Relic Java agent jar
-      ansible.windows.win_get_url:
-        url: https://download.newrelic.com/newrelic/java-agent/newrelic-agent/current/newrelic.jar
-        dest: "{{ newrelic_java_agent_dir }}\\newrelic.jar"
-      when: newrelic_license_key is defined and newrelic_license_key | length > 0
-
-    - name: Write New Relic Java agent config
-      ansible.windows.win_copy:
-        content: |
-          common: &default_settings
-            license_key: '{{ newrelic_license_key }}'
-            app_name: {{ newrelic_java_app_name | default('NavalArchiveImagePopulator') }}
-            distributed_tracing:
-              enabled: true
-            log_level: info
-            log_file_path: 'C:\ProgramData\NewRelic\java\logs'
-          production:
-            <<: *default_settings
-        dest: "{{ newrelic_java_agent_dir }}\\newrelic.yml"
-      when: newrelic_license_key is defined and newrelic_license_key | length > 0
-
-    - name: Update run-image-populator-listener.ps1 with New Relic Java agent
-      ansible.windows.win_copy:
-        content: |
-          $ErrorActionPreference = "Stop"
-          $jar = (Get-ChildItem "{{ image_populator_path }}" -Filter "image-populator*.jar" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName)
-          if (-not $jar) { throw "No image-populator jar found in {{ image_populator_path }}" }
-          $javaExe = $null
-          foreach ($base in @("C:\Program Files\Amazon Corretto", "C:\Program Files\Eclipse Adoptium")) {
-            if (Test-Path $base) {
-              $jdk = Get-ChildItem $base -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "jdk*" } | Select-Object -First 1
-              if ($jdk -and (Test-Path "$($jdk.FullName)\bin\java.exe")) {
-                $javaExe = "$($jdk.FullName)\bin\java.exe"
-                break
-              }
-            }
-          }
-          if (-not $javaExe) { $javaExe = "java" }
-          $env:NEW_RELIC_LICENSE_KEY = "{{ newrelic_license_key }}"
-          $env:NEW_RELIC_APP_NAME = "{{ newrelic_java_app_name | default('NavalArchiveImagePopulator') }}"
-          $env:NEW_RELIC_DISTRIBUTED_TRACING_ENABLED = "true"
-          & $javaExe "-javaagent:{{ newrelic_java_agent_dir }}\newrelic.jar" -jar $jar http://localhost:5000 --listen --port {{ image_populator_port }}
-        dest: C:\inetpub\run-image-populator-listener.ps1
-      when: newrelic_license_key is defined and newrelic_license_key | length > 0
-
-    - name: Restart NavalArchiveImagePopulator scheduled task
-      ansible.windows.win_shell: |
-        Stop-ScheduledTask -TaskName "NavalArchiveImagePopulator" -ErrorAction SilentlyContinue
-        Start-Sleep -Seconds 3
-        Start-ScheduledTask -TaskName "NavalArchiveImagePopulator"
-      args:
-        executable: powershell
+    - ansible.builtin.include_role:
+        name: navalansible
+        tasks_from: nr-java-service.yml
       when: newrelic_license_key is defined and newrelic_license_key | length > 0

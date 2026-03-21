@@ -1,0 +1,20 @@
+---
+# Shared: Full Java NR setup + write PS1 + restart ImagePopulator. Used by newrelic-java.yml playbook.
+
+- include_tasks: nr-java-agent.yml
+
+- name: Write run-image-populator-listener.ps1
+  ansible.windows.win_template:
+    src: run-image-populator-listener.ps1.j2
+    dest: C:\inetpub\run-image-populator-listener.ps1
+
+- name: Restart NavalArchiveImagePopulator scheduled task
+  ansible.windows.win_shell: |
+    Stop-ScheduledTask -TaskName "NavalArchiveImagePopulator" -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 3
+    Start-ScheduledTask -TaskName "NavalArchiveImagePopulator"
+  args:
+    executable: powershell
+  async: 30
+  poll: 5
+  failed_when: false

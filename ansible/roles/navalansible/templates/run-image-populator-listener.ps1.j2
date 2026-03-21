@@ -1,0 +1,31 @@
+$ErrorActionPreference = "Stop"
+$apiBase = "http://localhost:5000"
+$jar = (Get-ChildItem "{{ image_populator_path }}" -Filter "image-populator*.jar" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName)
+if (-not $jar) { throw "No image-populator jar found in {{ image_populator_path }}" }
+$javaExe = $null
+foreach ($base in @("C:\Program Files\Amazon Corretto", "C:\Program Files\Eclipse Adoptium")) {
+  if (Test-Path $base) {
+    $jdk = Get-ChildItem $base -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "jdk*" } | Select-Object -First 1
+    if ($jdk -and (Test-Path "$($jdk.FullName)\bin\java.exe")) {
+      $javaExe = "$($jdk.FullName)\bin\java.exe"
+      break
+    }
+  }
+}
+if (-not $javaExe) { $javaExe = "java" }
+$jvmArgs = @()
+$nrJar = "C:\ProgramData\NewRelic\java\newrelic.jar"
+if (Test-Path $nrJar) {
+  $jvmArgs += "-javaagent:$nrJar"
+}
+{% if newrelic_license_key is defined and newrelic_license_key | length > 0 %}
+$env:NEW_RELIC_LICENSE_KEY = "{{ newrelic_license_key }}"
+$env:NEW_RELIC_APP_NAME = "{{ newrelic_java_app_name | default('NavalArchiveImagePopulator') }}"
+$env:NEW_RELIC_DISTRIBUTED_TRACING_ENABLED = "true"
+{% endif %}
+$env:IMAGE_POPULATOR_LISTEN = "true"
+$env:SERVER_PORT = "{{ image_populator_port }}"
+$env:API_URL = $apiBase
+$jvmArgs += "-jar"
+$jvmArgs += $jar
+& $javaExe @jvmArgs

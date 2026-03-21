@@ -163,20 +163,8 @@
 # Write PS1 here (not only in services.yml) so it survives when services.yml is skipped (-skip-services).
 # build.yml wipes payment_path during .NET PaymentSimulation publish, destroying the old PS1.
 - name: Write run-payment-service.ps1 after binary deploy
-  ansible.windows.win_copy:
-    content: |
-      $env:HTTP_PORT = '5001'
-      $env:DATABASE_URL = '{{ payment_path }}\payment.db'
-      $env:DATABASE_TYPE = 'sqlite'
-      $env:USE_QUEUE = 'true'
-      $env:ACCOUNT_SERVICE_URL = 'http://localhost:5005'
-      $env:IDEMPOTENCY = 'db'
-      {% if newrelic_license_key is defined and newrelic_license_key | length > 0 %}
-      $env:NEW_RELIC_LICENSE_KEY = '{{ newrelic_license_key }}'
-      $env:NEW_RELIC_APP_NAME = '{{ newrelic_go_payment_app_name | default("NavalArchivePayment") }}'
-      {% endif %}
-      Set-Location '{{ payment_path }}'
-      & '{{ payment_path }}\payment-service.exe'
+  ansible.windows.win_template:
+    src: run-payment-service.ps1.j2
     dest: "{{ payment_path }}\\run-payment-service.ps1"
   when: go_payment_changed | default(true)
 

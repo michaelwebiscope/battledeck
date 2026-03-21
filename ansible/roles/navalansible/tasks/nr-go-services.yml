@@ -1,0 +1,60 @@
+---
+# Shared: Write Go service PS1 launchers and restart. Used by newrelic-go.yml playbook.
+
+- name: Write run-account-service.ps1
+  ansible.windows.win_template:
+    src: run-account-service.ps1.j2
+    dest: "{{ account_path }}\\run-account-service.ps1"
+
+- name: Restart NavalArchiveAccount
+  ansible.windows.win_shell: |
+    Stop-ScheduledTask -TaskName "NavalArchiveAccount" -ErrorAction SilentlyContinue
+    Get-Process -Name "account-service" -ErrorAction SilentlyContinue | Stop-Process -Force
+    Start-Sleep -Seconds 2
+    Start-ScheduledTask -TaskName "NavalArchiveAccount"
+  args:
+    executable: powershell
+  async: 30
+  poll: 5
+  failed_when: false
+
+- name: Wait for account-service to be healthy
+  ansible.windows.win_uri:
+    url: "http://127.0.0.1:5005/health"
+    method: GET
+    status_code: 200
+    timeout: 5
+  register: account_health
+  until: account_health.status_code | default(0) == 200
+  retries: 12
+  delay: 5
+  failed_when: false
+
+- name: Write run-payment-service.ps1
+  ansible.windows.win_template:
+    src: run-payment-service.ps1.j2
+    dest: "{{ payment_path }}\\run-payment-service.ps1"
+
+- name: Restart NavalArchivePayment
+  ansible.windows.win_shell: |
+    Stop-ScheduledTask -TaskName "NavalArchivePayment" -ErrorAction SilentlyContinue
+    Get-Process -Name "payment-service" -ErrorAction SilentlyContinue | Stop-Process -Force
+    Start-Sleep -Seconds 2
+    Start-ScheduledTask -TaskName "NavalArchivePayment"
+  args:
+    executable: powershell
+  async: 30
+  poll: 5
+  failed_when: false
+
+- name: Wait for payment-service to be healthy
+  ansible.windows.win_uri:
+    url: "http://127.0.0.1:5001/health"
+    method: GET
+    status_code: 200
+    timeout: 5
+  register: payment_health
+  until: payment_health.status_code | default(0) == 200
+  retries: 12
+  delay: 5
+  failed_when: false

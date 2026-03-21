@@ -82,16 +82,8 @@
     executable: powershell
 
 - name: Update run-account-service.ps1
-  ansible.windows.win_copy:
-    content: |
-      $env:HTTP_PORT = '5005'
-      $env:DATABASE_URL = '{{ account_path }}\accounts.db'
-      {% if newrelic_license_key is defined and newrelic_license_key | length > 0 %}
-      $env:NEW_RELIC_LICENSE_KEY = '{{ newrelic_license_key }}'
-      $env:NEW_RELIC_APP_NAME = '{{ newrelic_go_account_app_name | default("NavalArchiveAccount") }}'
-      {% endif %}
-      Set-Location '{{ account_path }}'
-      & '{{ account_path }}\account-service.exe'
+  ansible.windows.win_template:
+    src: run-account-service.ps1.j2
     dest: "{{ account_path }}\\run-account-service.ps1"
 
 - name: Clear machine-level NR env vars left over from old account-service setup
@@ -114,20 +106,8 @@
     executable: powershell
 
 - name: Update run-payment-service.ps1
-  ansible.windows.win_copy:
-    content: |
-      $env:HTTP_PORT = '5001'
-      $env:DATABASE_URL = '{{ payment_path }}\payment.db'
-      $env:DATABASE_TYPE = 'sqlite'
-      $env:USE_QUEUE = 'true'
-      $env:ACCOUNT_SERVICE_URL = 'http://localhost:5005'
-      $env:IDEMPOTENCY = 'db'
-      {% if newrelic_license_key is defined and newrelic_license_key | length > 0 %}
-      $env:NEW_RELIC_LICENSE_KEY = '{{ newrelic_license_key }}'
-      $env:NEW_RELIC_APP_NAME = '{{ newrelic_go_payment_app_name | default("NavalArchivePayment") }}'
-      {% endif %}
-      Set-Location '{{ payment_path }}'
-      & '{{ payment_path }}\payment-service.exe'
+  ansible.windows.win_template:
+    src: run-payment-service.ps1.j2
     dest: "{{ payment_path }}\\run-payment-service.ps1"
 
 - name: Start NavalArchiveAccount scheduled task

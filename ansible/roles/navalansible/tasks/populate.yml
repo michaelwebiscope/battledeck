@@ -75,17 +75,7 @@
   register: java_result
   ignore_unreachable: true
 
-- name: Ensure New Relic Java agent directory exists
-  ansible.windows.win_file:
-    path: "{{ newrelic_java_agent_dir | default('C:\\ProgramData\\NewRelic\\java') }}"
-    state: directory
-  when: newrelic_license_key is defined and newrelic_license_key | length > 0
-
-- name: Download New Relic Java agent jar
-  ansible.windows.win_get_url:
-    url: https://download.newrelic.com/newrelic/java-agent/newrelic-agent/current/newrelic.jar
-    dest: "{{ newrelic_java_agent_dir | default('C:\\ProgramData\\NewRelic\\java') }}\\newrelic.jar"
-  when: newrelic_license_key is defined and newrelic_license_key | length > 0
+- include_tasks: nr-java-agent.yml
 
 - name: Run ImagePopulator (populate ship images from Wikipedia)
   ansible.windows.win_shell: |
