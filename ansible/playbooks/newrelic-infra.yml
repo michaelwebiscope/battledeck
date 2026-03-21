@@ -2,103 +2,18 @@
 - name: New Relic - infrastructure, logs, and .NET APM
   hosts: navalansible
   gather_facts: true
+  vars:
+    targets:
+      - infrastructure
+      - logs
+      - apm-dotnet
+    install_timeout_seconds: 300
   environment:
     NEW_RELIC_API_KEY: "{{ newrelic_api_key }}"
     NEW_RELIC_ACCOUNT_ID: "{{ newrelic_account_id | default('7534908') }}"
     NEW_RELIC_REGION: "{{ newrelic_region | default('US') }}"
   tasks:
-    # Check what's installed — including the 64-bit profiler DLL
-    - name: Check if NR agents are already installed
-      ansible.windows.win_shell: |
-        $cli = Test-Path "C:\Program Files\New Relic\New Relic CLI\newrelic.exe"
-        $infra = Get-Service newrelic-infra -ErrorAction SilentlyContinue
-        $dotnet = Test-Path "C:\Program Files\New Relic\.NET Agent\netcore\NewRelic.Agent.Core.dll"
-        $profiler64 = Test-Path "C:\Program Files\New Relic\.NET Agent\NewRelic.Profiler.dll"
-        Write-Host "CLI: $cli | Infra: $($infra.Status) | .NET agent: $dotnet | 64-bit profiler: $profiler64"
-        if ($cli -and $infra -and $dotnet -and $profiler64) { "installed" } else { "missing" }
-      args:
-        executable: powershell
-      register: nr_check
-      changed_when: false
-
-    - name: Report NR agent status
-      ansible.builtin.debug:
-        msg: >-
-          NR agents: {{ nr_check.stdout_lines[0] | default('') }}.
-          {{ 'Skipping install (fully present incl. 64-bit profiler). Use -e force_nr_install=true to force.'
-             if nr_check.stdout | trim == 'installed' and not (force_nr_install | default(false) | bool)
-             else 'Will install (missing components detected).' }}
-
-    # Direct install — output streams to console.
-    - name: Download NR CLI installer
-      ansible.windows.win_shell: |
-        [Net.ServicePointManager]::SecurityProtocol = 'tls12, tls'
-        (New-Object System.Net.WebClient).DownloadFile("https://download.newrelic.com/install/newrelic-cli/scripts/install.ps1", "$env:TEMP\install.ps1")
-        & PowerShell.exe -ExecutionPolicy Bypass -File $env:TEMP\install.ps1
-        Write-Host "NR CLI installed at: C:\Program Files\New Relic\New Relic CLI\newrelic.exe"
-        Test-Path "C:\Program Files\New Relic\New Relic CLI\newrelic.exe"
-      args:
-        executable: powershell
-      register: nr_cli_install
-      when: nr_check.stdout | trim != 'installed' or (force_nr_install | default(false) | bool)
-      environment:
-        NEW_RELIC_CLI_SKIP_CORE: "1"
-      async: 120
-      poll: 5
-      failed_when: false
-
-    - name: Run NR CLI install (infrastructure + logs + .NET APM)
-      ansible.windows.win_shell: |
-        $ErrorActionPreference = "Continue"
-        $cmd = '& "C:\Program Files\New Relic\New Relic CLI\newrelic.exe" install -y -n infrastructure-agent-installer,logs-integration,dotnet-agent-installer --tag nr_deployed_by:ansible-install 2>&1'
-        Write-Host "Running: $cmd"
-        $output = Invoke-Expression $cmd
-        $output | ForEach-Object { Write-Host $_ }
-        Write-Host "`n=== NR CLI exit code: $LASTEXITCODE ==="
-      args:
-        executable: powershell
-      register: nr_install
-      when: nr_check.stdout | trim != 'installed' or (force_nr_install | default(false) | bool)
-      environment:
-        NEW_RELIC_CLI_SKIP_CORE: "1"
-      async: 300
-      poll: 10
-      failed_when: false
-
-    - name: Show NR install output
-      ansible.builtin.debug:
-        msg: "{{ nr_install.stdout_lines | default(['Install skipped — agents already present']) }}"
-
-    - name: Verify agents and 64-bit profiler after install
-      ansible.windows.win_shell: |
-        $results = @()
-        $infra = Get-Service newrelic-infra -ErrorAction SilentlyContinue
-        if ($infra -and $infra.Status -eq 'Running') { $results += "Infrastructure agent: Running" } else { $results += "Infrastructure agent: NOT RUNNING" }
-        if (Test-Path "C:\Program Files\New Relic\.NET Agent\netcore\NewRelic.Agent.Core.dll") { $results += ".NET agent core: Installed" } else { $results += ".NET agent core: MISSING" }
-        $p64 = "C:\Program Files\New Relic\.NET Agent\NewRelic.Profiler.dll"
-        if (Test-Path $p64) { $results += "64-bit profiler DLL: Present" } else { $results += "64-bit profiler DLL: MISSING — IIS .NET APM will not work!" }
-        $nrLogs = Get-ChildItem "C:\ProgramData\New Relic\.NET Agent\Logs\newrelic_agent_*.log" -ErrorAction SilentlyContinue | Measure-Object
-        $results += ".NET agent log files: $($nrLogs.Count)"
-        $results | ForEach-Object { Write-Host $_ }
-      args:
-        executable: powershell
-      register: nr_verify
-      changed_when: false
-
-    - name: Report final NR status
-      ansible.builtin.debug:
-        msg: "{{ nr_verify.stdout_lines | default(['Verification skipped']) }}"
-
-    # IIS restart so the .NET profiler attaches to IIS app pools
-    - name: Restart IIS to activate .NET profiler
-      ansible.windows.win_shell: |
-        iisreset /restart 2>$null
-        $appcmd = "$env:windir\System32\inetsrv\appcmd.exe"
-        & $appcmd stop site "Default Web Site" 2>$null
-        exit 0
-      args:
-        executable: powershell
-      async: 60
-      poll: 5
-      failed_when: false
-      when: nr_check.stdout | trim != 'installed' or (force_nr_install | default(false) | bool)
+    - name: Install infrastructure, logs, and .NET APM agent
+      ansible.builtin.include_role:
+        name: newrelic.newrelic_install
+      ignore_errors: true
