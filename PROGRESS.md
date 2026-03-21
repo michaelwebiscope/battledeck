@@ -162,24 +162,17 @@ icacls C:\inetpub\navalarchive-api\logs
 
 The NR `.NET agent` installer (`apm-dotnet`) sets `CORECLR_ENABLE_PROFILING=1` machine-wide and on the W3SVC service, but only installs the 32-bit profiler DLL. IIS runs 64-bit → tries to load non-existent 64-bit DLL → CLR crash → 500.30.
 
-**Fix:**
+**Fix:** Re-run the NR install — the `newrelic.newrelic_install` role with `apm-dotnet` target should install the 64-bit profiler DLL. Then restart IIS:
 ```powershell
-# Remove profiler vars from W3SVC
-Remove-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\W3SVC" -Name "Environment" -Force -ErrorAction SilentlyContinue
+# Re-run NR install to get the 64-bit profiler
+./scripts/deploy-navalansible.sh -newrelic
 
-# Remove machine-level profiler vars
-foreach ($v in @("COR_ENABLE_PROFILING","COR_PROFILER","COR_PROFILER_PATH_32","COR_PROFILER_PATH_64","CORECLR_ENABLE_PROFILING","CORECLR_PROFILER","CORECLR_PROFILER_PATH_32","CORECLR_PROFILER_PATH_64","CORECLR_NEWRELIC_HOME","NEWRELIC_INSTALL_PATH")) {
-  [Environment]::SetEnvironmentVariable($v,$null,"Machine")
-}
-
-# Fix permissions
-icacls C:\inetpub\navalarchive-api /grant "IIS AppPool\NavalArchive-API:(OI)(CI)M" /T
-
-# Restart IIS
+# Or manually on VM:
 iisreset /restart
+icacls C:\inetpub\navalarchive-api /grant "IIS AppPool\NavalArchive-API:(OI)(CI)M" /T
 ```
 
-**Prevention:** The `iis.yml` task "Remove NR .NET profiler vars" runs on every deploy to clean up after NR agent installs. If you see 500.30 after a NR install, just redeploy.
+**Prevention:** The `newrelic.newrelic_install` role manages all profiler registry vars. Don't manually edit W3SVC registry or machine-level CLR profiler env vars — let the NR role own them.
 
 **Why this was hard to find:**
 - `stdoutLogEnabled` was `false` (now `true` in `webconfig_api.j2`)
@@ -590,7 +583,7 @@ Fixed 9 deploy failures: Go PS1 crashes, NR env var bleeding, IIS file locks, Wi
 Combined Members page. Per-service change detection for efficient deploys. NR change tracking via GitHub Actions. ImagePopulator Spring Boot 3.3 migration. HTTPS binding fix. Payment case-insensitive deserialization.
 
 ### Phase 7: API Crash & OTEL Fix (Mar 20)
-- **500.30 crash:** NR .NET profiler set `CORECLR_ENABLE_PROFILING=1` with missing 64-bit DLL → CLR crash. Fix: `iis.yml` removes profiler vars on every deploy. Also enabled stdout logging, added `/api/health` with DB check, rewrote `verify.yml`.
+- **500.30 crash:** NR .NET profiler set `CORECLR_ENABLE_PROFILING=1` with missing 64-bit DLL → CLR crash. Fix: re-run NR install to get 64-bit DLL. NR role owns all profiler registry vars. Also enabled stdout logging, added `/api/health` with DB check, rewrote `verify.yml`.
 - **Missing golden metrics:** Card/Cart/Order had traces-only OTEL config. Added metrics+logs exporters. NR golden metrics need `http.server.request.duration` metric, not traces.
 - **Deploy hangs:** `sc.exe start` blocks on Node service. Fix: `async`+`poll` timeouts on all `win_shell` tasks.
 
@@ -658,7 +651,7 @@ cd terraform-navalansible && terraform destroy -auto-approve && terraform apply 
 | `clone.yml` | Git clone/fetch, change detection | WinRM default |
 | `build.yml` | dotnet publish, npm install, copy binaries | WinRM 1200s |
 | `deploy.yml` | Deploy web.config templates | WinRM default |
-| `iis.yml` | Remove NR profiler vars, IIS config, certs, permissions | async: 30–120 |
+| `iis.yml` | IIS proxy, sites, pools, certs, permissions | async: 30–300 |
 | `services.yml` | Create services + scheduled tasks, OTEL env vars | async: 60–120 |
 | `populate.yml` | Start IIS, wait for API, run ImagePopulator | retries: 36 |
 | `firewall.yml` | Windows Firewall rules | WinRM default |
