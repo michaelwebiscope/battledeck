@@ -12,7 +12,7 @@
           if ($current) {
             $updated = @($current | Where-Object { $_ -notlike "OTEL_EXPORTER_OTLP_HEADERS=*" -and $_ -notlike "OTEL_EXPORTER_OTLP_ENDPOINT=*" })
             $updated += "OTEL_EXPORTER_OTLP_HEADERS=api-key={{ newrelic_license_key }}"
-            $updated += "OTEL_EXPORTER_OTLP_ENDPOINT={{ otel_exporter_otlp_endpoint | default('https://otlp.eu01.nr-data.net') }}"
+            $updated += "OTEL_EXPORTER_OTLP_ENDPOINT={{ otel_exporter_otlp_endpoint | default('https://otlp.nr-data.net') }}"
             Set-ItemProperty -Path $regPath -Name "Environment" -Value $updated -Type MultiString -Force
             sc.exe stop $svc 2>$null
             # Wait up to 30s for service to fully stop (STOP_PENDING can take time)
