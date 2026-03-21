@@ -116,8 +116,10 @@
     exit 0
   args:
     executable: powershell
-  async: 120
-  poll: 5
+  async: 300
+  poll: 10
+  failed_when: false
+  ignore_unreachable: true
   when: api_changed | default(true) or web_changed | default(true) or chain_changed | default(true)
 
 - name: Add HTTPS binding to NavalArchive-Web
