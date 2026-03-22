@@ -2,6 +2,23 @@
 # Configure IIS: app pool, sites, bindings, cert, proxy
 # All win_shell tasks have async timeouts to prevent deploy hangs.
 
+# The NR .NET agent installer sets machine-level CORECLR_PROFILER to the NR GUID.
+# This conflicts with OTEL auto-instrumentation on Card/Cart/chain services which
+# need the OTEL profiler GUID. CLR only loads one profiler — machine-level wins.
+# Remove machine-level profiler vars so each service's registry env vars control
+# which profiler loads. NR .NET APM for IIS uses W3SVC registry (not machine-level).
+- name: Remove machine-level CLR profiler vars (prevents NR/OTEL conflict)
+  ansible.windows.win_shell: |
+    foreach ($v in @("CORECLR_PROFILER","CORECLR_PROFILER_PATH_32","CORECLR_PROFILER_PATH_64","COR_PROFILER","COR_PROFILER_PATH_32","COR_PROFILER_PATH_64")) {
+      [Environment]::SetEnvironmentVariable($v,$null,"Machine")
+    }
+    exit 0
+  args:
+    executable: powershell
+  async: 30
+  poll: 5
+  failed_when: false
+
 - name: Enable IIS proxy
   ansible.windows.win_shell: |
     Import-Module WebAdministration -ErrorAction SilentlyContinue
