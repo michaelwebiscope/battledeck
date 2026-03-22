@@ -96,8 +96,10 @@ GITHUB_REPO_URL=$(read_tfvar_any "github_repo_url")
 # macOS: avoid fork safety when running Ansible
 export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
 
-# Always read New Relic license key so OTEL services can authenticate with New Relic's OTLP endpoint
-[ -n "$NEWRELIC_LICENSE_KEY" ] || NEWRELIC_LICENSE_KEY=$(read_tfvar_any "newrelic_license_key")
+# Only read NR license key when -newrelic is used — site deploy is NR-free without the flag
+if [ "$ENABLE_NEWRELIC" = true ]; then
+  [ -n "$NEWRELIC_LICENSE_KEY" ] || NEWRELIC_LICENSE_KEY=$(read_tfvar_any "newrelic_license_key")
+fi
 
 SITE_ARGS=(
   -e "ansible_host=$VM_IP"
@@ -109,7 +111,7 @@ SITE_ARGS=(
 if [ -n "$GITHUB_TOKEN" ]; then
   SITE_ARGS+=( -e "github_token=$GITHUB_TOKEN" )
 fi
-if [ -n "$NEWRELIC_LICENSE_KEY" ]; then
+if [ "$ENABLE_NEWRELIC" = true ] && [ -n "$NEWRELIC_LICENSE_KEY" ]; then
   SITE_ARGS+=( -e "newrelic_license_key=$NEWRELIC_LICENSE_KEY" )
 fi
 

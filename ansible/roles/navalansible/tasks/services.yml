@@ -1,7 +1,7 @@
 ---
 # Create and start Windows services (sc.exe for custom binPath with args)
 # All service creation tasks have async timeouts to prevent deploy hangs.
-# NR config uses shared templates/vars — see templates/*.ps1.j2 and vars/main.yml otel_common_env_vars.
+# NR/OTEL instrumentation only applied when newrelic_license_key is defined (deploy with -newrelic).
 
 # --- Node (NavalArchiveWeb) ---
 - name: Create NavalArchiveWeb service (Node) - use 8.3 path to avoid sc.exe quoting
@@ -17,11 +17,11 @@
     $envVars = @(
       "API_URL=http://localhost:5000",
       "GATEWAY_URL=http://localhost:5010",
-      "PORT=3000",
-      "NEW_RELIC_APP_NAME={{ newrelic_node_app_name | default('NavalArchiveWeb') }}"
+      "PORT=3000"
     )
     {% if newrelic_license_key is defined and newrelic_license_key | length > 0 %}
     $envVars += @(
+      "NEW_RELIC_APP_NAME={{ newrelic_node_app_name | default('NavalArchiveWeb') }}",
       "NEW_RELIC_LICENSE_KEY={{ newrelic_license_key }}",
       "NEW_RELIC_NO_CONFIG_FILE=true",
       "NEW_RELIC_DISTRIBUTED_TRACING_ENABLED=true",
@@ -144,8 +144,10 @@
   async: 60
   poll: 5
 
-# --- OTEL services (Card, Cart, Order, PaymentChain, Shipping, Notification) ---
-- name: Create chain microservice
+# --- Non-IIS services (Card, Cart, Order, PaymentChain, Shipping, Notification) ---
+# Without -newrelic: plain Windows services, no OTEL instrumentation
+# With -newrelic: OTEL auto-instrumentation env vars added
+- name: Create non-IIS microservice
   ansible.windows.win_shell: |
     $outPath = "{{ chain_paths[item.path_key] }}"
     $exe = "{{ item.exe }}"
@@ -156,15 +158,17 @@
       sc.exe create $svc binPath= "$outPath\$exe --urls=http://localhost:$port"
       sc.exe config $svc start= auto
       sc.exe failure $svc reset= 86400 actions= restart/60000/restart/60000/restart/60000
+      {% if newrelic_license_key is defined and newrelic_license_key | length > 0 %}
       $envVars = @(
         "OTEL_SERVICE_NAME=$svc",
         "OTEL_RESOURCE_ATTRIBUTES=service.name=$svc,service.namespace=NavalArchive,deployment.environment=prod",
-        "OTEL_EXPORTER_OTLP_HEADERS=api-key={{ newrelic_license_key | default('') }}"
+        "OTEL_EXPORTER_OTLP_HEADERS=api-key={{ newrelic_license_key }}"
       )
       {% for ev in otel_common_env_vars %}
       $envVars += "{{ ev }}"
       {% endfor %}
       Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\$svc" -Name "Environment" -Value $envVars -Type MultiString -Force -ErrorAction SilentlyContinue
+      {% endif %}
       sc.exe start $svc
     }
   args:
