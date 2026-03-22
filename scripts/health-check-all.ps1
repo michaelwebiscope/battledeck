@@ -22,6 +22,8 @@ $endpoints = @(
     @{ Name = "Backend API";    Url = "http://localhost:5000/health" },
     @{ Name = "GoAccount";      Url = "http://localhost:5005/health" },
     @{ Name = "GoPayment";      Url = "http://localhost:5001/health" },
+    @{ Name = "Card";           Url = "http://localhost:5002/api/Card/health" },
+    @{ Name = "Cart";           Url = "http://localhost:5003/api/Cart/items/healthcheck" },
     @{ Name = "ImagePopulator"; Url = "http://localhost:5099/health" },
     @{ Name = "Gateway";        Url = "http://localhost:5010/health" },
     @{ Name = "Auth";           Url = "http://localhost:5011/health" },
