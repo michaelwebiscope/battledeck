@@ -3,6 +3,10 @@ const axios = require('axios');
 const path = require('path');
 const fs = require('fs');
 
+// New Relic browser agent: try to load (only present when deployed with -newrelic)
+let newrelic = null;
+try { newrelic = require('newrelic'); } catch (e) { /* not installed */ }
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 const API_BASE = process.env.API_URL || 'http://localhost:5000';
@@ -131,6 +135,7 @@ app.use(async (req, res, next) => {
   res.locals.currentPath = req.path;
   res.locals.toEntity = toEntity;
   res.locals.entityTypes = entityTypes;
+  res.locals.nrBrowserHeader = newrelic ? newrelic.getBrowserTimingHeader() : '';
   res.locals.imageSearchPrefix = Object.fromEntries(
     Object.entries(entityTypes).filter(([, c]) => c.hasImage).map(([k, c]) => [k, c.displayName?.toLowerCase() || k])
   );
