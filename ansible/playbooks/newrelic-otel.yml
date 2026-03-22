@@ -1,35 +1,81 @@
 ---
-- name: New Relic - OTEL (Card, Cart, Order, Payment, Shipping, Notification)
+# Self-sufficient: installs OTEL auto-instrumentation, sets full env vars on all
+# non-IIS .NET services (Card, Cart, Order, PaymentChain, Shipping, Notification),
+# and restarts them. Safe to run independently of site.yml.
+- name: New Relic - OTEL (.NET services)
   hosts: navalansible
   gather_facts: false
+  vars_files:
+    - ../roles/navalansible/vars/main.yml
   tasks:
-    - name: Patch OTEL api-key header in service registry and restart
+    # --- Install OTEL .NET auto-instrumentation ---
+    - name: Check current OTEL auto-instrumentation version
+      ansible.windows.win_shell: |
+        $versionDll = "{{ otel_dotnet_auto_home }}\net\OpenTelemetry.AutoInstrumentation.StartupHook.dll"
+        if (Test-Path $versionDll) {
+          $ver = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($versionDll).ProductVersion
+          Write-Output $ver
+        } else {
+          Write-Output "not_installed"
+        }
+      args:
+        executable: powershell
+      register: otel_current_version
+      changed_when: false
+
+    - name: Remove incompatible OTEL version if present
+      ansible.windows.win_shell: |
+        if (Test-Path "{{ otel_dotnet_auto_home }}") {
+          Remove-Item "{{ otel_dotnet_auto_home }}" -Recurse -Force
+        }
+      args:
+        executable: powershell
+      when: >
+        otel_current_version.stdout | trim != 'not_installed'
+        and not (otel_current_version.stdout | trim is search(otel_dotnet_auto_version))
+
+    - name: Install OpenTelemetry .NET auto-instrumentation v{{ otel_dotnet_auto_version }}
+      ansible.windows.win_shell: |
+        $ErrorActionPreference = "Stop"
+        $ver = "{{ otel_dotnet_auto_version }}"
+        $moduleUrl = "https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation/releases/download/v${ver}/OpenTelemetry.DotNet.Auto.psm1"
+        $modulePath = Join-Path $env:TEMP "OpenTelemetry.DotNet.Auto.psm1"
+        Invoke-WebRequest -Uri $moduleUrl -OutFile $modulePath -UseBasicParsing
+        Import-Module $modulePath -Force
+        Install-OpenTelemetryCore
+      args:
+        executable: powershell
+      when: >
+        otel_current_version.stdout | trim == 'not_installed'
+        or not (otel_current_version.stdout | trim is search(otel_dotnet_auto_version))
+
+    # --- Set full OTEL env vars on each non-IIS .NET service and restart ---
+    - name: Configure OTEL env vars and restart service
       ansible.windows.win_shell: |
         $svc = "{{ item }}"
         $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\$svc"
         if (Test-Path $regPath) {
-          $current = (Get-ItemProperty -Path $regPath -Name "Environment" -ErrorAction SilentlyContinue).Environment
-          if ($current) {
-            $updated = @($current | Where-Object { $_ -notlike "OTEL_EXPORTER_OTLP_HEADERS=*" -and $_ -notlike "OTEL_EXPORTER_OTLP_ENDPOINT=*" })
-            $updated += "OTEL_EXPORTER_OTLP_HEADERS=api-key={{ newrelic_license_key }}"
-            $updated += "OTEL_EXPORTER_OTLP_ENDPOINT={{ otel_exporter_otlp_endpoint | default('https://otlp.nr-data.net') }}"
-            Set-ItemProperty -Path $regPath -Name "Environment" -Value $updated -Type MultiString -Force
-            sc.exe stop $svc 2>$null
-            # Wait up to 30s for service to fully stop (STOP_PENDING can take time)
-            $waited = 0
-            while ($waited -lt 30) {
-              $state = (Get-Service -Name $svc -ErrorAction SilentlyContinue).Status
-              if ($state -eq 'Stopped' -or $state -eq $null) { break }
-              Start-Sleep -Seconds 1; $waited++
-            }
-            # Force-kill if still running
-            if ((Get-Service -Name $svc -ErrorAction SilentlyContinue).Status -ne 'Stopped') {
-              $proc = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like "*$svc*" -or $_.CommandLine -like "*{{ item }}*" }
-              if ($proc) { Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue }
-              Start-Sleep -Seconds 2
-            }
-            sc.exe start $svc
+          $envVars = @(
+            "OTEL_SERVICE_NAME=$svc",
+            "OTEL_RESOURCE_ATTRIBUTES=service.name=$svc,service.namespace=NavalArchive,deployment.environment=prod",
+            "OTEL_EXPORTER_OTLP_HEADERS=api-key={{ newrelic_license_key }}"
+          )
+          {% for ev in otel_common_env_vars %}
+          $envVars += "{{ ev }}"
+          {% endfor %}
+          Set-ItemProperty -Path $regPath -Name "Environment" -Value $envVars -Type MultiString -Force
+          sc.exe stop $svc 2>$null
+          $waited = 0
+          while ($waited -lt 30) {
+            $state = (Get-Service -Name $svc -ErrorAction SilentlyContinue).Status
+            if ($state -eq 'Stopped' -or $state -eq $null) { break }
+            Start-Sleep -Seconds 1; $waited++
           }
+          if ((Get-Service -Name $svc -ErrorAction SilentlyContinue).Status -ne 'Stopped') {
+            Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like "*$svc*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+            Start-Sleep -Seconds 2
+          }
+          sc.exe start $svc
         }
       args:
         executable: powershell

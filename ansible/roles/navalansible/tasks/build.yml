@@ -140,9 +140,6 @@
       Get-ChildItem -Path $webSrcDir -Exclude node_modules | Copy-Item -Destination "{{ web_path }}" -Recurse -Force
       Push-Location "{{ web_path }}"
       & "{{ node_dir }}\npm.cmd" install --omit=dev --no-audit --no-fund
-      if ("{{ newrelic_license_key | default('') }}") {
-        & "{{ node_dir }}\npm.cmd" install newrelic --omit=dev --no-audit --no-fund
-      }
       Pop-Location
     }
   args:

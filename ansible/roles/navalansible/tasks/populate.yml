@@ -75,25 +75,12 @@
   register: java_result
   ignore_unreachable: true
 
-- include_tasks: nr-java-agent.yml
-
 - name: Run ImagePopulator (populate ship images from Wikipedia)
   ansible.windows.win_shell: |
     $jar = "{{ jar_result.stdout | trim }}"
     $java = "{{ java_result.stdout | trim }}"
-    $javaArgs = @()
-    $nrJar = "{{ newrelic_java_agent_dir | default('C:\\ProgramData\\NewRelic\\java') }}\newrelic.jar"
-    if ("{{ newrelic_license_key | default('') }}" -and (Test-Path $nrJar)) {
-      $javaArgs += "-javaagent:$nrJar"
-      $javaArgs += "-Dnewrelic.config.license_key={{ newrelic_license_key }}"
-      $javaArgs += "-Dnewrelic.config.app_name={{ newrelic_java_app_name | default('NavalArchiveImagePopulator') }}"
-      $javaArgs += "-Dnewrelic.config.distributed_tracing.enabled=true"
-    }
     if ($jar -and (Test-Path $jar)) {
-      $javaArgs += "-jar"
-      $javaArgs += $jar
-      $javaArgs += "http://localhost:5000"
-      & $java @javaArgs
+      & $java -jar $jar "http://localhost:5000"
       exit $LASTEXITCODE
     } else {
       Write-Host "ImagePopulator jar not found - skipping"

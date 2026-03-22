@@ -1,10 +1,9 @@
 ---
-# Create and start Windows services (sc.exe for custom binPath with args)
-# All service creation tasks have async timeouts to prevent deploy hangs.
-# NR/OTEL instrumentation only applied when newrelic_license_key is defined (deploy with -newrelic).
+# Create and start Windows services. Pure app deploy — zero observability.
+# NR/OTEL instrumentation is layered on by newrelic.yml (run with -newrelic flag).
 
 # --- Node (NavalArchiveWeb) ---
-- name: Create NavalArchiveWeb service (Node) - use 8.3 path to avoid sc.exe quoting
+- name: Create NavalArchiveWeb service (Node)
   ansible.windows.win_shell: |
     sc.exe stop NavalArchiveWeb 2>$null
     sc.exe delete NavalArchiveWeb 2>$null
@@ -19,15 +18,6 @@
       "GATEWAY_URL=http://localhost:5010",
       "PORT=3000"
     )
-    {% if newrelic_license_key is defined and newrelic_license_key | length > 0 %}
-    $envVars += @(
-      "NEW_RELIC_APP_NAME={{ newrelic_node_app_name | default('NavalArchiveWeb') }}",
-      "NEW_RELIC_LICENSE_KEY={{ newrelic_license_key }}",
-      "NEW_RELIC_NO_CONFIG_FILE=true",
-      "NEW_RELIC_DISTRIBUTED_TRACING_ENABLED=true",
-      "NODE_OPTIONS=-r {{ web_path }}\node_modules\newrelic\index.js"
-    )
-    {% endif %}
     Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\NavalArchiveWeb" -Name "Environment" -Value $envVars -Type MultiString -Force -ErrorAction SilentlyContinue
     sc.exe start NavalArchiveWeb
   args:
@@ -37,14 +27,12 @@
   failed_when: false
 
 # --- Java (ImagePopulator) ---
-- include_tasks: nr-java-agent.yml
-
 - name: Create run-image-populator-listener.ps1
   ansible.windows.win_template:
     src: run-image-populator-listener.ps1.j2
     dest: C:\inetpub\run-image-populator-listener.ps1
 
-- name: Create NavalArchiveImagePopulator scheduled task (Java listener - bypasses service 1053 timeout)
+- name: Create NavalArchiveImagePopulator scheduled task
   ansible.windows.win_shell: |
     sc.exe stop NavalArchiveImagePopulator 2>$null
     sc.exe delete NavalArchiveImagePopulator 2>$null
@@ -77,25 +65,15 @@
   ansible.builtin.debug:
     msg: >-
       ImagePopulator listener:
-      {{ 'healthy on port ' + (image_populator_port | string) if imagepopulator_health.status_code | default(0) == 200 else 'not responding on port ' + (image_populator_port | string) + ' after 90s - check C:\\inetpub\\run-image-populator-listener.ps1 and scheduled task logs' }}
+      {{ 'healthy on port ' + (image_populator_port | string) if imagepopulator_health.status_code | default(0) == 200 else 'not responding on port ' + (image_populator_port | string) + ' after 90s' }}
 
 # --- Go (account-service + payment-service) ---
-- name: Create run-account-service.ps1 (Go binary launcher)
+- name: Create run-account-service.ps1
   ansible.windows.win_template:
     src: run-account-service.ps1.j2
     dest: "{{ account_path }}\\run-account-service.ps1"
 
-- name: Clear machine-level NR env vars left over from account-service (no longer needed)
-  ansible.windows.win_environment:
-    name: "{{ item }}"
-    state: absent
-    level: machine
-  loop:
-    - NEW_RELIC_APP_NAME
-    - NEW_RELIC_LICENSE_KEY
-  failed_when: false
-
-- name: Create NavalArchiveAccount scheduled task (Go account-service)
+- name: Create NavalArchiveAccount scheduled task
   ansible.windows.win_shell: |
     $taskName = "NavalArchiveAccount"
     $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -NonInteractive -File `"{{ account_path }}\run-account-service.ps1`"" -WorkingDirectory "{{ account_path }}"
@@ -122,12 +100,12 @@
   delay: 5
   failed_when: false
 
-- name: Create run-payment-service.ps1 (Go binary launcher)
+- name: Create run-payment-service.ps1
   ansible.windows.win_template:
     src: run-payment-service.ps1.j2
     dest: "{{ payment_path }}\\run-payment-service.ps1"
 
-- name: Create NavalArchivePayment scheduled task (Go payment-service)
+- name: Create NavalArchivePayment scheduled task
   ansible.windows.win_shell: |
     sc.exe stop NavalArchivePayment 2>$null
     sc.exe delete NavalArchivePayment 2>$null
@@ -145,8 +123,6 @@
   poll: 5
 
 # --- Non-IIS services (Card, Cart, Order, PaymentChain, Shipping, Notification) ---
-# Without -newrelic: plain Windows services, no OTEL instrumentation
-# With -newrelic: OTEL auto-instrumentation env vars added
 - name: Create non-IIS microservice
   ansible.windows.win_shell: |
     $outPath = "{{ chain_paths[item.path_key] }}"
@@ -158,17 +134,6 @@
       sc.exe create $svc binPath= "$outPath\$exe --urls=http://localhost:$port"
       sc.exe config $svc start= auto
       sc.exe failure $svc reset= 86400 actions= restart/60000/restart/60000/restart/60000
-      {% if newrelic_license_key is defined and newrelic_license_key | length > 0 %}
-      $envVars = @(
-        "OTEL_SERVICE_NAME=$svc",
-        "OTEL_RESOURCE_ATTRIBUTES=service.name=$svc,service.namespace=NavalArchive,deployment.environment=prod",
-        "OTEL_EXPORTER_OTLP_HEADERS=api-key={{ newrelic_license_key }}"
-      )
-      {% for ev in otel_common_env_vars %}
-      $envVars += "{{ ev }}"
-      {% endfor %}
-      Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\$svc" -Name "Environment" -Value $envVars -Type MultiString -Force -ErrorAction SilentlyContinue
-      {% endif %}
       sc.exe start $svc
     }
   args:

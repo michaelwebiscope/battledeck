@@ -8,13 +8,6 @@
       $env:API_URL = "http://localhost:5000"
       $env:GATEWAY_URL = "http://localhost:5010"
       $env:PORT = "3000"
-      {% if newrelic_license_key is defined and newrelic_license_key | length > 0 %}
-      $env:NEW_RELIC_LICENSE_KEY = "{{ newrelic_license_key }}"
-      $env:NEW_RELIC_APP_NAME = "{{ newrelic_node_app_name | default('NavalArchiveWeb') }}"
-      $env:NEW_RELIC_NO_CONFIG_FILE = "true"
-      $env:NEW_RELIC_DISTRIBUTED_TRACING_ENABLED = "true"
-      $env:NODE_OPTIONS = "-r {{ web_path }}\node_modules\newrelic\index.js"
-      {% endif %}
       Set-Location "{{ web_path }}"
       & "{{ node_dir }}\node.exe" server.js
     dest: C:\inetpub\start-node-web.ps1

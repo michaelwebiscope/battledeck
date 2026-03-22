@@ -1,7 +1,5 @@
 ---
 - include_tasks: runtime.yml
-- include_tasks: otel.yml
-  when: newrelic_license_key is defined and newrelic_license_key | length > 0
 - include_tasks: stop_services.yml
 - include_tasks: clone.yml
 - include_tasks: build.yml
