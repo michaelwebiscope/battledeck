@@ -63,7 +63,6 @@
     executable: powershell
   async: 60
   poll: 5
-  when: ansible_changed | default(true)
 
 # Only set ACLs on dirs that were actually rebuilt this run.
 # icacls /T is recursive and slow — skipping unchanged dirs saves significant time.
@@ -107,7 +106,6 @@
   async: 30
   poll: 5
   failed_when: false
-  when: ansible_changed | default(true)
 
 - name: IIS reset
   ansible.windows.win_shell: |
@@ -125,4 +123,3 @@
   async: 60
   poll: 5
   failed_when: false
-  when: code_changed | default(true)
