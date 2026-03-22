@@ -144,8 +144,8 @@
   async: 60
   poll: 5
 
-# --- Card & Cart: NR .NET APM agent (same profiler as IIS services) ---
-- name: Create Card/Cart service with NR .NET agent
+# --- OTEL standalone services (Card, Cart) ---
+- name: Create OTEL standalone service
   ansible.windows.win_shell: |
     $svc = "{{ item.svc }}"
     sc.exe delete $svc 2>$null
@@ -153,12 +153,13 @@
     sc.exe config $svc start= auto
     sc.exe failure $svc reset= 86400 actions= restart/60000/restart/60000/restart/60000
     $envVars = @(
-      "CORECLR_ENABLE_PROFILING=1",
-      "CORECLR_PROFILER={36032161-FFC0-4B61-B559-F6C5D41BAE5A}",
-      "CORECLR_NEWRELIC_HOME=C:\ProgramData\New Relic\.NET Agent\",
-      "NEWRELIC_INSTALL_PATH=C:\Program Files\New Relic\.NET Agent\",
-      "NEW_RELIC_APP_NAME=$svc"
+      "OTEL_SERVICE_NAME=$svc",
+      "OTEL_RESOURCE_ATTRIBUTES=service.name=$svc,service.namespace=NavalArchive,deployment.environment=prod",
+      "OTEL_EXPORTER_OTLP_HEADERS=api-key={{ newrelic_license_key | default('') }}"
     )
+    {% for ev in otel_common_env_vars %}
+    $envVars += "{{ ev }}"
+    {% endfor %}
     Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\$svc" -Name "Environment" -Value $envVars -Type MultiString -Force -ErrorAction SilentlyContinue
     sc.exe start $svc
   args:

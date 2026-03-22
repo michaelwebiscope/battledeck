@@ -37,7 +37,8 @@
       poll: 5
       failed_when: false
       loop:
-        # Card and Cart use NR .NET APM agent (not OTEL) — configured in services.yml
+        - NavalArchiveCard
+        - NavalArchiveCart
         - NavalArchiveOrder
         - NavalArchivePaymentChain
         - NavalArchiveShipping
