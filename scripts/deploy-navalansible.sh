@@ -146,7 +146,7 @@ if [ "$ENABLE_NEWRELIC" = true ]; then
   [ -n "$NEWRELIC_ACCOUNT_ID" ] || NEWRELIC_ACCOUNT_ID=$(read_tfvar_any "newrelic_account_id")
   [ -n "$NEWRELIC_LICENSE_KEY" ] || NEWRELIC_LICENSE_KEY=$(read_tfvar_any "newrelic_license_key")
 
-  [ -n "$NEWRELIC_ACCOUNT_ID" ] || NEWRELIC_ACCOUNT_ID="7534908"
+  [ -n "$NEWRELIC_ACCOUNT_ID" ] || NEWRELIC_ACCOUNT_ID="7849242"
   if [ -z "$NEWRELIC_API_KEY" ]; then
     echo "ERROR: NEWRELIC_API_KEY is required with -newrelic."
     echo "Set env var NEWRELIC_API_KEY, or add newrelic_api_key to:"

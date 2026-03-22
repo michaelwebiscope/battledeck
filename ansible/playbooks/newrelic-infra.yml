@@ -7,10 +7,10 @@
       - infrastructure
       - logs
       - apm-dotnet
-    install_timeout_seconds: 300
+    install_timeout_seconds: 900
   environment:
     NEW_RELIC_API_KEY: "{{ newrelic_api_key }}"
-    NEW_RELIC_ACCOUNT_ID: "{{ newrelic_account_id | default('7534908') }}"
+    NEW_RELIC_ACCOUNT_ID: "{{ newrelic_account_id }}"
     NEW_RELIC_REGION: "{{ newrelic_region | default('US') }}"
   tasks:
     - name: Install infrastructure, logs, and .NET APM agent

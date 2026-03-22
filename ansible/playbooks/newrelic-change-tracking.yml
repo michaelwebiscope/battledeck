@@ -7,7 +7,7 @@
   gather_facts: false
   vars:
     nr_entity_search_query: >-
-      accountId = '{{ newrelic_account_id | default('7534908') }}'
+      accountId = '{{ newrelic_account_id }}'
       AND type = 'APPLICATION' AND name LIKE 'NavalArchive%'
   tasks:
     - name: Skip if no API key
