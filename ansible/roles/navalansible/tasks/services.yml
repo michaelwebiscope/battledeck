@@ -144,33 +144,7 @@
   async: 60
   poll: 5
 
-# --- OTEL standalone services (Card, Cart) ---
-- name: Create OTEL standalone service
-  ansible.windows.win_shell: |
-    $svc = "{{ item.svc }}"
-    sc.exe delete $svc 2>$null
-    sc.exe create $svc binPath= "{{ item.path }}\{{ item.exe }} --urls=http://localhost:{{ item.port }}"
-    sc.exe config $svc start= auto
-    sc.exe failure $svc reset= 86400 actions= restart/60000/restart/60000/restart/60000
-    $envVars = @(
-      "OTEL_SERVICE_NAME=$svc",
-      "OTEL_RESOURCE_ATTRIBUTES=service.name=$svc,service.namespace=NavalArchive,deployment.environment=prod",
-      "OTEL_EXPORTER_OTLP_HEADERS=api-key={{ newrelic_license_key | default('') }}"
-    )
-    {% for ev in otel_common_env_vars %}
-    $envVars += "{{ ev }}"
-    {% endfor %}
-    Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\$svc" -Name "Environment" -Value $envVars -Type MultiString -Force -ErrorAction SilentlyContinue
-    sc.exe start $svc
-  args:
-    executable: powershell
-  async: 60
-  poll: 5
-  loop: "{{ otel_standalone_services }}"
-  loop_control:
-    label: "{{ item.svc }}"
-
-# --- OTEL chain services (Order, PaymentChain, Shipping, Notification) ---
+# --- OTEL services (Card, Cart, Order, PaymentChain, Shipping, Notification) ---
 - name: Create chain microservice
   ansible.windows.win_shell: |
     $outPath = "{{ chain_paths[item.path_key] }}"

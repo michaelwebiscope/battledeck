@@ -24,6 +24,9 @@ chain_services:
   - { csproj: NavalArchive.Payment.csproj, exe: NavalArchive.Payment.exe, port: 5017, svc: NavalArchivePaymentChain, path_key: Payment }
   - { csproj: NavalArchive.Shipping.csproj, exe: NavalArchive.Shipping.exe, port: 5018, svc: NavalArchiveShipping, path_key: Shipping }
   - { csproj: NavalArchive.Notification.csproj, exe: NavalArchive.Notification.exe, port: 5019, svc: NavalArchiveNotification, path_key: Notification }
+  # Card and Cart: same OTEL treatment as chain services above
+  - { csproj: NavalArchive.CardService.csproj, exe: NavalArchive.CardService.exe, port: 5002, svc: NavalArchiveCard, path_key: Card }
+  - { csproj: NavalArchive.CartService.csproj, exe: NavalArchive.CartService.exe, port: 5003, svc: NavalArchiveCart, path_key: Cart }
 
 chain_paths:
   Gateway: C:\inetpub\navalarchive-gateway
@@ -36,6 +39,8 @@ chain_paths:
   Payment: C:\inetpub\navalarchive-payment-chain
   Shipping: C:\inetpub\navalarchive-shipping
   Notification: C:\inetpub\navalarchive-notification
+  Card: C:\inetpub\navalarchive-card
+  Cart: C:\inetpub\navalarchive-cart
 
 iis_chain_services:
   - { site: NavalArchive-Gateway, apppool: NavalArchive-Gateway, svc: NavalArchiveGateway, exe: NavalArchive.Gateway.exe, port: 5010, path_key: Gateway }
@@ -84,8 +89,3 @@ otel_common_env_vars:
   - "DOTNET_ADDITIONAL_DEPS={{ otel_dotnet_auto_home }}\\AdditionalDeps"
   - "DOTNET_SHARED_STORE={{ otel_dotnet_auto_home }}\\store"
   - "DOTNET_STARTUP_HOOKS={{ otel_dotnet_auto_home }}\\net\\OpenTelemetry.AutoInstrumentation.StartupHook.dll"
-
-# Standalone OTEL services (not in chain_services — direct binPath without chain_paths lookup)
-otel_standalone_services:
-  - { svc: NavalArchiveCard, exe: NavalArchive.CardService.exe, path: "{{ card_path }}", port: 5002 }
-  - { svc: NavalArchiveCart, exe: NavalArchive.CartService.exe, path: "{{ cart_path }}", port: 5003 }
