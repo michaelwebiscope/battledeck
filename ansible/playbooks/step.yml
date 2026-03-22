@@ -1,7 +1,0 @@
----
-- name: "Step deploy: {{ step }}"
-  hosts: navalansible
-  gather_facts: true
-  vars_files: ["{{ playbook_dir }}/../roles/navalansible/vars/main.yml"]
-  tasks:
-    - include_tasks: "{{ playbook_dir }}/../roles/navalansible/tasks/{{ step }}.yml"
