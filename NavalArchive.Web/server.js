@@ -14,6 +14,7 @@ try { newrelic = require('newrelic'); } catch (e) { /* not installed */ }
 const app = express();
 const PORT = process.env.PORT || 3000;
 const API_BASE = process.env.API_URL || 'http://localhost:5000';
+const IMAGE_POPULATOR_BASE = (process.env.IMAGE_POPULATOR_URL || 'http://127.0.0.1:5099').replace(/\/+$/, '');
 const DynamicFilters = require(path.join(__dirname, 'public', 'js', 'dynamicFilters.js'));
 
 const FLEET_FILTER_OVERRIDES_PATH = path.join(__dirname, 'config', 'fleet-filter-overrides.json');
@@ -495,15 +496,45 @@ app.post('/api/captains/delete/:id', async (req, res) => {
 // Proxy /api/* to API for client-side fetches (local dev; on IIS, /api/* is rewritten to API)
 app.use('/api', async (req, res) => {
   try {
-    if (
-      imageFetchMode.disableDotNetImageFetch === true &&
-      req.method === 'POST' &&
-      /^\/images\/(ship|captain)\/\d+\/from-url(?:\?.*)?$/i.test(req.url || '')
-    ) {
-      return res.status(503).json({
-        error: 'Java-only image mode is enabled. .NET from-url image fetching is disabled.'
-      });
+    const qIndex = req.url.indexOf('?');
+    const pathOnly = qIndex >= 0 ? req.url.slice(0, qIndex) : req.url;
+    const queryStr = qIndex >= 0 ? req.url.slice(qIndex) : '';
+    // Hard-cut: populator workflows are Java-first (no .NET populator intermediates).
+    let javaPath = null;
+    if (/^\/images\/test-keys$/i.test(pathOnly)) javaPath = '/test-keys';
+    else if (/^\/images\/search$/i.test(pathOnly)) javaPath = '/search';
+    else if (/^\/images\/populate$/i.test(pathOnly)) javaPath = '/populate';
+    else if (/^\/images\/populate\/ship\/\d+$/i.test(pathOnly)) javaPath = pathOnly.replace(/^\/images/i, '');
+    else if (/^\/images\/populate\/captain\/\d+$/i.test(pathOnly)) javaPath = pathOnly.replace(/^\/images/i, '');
+    else if (/^\/images\/populate\/wikipedia$/i.test(pathOnly)) javaPath = '/run';
+    else if (/^\/images\/ship\/\d+\/from-url$/i.test(pathOnly)) javaPath = pathOnly.replace(/^\/images\/ship\/(\d+)\/from-url$/i, '/set-from-url/ship/$1');
+    else if (/^\/images\/captain\/\d+\/from-url$/i.test(pathOnly)) javaPath = pathOnly.replace(/^\/images\/captain\/(\d+)\/from-url$/i, '/set-from-url/captain/$1');
+
+    if (javaPath) {
+      const javaUrl = `${IMAGE_POPULATOR_BASE}${javaPath}${queryStr}`;
+      const javaHeaders = { 'Content-Type': 'application/json' };
+      if (req.headers['x-api-key']) javaHeaders['X-API-Key'] = req.headers['x-api-key'];
+      const javaOpts = {
+        method: req.method,
+        url: javaUrl,
+        headers: javaHeaders,
+        responseType: 'text',
+        transformResponse: [data => data],
+        validateStatus: () => true
+      };
+      if (req.method !== 'GET' && req.method !== 'HEAD' && req.body && Object.keys(req.body).length) javaOpts.data = req.body;
+      const jr = await axios(javaOpts);
+      const ct = String(jr.headers?.['content-type'] || '').toLowerCase();
+      if (ct.includes('application/json')) {
+        try {
+          return res.status(jr.status).json(jr.data ? JSON.parse(jr.data) : {});
+        } catch (_) {
+          return res.status(jr.status).send(jr.data ?? '');
+        }
+      }
+      return res.status(jr.status).send(jr.data ?? '');
     }
+
     const url = `${API_BASE}/api${req.url}`;
       const headers = { 'Content-Type': 'application/json' };
       if (req.headers['x-api-key']) headers['X-API-Key'] = req.headers['x-api-key'];
@@ -1658,7 +1689,7 @@ app.post('/admin/images/test-keys', async (req, res) => {
     if (req.body?.googleApiKey) body.googleApiKey = req.body.googleApiKey;
     if (req.body?.googleCseId) body.googleCseId = req.body.googleCseId;
     if (req.body?.customKeys && typeof req.body.customKeys === 'object') body.customKeys = req.body.customKeys;
-    const response = await api.post('/api/images/test-keys', body);
+    const response = await axios.post(`${IMAGE_POPULATOR_BASE}/test-keys`, body, { timeout: 30000, validateStatus: () => true });
     res.json(response.data);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -2299,7 +2330,7 @@ app.post('/admin/images/populate', async (req, res) => {
             try {
               const streamRes = await axios({
                 method: 'post',
-                url: `${API_BASE}/api/images/populate/stream`,
+                url: `${IMAGE_POPULATOR_BASE}/populate/stream`,
                 data: { ...keys },
                 responseType: 'stream',
                 timeout: 300000,
@@ -2376,10 +2407,10 @@ app.post('/admin/images/populate', async (req, res) => {
       return;
     }
 
-    const response = await api.post('/api/images/populate', keys, { timeout: 300000 });
+    const response = await axios.post(`${IMAGE_POPULATOR_BASE}/populate`, keys, { timeout: 300000, validateStatus: () => true });
     const data = response.data || {};
     data.logLines = [];
-    res.json(data);
+    res.status(response.status).json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -2394,12 +2425,17 @@ app.get('/admin/images/populate/status/:jobId', (req, res) => {
 // Trigger Java ImagePopulator (Wikipedia): API entity calls Java entity at localhost:5099/run
 app.post('/admin/images/populate/wikipedia', async (req, res) => {
   try {
-    const response = await api.post('/api/images/populate/wikipedia', {}, { timeout: 20000 });
-    res.status(response.status).json(response.data || { message: 'Wikipedia populate started.' });
+    const response = await axios.post(`${IMAGE_POPULATOR_BASE}/run`, {}, { timeout: 20000, responseType: 'text', transformResponse: [d => d], validateStatus: () => true });
+    if (response.status === 202) {
+      return res.status(202).json({ message: 'Wikipedia populate started. The Java ImagePopulator is fetching ship images and uploading to the API.' });
+    }
+    if (response.status === 409) {
+      return res.status(409).json({ message: 'ImagePopulator is already running a populate job.' });
+    }
+    return res.status(response.status).json({ message: response.data || `Error ${response.status}` });
   } catch (err) {
     const status = err.response?.status ?? 503;
-    const data = err.response?.data ?? { message: err.message || 'ImagePopulator unreachable.' };
-    res.status(status).json(data);
+    res.status(status).json({ message: err.message || 'ImagePopulator unreachable.' });
   }
 });
 

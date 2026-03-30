@@ -293,18 +293,15 @@ public class ImagesController : ControllerBase
     public async Task<IActionResult> SetShipImageFromUrl(int id, [FromBody] SetImageFromUrlRequest request, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(request?.Url)) return BadRequest(new { error = "Url required" });
-        var ship = await _db.Ships.FindAsync(id);
-        if (ship == null) return NotFound();
-        var (data, contentType, _, error) = await _storage.FetchImageAsync(request.Url, ct);
-        if (data == null || data.Length < 100) return BadRequest(new { error = error ?? "Failed to fetch image" });
-        ship.ImageData = data;
-        ship.ImageContentType = contentType ?? "image/jpeg";
-        ship.ImageUrl = request.Url;
-        ship.ImageManuallySet = true;
-        ship.ImageVersion++;
-        await _db.SaveChangesAsync(ct);
-        _cacheInv.OnShipUpdated();
-        return Ok(new { stored = data.Length });
+        var result = await ProxyPostAsync(
+            JavaBaseUrl + "/set-from-url/ship/" + id,
+            new { url = request.Url },
+            ct,
+            TimeSpan.FromMinutes(2)
+        );
+        if (result is ContentResult cr && cr.StatusCode is >= 200 and < 300)
+            _cacheInv.OnShipUpdated();
+        return result;
     }
 
     /// <summary>Set captain image from URL.</summary>
@@ -312,18 +309,15 @@ public class ImagesController : ControllerBase
     public async Task<IActionResult> SetCaptainImageFromUrl(int id, [FromBody] SetImageFromUrlRequest request, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(request?.Url)) return BadRequest(new { error = "Url required" });
-        var captain = await _db.Captains.FindAsync(id);
-        if (captain == null) return NotFound();
-        var (data, contentType, _, error) = await _storage.FetchImageAsync(request.Url, ct);
-        if (data == null || data.Length < 100) return BadRequest(new { error = error ?? "Failed to fetch image" });
-        captain.ImageData = data;
-        captain.ImageContentType = contentType ?? "image/jpeg";
-        captain.ImageUrl = request.Url;
-        captain.ImageManuallySet = true;
-        captain.ImageVersion++;
-        await _db.SaveChangesAsync(ct);
-        _cacheInv.OnCaptainUpdated();
-        return Ok(new { stored = data.Length });
+        var result = await ProxyPostAsync(
+            JavaBaseUrl + "/set-from-url/captain/" + id,
+            new { url = request.Url },
+            ct,
+            TimeSpan.FromMinutes(2)
+        );
+        if (result is ContentResult cr && cr.StatusCode is >= 200 and < 300)
+            _cacheInv.OnCaptainUpdated();
+        return result;
     }
 
     /// <summary>Upload ship image from external source (e.g. populate script running where Wikipedia is reachable).</summary>

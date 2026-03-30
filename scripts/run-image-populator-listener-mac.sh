@@ -31,7 +31,7 @@ fi
 # Build JAR
 echo "Building ImagePopulator..."
 mvn -q package -DskipTests
-JAR=$(ls target/image-populator-*.jar 2>/dev/null | head -1)
+JAR=$(ls -t target/image-populator-*.jar 2>/dev/null | head -1)
 if [[ -z "$JAR" ]]; then
   echo "No image-populator JAR found in target/" >&2
   exit 1

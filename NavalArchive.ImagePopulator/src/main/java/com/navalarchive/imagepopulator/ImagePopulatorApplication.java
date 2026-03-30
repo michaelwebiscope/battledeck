@@ -160,6 +160,30 @@ public class ImagePopulatorApplication implements CommandLineRunner {
         return populateEntity("captain", id, str(captain.get("name")), str(captain.get("imageUrl")), captainPrefix, sources, keys, client, apiBase);
     }
 
+    static Map<String, Object> setEntityImageFromUrl(String type, int id, String url, OkHttpClient client, String apiBase) {
+        try {
+            if (url == null || url.isBlank()) {
+                return mapOf("id", id, "type", type, "status", "fail", "reason", "Url required");
+            }
+            FetchResult img = fetchImageWithRetry(client, url, type + "-" + id, 1, 1);
+            if (img == null || img.data == null || img.data.length < 100) {
+                return mapOf("id", id, "type", type, "status", "fail",
+                        "reason", "HTTP " + (img != null ? img.httpCode : "error"));
+            }
+            String path = "ship".equals(type)
+                    ? "/api/images/ship/" + id + "/upload"
+                    : "/api/images/captain/" + id + "/upload";
+            int uploadStatus = uploadImage(client, apiBase, path, img.data);
+            if (uploadStatus >= 200 && uploadStatus < 300) {
+                return mapOf("id", id, "type", type, "status", "ok", "stored", img.data.length, "url", url);
+            }
+            return mapOf("id", id, "type", type, "status", "fail", "reason", "Upload HTTP " + uploadStatus);
+        } catch (Exception e) {
+            return mapOf("id", id, "type", type, "status", "fail",
+                    "reason", e.getMessage() != null ? e.getMessage() : "Unknown error");
+        }
+    }
+
     static Map<String, Object> populateEntity(String type, int id, String name, String imageUrl,
             String prefix, List<ImageSourceConfig> sources, Map<String, String> keys,
             OkHttpClient client, String apiBase) {

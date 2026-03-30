@@ -160,6 +160,46 @@ public class ImagePopulatorController {
         }
     }
 
+    // POST /set-from-url/ship/{id}
+    @PostMapping("/set-from-url/ship/{id}")
+    public ResponseEntity<Object> setShipFromUrl(
+            @PathVariable int id,
+            @RequestBody(required = false) SetImageFromUrlRequest req) {
+        try {
+            String url = req != null ? req.url : null;
+            Map<String, Object> result =
+                    ImagePopulatorApplication.setEntityImageFromUrl("ship", id, url, client, apiBase);
+            String reason = String.valueOf(result.get("reason"));
+            boolean ok = "ok".equalsIgnoreCase(String.valueOf(result.get("status")));
+            if (ok) return ResponseEntity.ok(result);
+            if (reason != null && reason.contains("Upload HTTP 404")) return ResponseEntity.status(404).body(result);
+            return ResponseEntity.status(400).body(result);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(
+                    ImagePopulatorApplication.mapOf("error", e.getMessage()));
+        }
+    }
+
+    // POST /set-from-url/captain/{id}
+    @PostMapping("/set-from-url/captain/{id}")
+    public ResponseEntity<Object> setCaptainFromUrl(
+            @PathVariable int id,
+            @RequestBody(required = false) SetImageFromUrlRequest req) {
+        try {
+            String url = req != null ? req.url : null;
+            Map<String, Object> result =
+                    ImagePopulatorApplication.setEntityImageFromUrl("captain", id, url, client, apiBase);
+            String reason = String.valueOf(result.get("reason"));
+            boolean ok = "ok".equalsIgnoreCase(String.valueOf(result.get("status")));
+            if (ok) return ResponseEntity.ok(result);
+            if (reason != null && reason.contains("Upload HTTP 404")) return ResponseEntity.status(404).body(result);
+            return ResponseEntity.status(400).body(result);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(
+                    ImagePopulatorApplication.mapOf("error", e.getMessage()));
+        }
+    }
+
     // POST /search
     @PostMapping("/search")
     public ResponseEntity<Object> search(
@@ -218,4 +258,8 @@ public class ImagePopulatorController {
     }
 
     private static String shipStr(Object o) { return o != null ? o.toString() : null; }
+
+    public static class SetImageFromUrlRequest {
+        public String url;
+    }
 }

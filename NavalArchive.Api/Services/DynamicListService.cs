@@ -2,6 +2,8 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Configuration;
 using NavalArchive.Api.Contracts;
 using NavalArchive.Data;
 
@@ -11,25 +13,73 @@ public sealed class DynamicListService
 {
     private readonly NavalArchiveDbContext _db;
     private readonly LogsDbContext _logsDb;
+    private readonly IMemoryCache _cache;
+    private readonly TimeSpan _rowsCacheTtl;
+    private readonly TimeSpan _filterConfigCacheTtl;
 
     private const int StringRadioMaxUnique = 10;
     private const int StringNameMaxUnique = 100;
 
-    public DynamicListService(NavalArchiveDbContext db, LogsDbContext logsDb)
+    public DynamicListService(
+        NavalArchiveDbContext db,
+        LogsDbContext logsDb,
+        IMemoryCache cache,
+        IConfiguration config
+    )
     {
         _db = db;
         _logsDb = logsDb;
+        _cache = cache;
+        var fallbackMinutes = Math.Max(1, config.GetValue<int?>("Cache:ExpirationMinutes") ?? 10);
+        _rowsCacheTtl = TimeSpan.FromSeconds(
+            Math.Max(10, config.GetValue<int?>("Cache:DynamicLists:RowsSeconds") ?? fallbackMinutes * 60)
+        );
+        _filterConfigCacheTtl = TimeSpan.FromSeconds(
+            Math.Max(10, config.GetValue<int?>("Cache:DynamicLists:FilterConfigSeconds") ?? fallbackMinutes * 60)
+        );
     }
 
     public async Task<DynamicListResponseDto> GetListAsync(string entity, DynamicListQueryDto query, CancellationToken ct = default)
     {
         var page = Math.Max(1, query.Page);
         var pageSize = Math.Clamp(query.PageSize <= 0 ? 100 : query.PageSize, 1, 500);
+        var normalizedEntity = entity.Trim().ToLowerInvariant();
         var profile = string.IsNullOrWhiteSpace(query.Profile) ? "" : query.Profile.Trim().ToLowerInvariant();
-        var rows = await LoadRowsAsync(entity.Trim().ToLowerInvariant(), profile, ct);
+        var rowsCacheKey = $"dynamic-list:rows:{normalizedEntity}:{profile}";
+        var filterConfigCacheKey = $"dynamic-list:filter-config:{normalizedEntity}:{profile}";
+        var rowsCacheHit = _cache.TryGetValue(rowsCacheKey, out List<Dictionary<string, object?>>? cachedRows) && cachedRows is not null;
+        List<Dictionary<string, object?>> rows;
+        if (rowsCacheHit)
+        {
+            rows = cachedRows!;
+        }
+        else
+        {
+            rows = await LoadRowsAsync(normalizedEntity, profile, ct);
+            _cache.Set(rowsCacheKey, rows, new MemoryCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = _rowsCacheTtl,
+                Priority = CacheItemPriority.High
+            });
+        }
 
         var searchedRows = ApplySearch(rows, query.Q);
-        var filterConfigAll = BuildFilterConfig(searchedRows);
+        var filterConfigCacheHit = _cache.TryGetValue(filterConfigCacheKey, out List<DynamicListFilterConfigDto>? cachedFilterConfig) && cachedFilterConfig is not null;
+        List<DynamicListFilterConfigDto> filterConfigAll;
+        if (filterConfigCacheHit)
+        {
+            filterConfigAll = cachedFilterConfig!;
+        }
+        else
+        {
+            // Build filter metadata from full cached rows so options stay stable across searches/pages.
+            filterConfigAll = BuildFilterConfig(rows);
+            _cache.Set(filterConfigCacheKey, filterConfigAll, new MemoryCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = _filterConfigCacheTtl,
+                Priority = CacheItemPriority.High
+            });
+        }
         var cfgByKey = filterConfigAll.ToDictionary(c => c.Key, StringComparer.OrdinalIgnoreCase);
 
         var active = ParseActiveFilters(query);
@@ -51,7 +101,9 @@ public sealed class DynamicListService
             RuntimeHints = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
             {
                 ["entity"] = entity,
-                ["profile"] = profile
+                ["profile"] = profile,
+                ["rowsCacheHit"] = rowsCacheHit,
+                ["filterConfigCacheHit"] = filterConfigCacheHit
             }
         };
     }
