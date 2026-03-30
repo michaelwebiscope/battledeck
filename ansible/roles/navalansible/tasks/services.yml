@@ -1,6 +1,6 @@
 ---
 # Create and start Windows services. Pure app deploy — zero observability.
-# NR/OTEL instrumentation is layered on by newrelic.yml (run with -newrelic flag).
+# NR/OTEL instrumentation is layered on by newrelic-dotnet-java-go.yml (deploy with -fullrun or ./scripts/run-newrelic-dotnet-java-go.sh).
 
 # --- Node (NavalArchiveWeb) ---
 - name: Create NavalArchiveWeb service (Node)

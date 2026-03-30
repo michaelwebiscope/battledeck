@@ -16,4 +16,10 @@ if (-not $javaExe) { $javaExe = "java" }
 $env:IMAGE_POPULATOR_LISTEN = "true"
 $env:SERVER_PORT = "{{ image_populator_port }}"
 $env:API_URL = $apiBase
-& $javaExe -jar $jar
+{# New Relic Java agent: nr-java-agent.yml deploys newrelic.jar + newrelic.yml beside it; without -javaagent nothing reports to NR. #}
+$nrJar = Join-Path '{{ newrelic_java_agent_dir | default("C:\\ProgramData\\NewRelic\\java") }}' 'newrelic.jar'
+if (Test-Path $nrJar) {
+  & $javaExe "-javaagent:$nrJar" "-Dnewrelic.environment=production" -jar $jar
+} else {
+  & $javaExe -jar $jar
+}

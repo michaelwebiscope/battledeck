@@ -2,6 +2,10 @@ const express = require('express');
 const axios = require('axios');
 const path = require('path');
 const fs = require('fs');
+const { AsyncLocalStorage } = require('node:async_hooks');
+
+/** Forwards the browser Cookie header on Web → API calls so SessionGate accepts the session when not on localhost. */
+const inboundApiCookie = new AsyncLocalStorage();
 
 // New Relic browser agent: try to load (only present when deployed with -newrelic)
 let newrelic = null;
@@ -10,6 +14,122 @@ try { newrelic = require('newrelic'); } catch (e) { /* not installed */ }
 const app = express();
 const PORT = process.env.PORT || 3000;
 const API_BASE = process.env.API_URL || 'http://localhost:5000';
+const DynamicFilters = require(path.join(__dirname, 'public', 'js', 'dynamicFilters.js'));
+
+const FLEET_FILTER_OVERRIDES_PATH = path.join(__dirname, 'config', 'fleet-filter-overrides.json');
+const FLEET_FILTER_HIDDEN_PATH = path.join(__dirname, 'config', 'fleet-filter-hidden.json');
+const CAPTAIN_FILTER_OVERRIDES_PATH = path.join(__dirname, 'config', 'captain-filter-overrides.json');
+const CAPTAIN_FILTER_HIDDEN_PATH = path.join(__dirname, 'config', 'captain-filter-hidden.json');
+
+const DYNAMIC_FILTERS_GENERIC_DIR = path.join(__dirname, 'config', 'dynamic-filters');
+
+/** @param {string} listId normalized storage id (persisted overrides / hidden files) */
+function dynamicFilterPaths(listId) {
+  const id = String(listId || 'fleet').trim();
+  if (id === 'captains') {
+    return { overrides: CAPTAIN_FILTER_OVERRIDES_PATH, hidden: CAPTAIN_FILTER_HIDDEN_PATH };
+  }
+  if (id === 'fleet') {
+    return { overrides: FLEET_FILTER_OVERRIDES_PATH, hidden: FLEET_FILTER_HIDDEN_PATH };
+  }
+  return {
+    overrides: path.join(DYNAMIC_FILTERS_GENERIC_DIR, `${id}-overrides.json`),
+    hidden: path.join(DYNAMIC_FILTERS_GENERIC_DIR, `${id}-hidden.json`)
+  };
+}
+
+function normalizeDynamicListId(raw) {
+  const s = String(raw == null ? '' : raw)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '');
+  return s || 'fleet';
+}
+
+/** @param {string} listId */
+function readDynamicFilterOverrides(listId) {
+  const { overrides: p } = dynamicFilterPaths(listId);
+  try {
+    if (!fs.existsSync(p)) return {};
+    const raw = fs.readFileSync(p, 'utf8');
+    const o = JSON.parse(raw);
+    if (!o || typeof o !== 'object' || Array.isArray(o)) return {};
+    return o;
+  } catch (e) {
+    console.warn('dynamic-filter-overrides read failed (%s):', listId, e.message);
+    return {};
+  }
+}
+
+/** @param {string} listId @param {Record<string, string>} map */
+function writeDynamicFilterOverrides(listId, map) {
+  const { overrides: p } = dynamicFilterPaths(listId);
+  const dir = path.dirname(p);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const allowed = new Set(DynamicFilters.FILTER_TYPES || []);
+  const clean = {};
+  if (map && typeof map === 'object') {
+    for (const [k, v] of Object.entries(map)) {
+      if (typeof k !== 'string' || !k.trim()) continue;
+      if (typeof v !== 'string' || !allowed.has(v)) continue;
+      clean[k.trim()] = v;
+    }
+  }
+  fs.writeFileSync(p, JSON.stringify(clean, null, 2), 'utf8');
+}
+
+/** @param {string} listId */
+function readDynamicFilterHidden(listId) {
+  const { hidden: p } = dynamicFilterPaths(listId);
+  try {
+    if (!fs.existsSync(p)) return [];
+    const raw = fs.readFileSync(p, 'utf8');
+    const a = JSON.parse(raw);
+    if (!Array.isArray(a)) return [];
+    return [...new Set(a.map((k) => String(k).trim()).filter(Boolean))];
+  } catch (e) {
+    console.warn('dynamic-filter-hidden read failed (%s):', listId, e.message);
+    return [];
+  }
+}
+
+/**
+ * @param {string} listId
+ * @param {string[]} keys
+ */
+function writeDynamicFilterHidden(listId, keys) {
+  const { hidden: p } = dynamicFilterPaths(listId);
+  const dir = path.dirname(p);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const uniq = [...new Set((keys || []).map((k) => String(k).trim()).filter(Boolean))];
+  fs.writeFileSync(p, JSON.stringify(uniq, null, 2), 'utf8');
+  const o = readDynamicFilterOverrides(listId);
+  let changed = false;
+  for (let i = 0; i < uniq.length; i++) {
+    const k = uniq[i];
+    if (Object.prototype.hasOwnProperty.call(o, k)) {
+      delete o[k];
+      changed = true;
+    }
+  }
+  if (changed) writeDynamicFilterOverrides(listId, o);
+}
+
+function readFleetFilterOverrides() {
+  return readDynamicFilterOverrides('fleet');
+}
+
+function writeFleetFilterOverrides(map) {
+  writeDynamicFilterOverrides('fleet', map);
+}
+
+function readFleetFilterHidden() {
+  return readDynamicFilterHidden('fleet');
+}
+
+function writeFleetFilterHidden(keys) {
+  writeDynamicFilterHidden('fleet', keys);
+}
 
 function imageUploadHandler(entity) {
   return async (req, res) => {
@@ -148,6 +268,123 @@ const api = axios.create({
   timeout: 30000,
   headers: { 'Content-Type': 'application/json' }
 });
+api.interceptors.request.use((config) => {
+  const store = inboundApiCookie.getStore();
+  if (store && store.cookie) {
+    config.headers = config.headers || {};
+    if (!config.headers.Cookie) config.headers.Cookie = store.cookie;
+  }
+  return config;
+});
+
+/** @type {Map<string, { at: number, items: any[] | null, firstPageTotal?: number | null }>} */
+const dynamicListFetchState = new Map();
+
+/**
+ * Paginated JSON list (page + pageSize + items + total). Used for ships and similar APIs.
+ * @param {object} ds dataSource from dynamic-lists.json
+ * @param {string} storageId
+ */
+async function fetchPagedListData(ds, storageId) {
+  const cacheMs = ds.cacheMs != null ? ds.cacheMs : 4 * 60 * 1000;
+  const cacheKey = `${storageId}:paged`;
+  const state = dynamicListFetchState.get(cacheKey) || { at: 0, items: null, firstPageTotal: null };
+  const now = Date.now();
+  if (state.items && state.items.length > 0 && now - state.at < cacheMs) {
+    return state.items;
+  }
+
+  const all = [];
+  let page = ds.startPage != null ? ds.startPage : 1;
+  const pageSize = ds.pageSize || 500;
+  const itemsKey = ds.itemsKey || 'items';
+  const totalKey = ds.totalKey != null ? ds.totalKey : 'total';
+  let firstPageTotal = null;
+  const baseParams = Object.assign({}, ds.extraParams || {});
+
+  for (;;) {
+    const params = Object.assign({}, baseParams, {
+      [ds.pageParam || 'page']: page,
+      [ds.pageSizeParam || 'pageSize']: pageSize
+    });
+    const response = await api.get(ds.path, { params }).catch((err) => {
+      console.warn(`[dynamic-list:${storageId}] ${ds.path} page`, page, err.message || err);
+      return { data: {} };
+    });
+    const data = response.data || {};
+    const items = data[itemsKey] || [];
+    const startP = ds.startPage != null ? ds.startPage : 1;
+    if (page === startP && data[totalKey] != null) {
+      firstPageTotal = Number(data[totalKey]);
+    }
+    all.push(...items);
+    const total = data[totalKey] != null ? Number(data[totalKey]) : all.length;
+    if (all.length >= total || items.length === 0) break;
+    page += 1;
+    if (page > (ds.maxPages || 120)) break;
+  }
+
+  if (all.length > 0) {
+    dynamicListFetchState.set(cacheKey, { at: now, items: all, firstPageTotal });
+    return all;
+  }
+  if (firstPageTotal === 0) {
+    dynamicListFetchState.set(cacheKey, { at: now, items: [], firstPageTotal: 0 });
+    return [];
+  }
+  if (ds.keepStaleOnError && state.items && state.items.length > 0) {
+    console.warn(
+      `[dynamic-list:${storageId}] ${ds.path} returned no rows; keeping stale cache:`,
+      state.items.length,
+      'from',
+      new Date(state.at).toISOString()
+    );
+    return state.items;
+  }
+  dynamicListFetchState.set(cacheKey, { at: now, items: [], firstPageTotal });
+  return [];
+}
+
+/**
+ * @param {object} ds dataSource from dynamic-lists.json
+ * @param {string} storageId
+ */
+function normalizeListResponseBody(data) {
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === 'object') {
+    if (Array.isArray(data.items)) return data.items;
+    if (Array.isArray(data.data)) return data.data;
+  }
+  return [];
+}
+
+async function fetchArrayListData(ds, storageId) {
+  const cacheMs = ds.cacheMs != null ? ds.cacheMs : 4 * 60 * 1000;
+  const cacheKey = `${storageId}:array`;
+  const state = dynamicListFetchState.get(cacheKey) || { at: 0, items: null };
+  const now = Date.now();
+  if (state.items != null && now - state.at < cacheMs) {
+    return state.items;
+  }
+  const response = await api.get(ds.path, { validateStatus: () => true }).catch((err) => {
+    console.warn(`[dynamic-list:${storageId}] ${ds.path}`, err.message || err);
+    return { status: 0, data: null };
+  });
+  if (!response || response.status >= 400) {
+    console.warn(
+      `[dynamic-list:${storageId}] ${ds.path} HTTP`,
+      response && response.status,
+      typeof response?.data === 'object' && response.data && response.data.error
+        ? response.data.error
+        : ''
+    );
+    if (state.items != null && state.items.length > 0) return state.items;
+    return [];
+  }
+  const list = normalizeListResponseBody(response.data);
+  dynamicListFetchState.set(cacheKey, { at: now, items: list });
+  return list;
+}
 
 /** Normalize API data to entity format using entity type config. No hardcoded entity names. */
 function toEntity(item, type = 'ship') {
@@ -291,42 +528,778 @@ app.get('/', async (req, res) => {
   });
 });
 
-app.get('/fleet', async (req, res) => {
+/**
+ * When captain.name is list-based but options stayed empty (e.g. ship payloads without nested captain), fill from GET /api/captains.
+ */
+async function enrichCaptainNameFilterOptions(filterConfigAll) {
+  const row = filterConfigAll.find(
+    (c) => c.key === 'captain.name' && (c.type === 'dropdown' || c.type === 'radio')
+  );
+  if (!row || (Array.isArray(row.options) && row.options.length > 0)) return filterConfigAll;
   try {
-    const params = { page: req.query.page || 1, pageSize: req.query.pageSize || 100 };
-    if (req.query.country) params.country = req.query.country;
-    if (req.query.type) params.type = req.query.type;
-    if (req.query.yearMin) params.yearMin = req.query.yearMin;
-    if (req.query.yearMax) params.yearMax = req.query.yearMax;
-    const response = await api.get('/api/ships', { params });
-    const data = response.data || {};
-    const ships = data.items || [];
-    const classesRes = await api.get('/api/classes').catch(() => ({ data: [] }));
-    res.render('fleet', {
-      title: 'Fleet Roster',
-      ships,
-      total: data.total || ships.length,
-      page: data.page || 1,
-      pageSize: data.pageSize || 100,
-      searchQuery: '',
-      classes: classesRes.data,
-      filters: { country: req.query.country, type: req.query.type, yearMin: req.query.yearMin, yearMax: req.query.yearMax }
-    });
-  } catch (err) {
-    console.error('Fleet API error:', err.message);
-    res.render('fleet', {
-      title: 'Fleet Roster',
-      ships: [],
-      total: 0,
-      page: 1,
-      pageSize: 100,
-      classes: [],
-      filters: {},
-      error: `Unable to load fleet data. Ensure the API is running at ${API_BASE}.`,
-      searchQuery: ''
-    });
+    const res = await api.get('/api/captains');
+    const list = Array.isArray(res.data) ? res.data : [];
+    const names = [];
+    const seen = new Set();
+    for (const c of list) {
+      if (!c) continue;
+      const n = c.name != null ? c.name : c.Name;
+      if (n == null || n === '') continue;
+      const s = String(n).trim();
+      if (!s || seen.has(s)) continue;
+      seen.add(s);
+      names.push(s);
+    }
+    names.sort((a, b) => a.localeCompare(b));
+    if (!names.length) return filterConfigAll;
+    return filterConfigAll.map((c) =>
+      c.key === 'captain.name' ? Object.assign({}, c, { options: names }) : c
+    );
+  } catch (_) {
+    return filterConfigAll;
   }
-});
+}
+
+/**
+ * Declarative binding: data source, routes, and optional enrichers — derived from config/entity-types.json (optional dynamicList + overrides file).
+ * @typedef {object} DynamicListSpec
+ * @property {string} listId storage id for filter JSON files
+ * @property {string} pageBasePath
+ * @property {string} partialPath
+ * @property {'serverPartial'|'clientMemory'} [refreshMode]
+ * @property {string} [adapterName]
+ * @property {Record<string, any>|null} [adapterOptions]
+ * @property {string} resultKey — view model property for the current page of rows (e.g. ships, restaurants)
+ * @property {string} [summaryAllLabel]
+ * @property {() => Promise<object>} [loadExtras] merged into view model
+ * @property {string} [apiListEntity] unified API list entity id (ships/classes/captains)
+ * @property {string} [apiListProfile] optional list profile (e.g. gallery)
+ * @property {() => Promise<any[]>} fetchAll
+ * @property {(q: string) => Promise<any[]>} [searchFetch]
+ * @property {(q: string, list: any[]) => any[]} [filterBaseListBySearch]
+ * @property {(cfg: any[]) => Promise<any[]>} [enrichFilterConfig]
+ */
+
+const DYNAMIC_LIST_ENRICHERS = {
+  captainNameFromRelatedApi: enrichCaptainNameFilterOptions
+};
+
+function filterListByFields(q, list, fields) {
+  const qq = String(q || '')
+    .trim()
+    .toLowerCase();
+  if (!qq) return list;
+  return list.filter((row) =>
+    fields.some((f) => {
+      if (f.indexOf('.') >= 0) {
+        const parts = f.split('.');
+        let v = row;
+        for (let i = 0; i < parts.length; i++) {
+          v = v != null ? v[parts[i]] : undefined;
+        }
+        return String(v != null ? v : '')
+          .toLowerCase()
+          .includes(qq);
+      }
+      const v = row[f];
+      return String(v != null ? v : '')
+        .toLowerCase()
+        .includes(qq);
+    })
+  );
+}
+
+function chainEnrichers(names) {
+  if (!Array.isArray(names) || !names.length) return null;
+  const fns = names.map((n) => DYNAMIC_LIST_ENRICHERS[n]).filter((fn) => typeof fn === 'function');
+  if (!fns.length) return null;
+  return async (cfg) => {
+    let out = cfg;
+    for (let i = 0; i < fns.length; i++) {
+      out = await fns[i](out);
+    }
+    return out;
+  };
+}
+
+function createLoadExtras(def) {
+  const x = def.extras;
+  if (!Array.isArray(x) || !x.length) {
+    return async () => ({});
+  }
+  return async () => {
+    const out = {};
+    if (x.includes('classes')) {
+      const classesRes = await api.get('/api/classes').catch(() => ({ data: [] }));
+      out.classes = classesRes.data;
+    }
+    return out;
+  };
+}
+
+/**
+ * @param {object} def one synthesized list definition (entity-driven)
+ * @returns {DynamicListSpec}
+ */
+function createListSpecFromDefinition(def) {
+  const storageId = String(def.storageId || def.id || 'default').trim();
+  const ds = def.dataSource;
+  if (!ds || !ds.type) {
+    throw new Error(`dynamic-lists: missing dataSource for "${storageId}"`);
+  }
+  let fetchAll = async () => [];
+  let apiListEntity = '';
+  let apiListProfile = '';
+  if (ds.type === 'paged') {
+    if (!ds.path) throw new Error(`dynamic-lists: missing dataSource.path for "${storageId}"`);
+    fetchAll = () => fetchPagedListData(ds, storageId);
+  } else if (ds.type === 'array') {
+    if (!ds.path) throw new Error(`dynamic-lists: missing dataSource.path for "${storageId}"`);
+    fetchAll = () => fetchArrayListData(ds, storageId);
+  } else if (ds.type === 'apiList') {
+    apiListEntity = String(ds.entity || def.apiListEntity || def.entityKey || storageId).trim();
+    apiListProfile = String(ds.profile || def.apiListProfile || '').trim();
+  } else {
+    throw new Error(`dynamic-lists: unknown dataSource.type "${ds.type}" for "${storageId}"`);
+  }
+
+  let searchFetch;
+  let filterBaseListBySearch;
+  const sq = def.search;
+  if (sq && sq.type === 'api' && sq.path) {
+    searchFetch = async (q) => {
+      const params = Object.assign({}, sq.extraParams || {}, {
+        [sq.queryParam || 'q']: q,
+        limit: sq.limit != null ? sq.limit : 2000
+      });
+      const searchRes = await api.get(sq.path, { params }).catch(() => ({ data: [] }));
+      return Array.isArray(searchRes.data) ? searchRes.data : [];
+    };
+  } else if (sq && sq.type === 'clientFields' && Array.isArray(sq.fields)) {
+    const fields = sq.fields;
+    filterBaseListBySearch = (query, list) => filterListByFields(query, list, fields);
+  }
+
+  return {
+    listId: storageId,
+    entityKey: def.entityKey,
+    pageBasePath: def.path,
+    partialPath: def.partialPath,
+    refreshMode: def.refreshMode === 'clientMemory' ? 'clientMemory' : 'serverPartial',
+    adapterName: def.adapterName != null ? String(def.adapterName) : '',
+    adapterOptions:
+      def.adapterOptions && typeof def.adapterOptions === 'object' && !Array.isArray(def.adapterOptions)
+        ? Object.assign({}, def.adapterOptions)
+        : null,
+    resultKey: def.resultKey || 'items',
+    summaryAllLabel: def.summaryAllLabel || 'Showing all',
+    domPrefix: def.domPrefix != null ? String(def.domPrefix) : 'fleet',
+    resultsPanelId: def.resultsPanelId != null ? String(def.resultsPanelId) : 'fleetResultsPanel',
+    paginationAriaLabel:
+      def.paginationAriaLabel != null
+        ? String(def.paginationAriaLabel)
+        : storageId === 'captains'
+          ? 'Captain roster pagination'
+          : storageId === 'classes'
+            ? 'Ship classes pagination'
+            : 'Fleet pagination',
+    apiListEntity,
+    apiListProfile,
+    loadExtras: createLoadExtras(def),
+    fetchAll,
+    searchFetch,
+    filterBaseListBySearch,
+    enrichFilterConfig: chainEnrichers(def.enrichers)
+  };
+}
+
+function isEntityDynamicListCandidate(entityKey, ent) {
+  if (!ent || typeof ent !== 'object' || Array.isArray(ent)) return false;
+  if (entityKey === 'pages' || entityKey.startsWith('_')) return false;
+  if (!ent.apiPath || typeof ent.apiPath !== 'string') return false;
+  const dl = ent.dynamicList;
+  if (dl && dl.enabled === false) return false;
+  return true;
+}
+
+function storageIdFromEntityKey(entityKey) {
+  if (entityKey === 'ship') return 'fleet';
+  if (entityKey === 'class') return 'classes';
+  if (entityKey === 'captain') return 'captains';
+  return `${entityKey}s`;
+}
+
+function resultKeyFromEntityKey(entityKey) {
+  if (entityKey === 'ship') return 'ships';
+  if (entityKey === 'class') return 'classes';
+  if (entityKey === 'captain') return 'captains';
+  return `${entityKey}s`;
+}
+
+function mergeDynamicListOverride(base, patch) {
+  if (!patch || typeof patch !== 'object') return base;
+  const out = Object.assign({}, base, patch);
+  if (patch.dataSource && typeof patch.dataSource === 'object' && base.dataSource) {
+    out.dataSource = Object.assign({}, base.dataSource, patch.dataSource);
+  }
+  if (patch.search && typeof patch.search === 'object' && base.search) {
+    out.search = Object.assign({}, base.search, patch.search);
+  }
+  return out;
+}
+
+/** Roster/table path may differ from marketing listRoute (e.g. captains gallery vs roster). */
+function defaultRegistryListPath(entityKey, ent) {
+  if (entityKey === 'captain') return '/captains/roster';
+  return ent.listRoute || '/';
+}
+
+function defaultDynamicListDefinitionFromEntity(entityKey, ent) {
+  const dl = ent.dynamicList && typeof ent.dynamicList === 'object' ? ent.dynamicList : {};
+  const storageId = dl.storageId || storageIdFromEntityKey(entityKey);
+  const resultKey = dl.resultKey || resultKeyFromEntityKey(entityKey);
+  const titleBase = ent.listTitle || ent.pluralName || storageId;
+  const summaryAllLabel =
+    dl.summaryAllLabel || `Showing all ${String(ent.pluralName || resultKey).toLowerCase()}`;
+
+  let dataSource = dl.dataSource;
+  if (!dataSource) {
+    dataSource = {
+      type: 'apiList',
+      entity:
+        entityKey === 'ship'
+          ? 'ships'
+          : entityKey === 'class'
+            ? 'classes'
+            : entityKey === 'captain'
+              ? 'captains'
+              : `${entityKey}s`
+    };
+  }
+
+  let search = dl.search;
+
+  const extras = Array.isArray(dl.extras) ? dl.extras.slice() : [];
+  const enrichers = Array.isArray(dl.enrichers) ? dl.enrichers.slice() : [];
+
+  let path;
+  let partialPath;
+  let template;
+  let partialTemplate;
+  let pageTitle;
+  let title;
+  let domPrefix;
+  let resultsPanelId;
+  let paginationAriaLabel;
+  let apiListProfile;
+  let refreshMode;
+  let adapterName;
+  let adapterOptions;
+  let extraViews = [];
+
+  if (Array.isArray(dl.views) && dl.views.length > 0) {
+    const v0 = dl.views[0];
+    path = v0.path;
+    partialPath = v0.partialPath;
+    template = v0.template;
+    partialTemplate = v0.partialTemplate;
+    pageTitle = v0.pageTitle != null ? v0.pageTitle : titleBase;
+    title = v0.title != null ? v0.title : titleBase;
+    if (Object.prototype.hasOwnProperty.call(v0, 'domPrefix')) domPrefix = v0.domPrefix;
+    if (Object.prototype.hasOwnProperty.call(v0, 'resultsPanelId')) resultsPanelId = v0.resultsPanelId;
+    if (Object.prototype.hasOwnProperty.call(v0, 'paginationAriaLabel')) paginationAriaLabel = v0.paginationAriaLabel;
+    if (Object.prototype.hasOwnProperty.call(v0, 'apiListProfile')) apiListProfile = v0.apiListProfile;
+    refreshMode = v0.refreshMode != null ? v0.refreshMode : dl.refreshMode;
+    adapterName = v0.adapterName != null ? v0.adapterName : dl.adapterName;
+    adapterOptions = v0.adapterOptions != null ? v0.adapterOptions : dl.adapterOptions;
+    extraViews = dl.views.slice(1).map((ev) => {
+      if (!ev || typeof ev !== 'object') return ev;
+      const out = Object.assign({}, ev);
+      if (!Object.prototype.hasOwnProperty.call(out, 'refreshMode')) out.refreshMode = refreshMode;
+      if (!Object.prototype.hasOwnProperty.call(out, 'adapterName')) out.adapterName = adapterName;
+      if (!Object.prototype.hasOwnProperty.call(out, 'adapterOptions')) out.adapterOptions = adapterOptions;
+      if (!Object.prototype.hasOwnProperty.call(out, 'apiListProfile')) out.apiListProfile = apiListProfile;
+      return out;
+    });
+  } else {
+    path = dl.path || defaultRegistryListPath(entityKey, ent);
+    partialPath = dl.partialPath || `${path}/partial`;
+    template = dl.template || 'entity-list';
+    partialTemplate = dl.partialTemplate || 'partials/entity-list-panel';
+    pageTitle = dl.pageTitle || titleBase;
+    title = dl.title || titleBase;
+    domPrefix = dl.domPrefix;
+    resultsPanelId = dl.resultsPanelId;
+    paginationAriaLabel = dl.paginationAriaLabel;
+    apiListProfile = dl.apiListProfile;
+    refreshMode = dl.refreshMode;
+    adapterName = dl.adapterName;
+    adapterOptions = dl.adapterOptions;
+  }
+
+  if (domPrefix == null) {
+    domPrefix = storageId === 'fleet' ? 'fleet' : storageId === 'captains' ? 'fleet' : `${storageId}Dlf`;
+  }
+  if (resultsPanelId == null) {
+    resultsPanelId =
+      storageId === 'fleet'
+        ? 'fleetResultsPanel'
+        : storageId === 'captains'
+          ? 'fleetResultsPanel'
+          : `${storageId}ResultsPanel`;
+  }
+  if (paginationAriaLabel == null) {
+    paginationAriaLabel = `${titleBase} pagination`;
+  }
+
+  return {
+    id: storageId,
+    storageId,
+    entityKey,
+    path,
+    partialPath,
+    title,
+    pageTitle,
+    template,
+    partialTemplate,
+    resultKey,
+    summaryAllLabel,
+    domPrefix,
+    resultsPanelId,
+    paginationAriaLabel,
+    apiListProfile: apiListProfile != null ? String(apiListProfile) : '',
+    refreshMode: refreshMode === 'clientMemory' ? 'clientMemory' : 'serverPartial',
+    adapterName: adapterName != null ? String(adapterName) : '',
+    adapterOptions:
+      adapterOptions && typeof adapterOptions === 'object' && !Array.isArray(adapterOptions)
+        ? Object.assign({}, adapterOptions)
+        : null,
+    dataSource,
+    search,
+    extras,
+    enrichers,
+    extraViews
+  };
+}
+
+function readDynamicListOverridesMap() {
+  const p = path.join(__dirname, 'config', 'dynamic-lists.json');
+  try {
+    if (!fs.existsSync(p)) return {};
+    const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
+    const o = parsed && parsed.overrides;
+    if (o && typeof o === 'object' && !Array.isArray(o)) return o;
+    if (parsed && Array.isArray(parsed.lists)) {
+      console.warn(
+        'dynamic-lists.json: legacy "lists" is ignored — define lists in config/entity-types.json (dynamicList); use "overrides" only for patches.'
+      );
+    }
+    return {};
+  } catch (e) {
+    console.warn('dynamic-lists.json:', e.message);
+    return {};
+  }
+}
+
+function buildDynamicListDefinitionsFromEntities() {
+  const out = [];
+  const keys = Object.keys(entityTypes);
+  for (let i = 0; i < keys.length; i++) {
+    const entityKey = keys[i];
+    const ent = entityTypes[entityKey];
+    if (!isEntityDynamicListCandidate(entityKey, ent)) continue;
+    try {
+      out.push(defaultDynamicListDefinitionFromEntity(entityKey, ent));
+    } catch (e) {
+      console.warn('dynamic-lists: entity', entityKey, e.message);
+    }
+  }
+  return out;
+}
+
+/** Loaded list defs (derived from entity-types.json, merged with dynamic-lists.json overrides). */
+let DYNAMIC_LIST_DEFINITIONS = [];
+/** @type {Map<string, DynamicListSpec>} */
+const DYNAMIC_LIST_SPEC_BY_STORAGE_ID = new Map();
+
+function loadDynamicListRegistry() {
+  DYNAMIC_LIST_DEFINITIONS = [];
+  DYNAMIC_LIST_SPEC_BY_STORAGE_ID.clear();
+  const overrides = readDynamicListOverridesMap();
+  let defs;
+  try {
+    defs = buildDynamicListDefinitionsFromEntities();
+  } catch (e) {
+    console.warn('dynamic-lists: build from entities failed', e.message);
+    defs = [];
+  }
+  for (let i = 0; i < defs.length; i++) {
+    let def = defs[i];
+    const sid = String(def.storageId || def.id).trim();
+    def = mergeDynamicListOverride(def, overrides[sid]);
+    try {
+      DYNAMIC_LIST_SPEC_BY_STORAGE_ID.set(sid, createListSpecFromDefinition(def));
+      DYNAMIC_LIST_DEFINITIONS.push(def);
+    } catch (e) {
+      console.warn('dynamic-lists: skipping list', sid, e.message);
+    }
+  }
+}
+
+/** Merge base list def with an extraViews[] entry so error pages use the correct paths/runtime. */
+function mergeDefRouteView(def, routeView) {
+  if (!routeView) return def;
+  const out = Object.assign({}, def);
+  if (routeView.path != null) out.path = routeView.path;
+  if (routeView.partialPath != null) out.partialPath = routeView.partialPath;
+  if (routeView.template != null) out.template = routeView.template;
+  if (routeView.partialTemplate != null) out.partialTemplate = routeView.partialTemplate;
+  if (routeView.pageTitle != null) out.pageTitle = routeView.pageTitle;
+  if (routeView.title != null) out.title = routeView.title;
+  if (Object.prototype.hasOwnProperty.call(routeView, 'domPrefix')) out.domPrefix = routeView.domPrefix;
+  if (Object.prototype.hasOwnProperty.call(routeView, 'resultsPanelId')) out.resultsPanelId = routeView.resultsPanelId;
+  if (Object.prototype.hasOwnProperty.call(routeView, 'paginationAriaLabel')) out.paginationAriaLabel = routeView.paginationAriaLabel;
+  if (Object.prototype.hasOwnProperty.call(routeView, 'apiListProfile')) out.apiListProfile = routeView.apiListProfile;
+  if (Object.prototype.hasOwnProperty.call(routeView, 'refreshMode')) out.refreshMode = routeView.refreshMode;
+  if (Object.prototype.hasOwnProperty.call(routeView, 'adapterName')) out.adapterName = routeView.adapterName;
+  if (Object.prototype.hasOwnProperty.call(routeView, 'adapterOptions')) out.adapterOptions = routeView.adapterOptions;
+  return out;
+}
+
+function renderListErrorVm(def) {
+  const sid = String(def.storageId || def.id || 'fleet').trim();
+  const rk = def.resultKey || 'items';
+  const pagFallback =
+    def.paginationAriaLabel != null
+      ? String(def.paginationAriaLabel)
+      : sid === 'captains'
+        ? 'Captain roster pagination'
+        : sid === 'classes'
+          ? 'Ship classes pagination'
+          : 'Fleet pagination';
+  const vm = {
+    total: 0,
+    page: 1,
+    pageSize: 100,
+    filters: {},
+    filterConfig: [],
+    activeFilters: {},
+    persistedFilterOverrides: {},
+    hiddenFilterKeys: [],
+    hiddenFiltersRestoreList: [],
+    error: `Unable to load data. Ensure the API is running at ${API_BASE}.`,
+    searchQuery: '',
+    apiBase: API_BASE,
+    pageBasePath: def.path,
+    partialPath: def.partialPath,
+    dynamicListRuntime: {
+      listId: sid,
+      pageBasePath: def.path,
+      partialPath: def.partialPath,
+      summaryAllLabel: def.summaryAllLabel || 'Showing all',
+      domPrefix: def.domPrefix != null ? String(def.domPrefix) : 'fleet',
+      resultsPanelId: def.resultsPanelId != null ? String(def.resultsPanelId) : 'fleetResultsPanel',
+      paginationAriaLabel: pagFallback,
+      refreshMode: def.refreshMode === 'clientMemory' ? 'clientMemory' : 'serverPartial',
+      adapterName: def.adapterName != null ? String(def.adapterName) : '',
+      adapterOptions:
+        def.adapterOptions && typeof def.adapterOptions === 'object' && !Array.isArray(def.adapterOptions)
+          ? Object.assign({}, def.adapterOptions)
+          : null
+    },
+    paginationAriaLabel: pagFallback
+  };
+  if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(rk)) {
+    vm[rk] = [];
+  }
+  vm.entityListItems = [];
+  vm.listResultKey = rk;
+  if (def.entityKey) vm.entityListType = def.entityKey;
+  if (Array.isArray(def.extras) && def.extras.includes('classes')) {
+    vm.classes = [];
+  }
+  return vm;
+}
+
+loadDynamicListRegistry();
+
+/**
+ * @param {import('express').Request} req
+ * @param {DynamicListSpec} spec
+ */
+async function buildDynamicListViewModel(req, spec) {
+  const cookie = req.headers && req.headers.cookie ? req.headers.cookie : '';
+  return inboundApiCookie.run({ cookie }, () => buildDynamicListViewModelCore(req, spec));
+}
+
+/**
+ * @param {import('express').Request} req
+ * @param {DynamicListSpec} spec
+ */
+async function buildDynamicListViewModelCore(req, spec) {
+  const q = String(req.query.q || '').trim();
+  const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
+  const pageSize = Math.min(500, Math.max(1, parseInt(String(req.query.pageSize), 10) || 100));
+
+  const extras = spec.loadExtras ? await spec.loadExtras() : {};
+  const listId = spec.listId;
+  const persistedFilterTypes = readDynamicFilterOverrides(listId);
+  const hiddenKeys = readDynamicFilterHidden(listId);
+  const hiddenSet = new Set(hiddenKeys);
+  let filterConfigAll = [];
+  let filterConfig = [];
+  let hiddenFiltersRestoreList = [];
+  let activeFiltersNorm = {};
+  let total = 0;
+  let pageItems = [];
+  let effectivePage = page;
+
+  if (spec.apiListEntity) {
+    const apiParams = {
+      q,
+      df: typeof req.query.df === 'string' ? req.query.df : '',
+      page,
+      pageSize
+    };
+    if (spec.apiListProfile) apiParams.profile = spec.apiListProfile;
+
+    const listRes = await api.get(`/api/lists/${encodeURIComponent(spec.apiListEntity)}`, { params: apiParams });
+    const payload = listRes && listRes.data ? listRes.data : {};
+    filterConfigAll = Array.isArray(payload.filterConfig) ? payload.filterConfig : [];
+    if (typeof spec.enrichFilterConfig === 'function') {
+      filterConfigAll = await spec.enrichFilterConfig(filterConfigAll);
+    }
+    filterConfig = filterConfigAll.filter((c) => !hiddenSet.has(c.key));
+    hiddenFiltersRestoreList = hiddenKeys
+      .map((key) => {
+        const row = filterConfigAll.find((c) => c.key === key);
+        return { key, label: row ? row.label : key };
+      })
+      .sort((a, b) => a.label.localeCompare(b.label));
+    const activeFromApi = payload.activeFilters && typeof payload.activeFilters === 'object' ? payload.activeFilters : {};
+    activeFiltersNorm = DynamicFilters.stripNoopRangeFilters(activeFromApi, filterConfig);
+    total = Number(payload.total) || 0;
+    pageItems = Array.isArray(payload.items) ? payload.items : [];
+    effectivePage = Math.max(1, Number(payload.page) || page);
+  } else {
+    const activeFiltersRaw = DynamicFilters.mergeActiveFromRequest(req.query);
+    let baseList = await spec.fetchAll();
+    if (q) {
+      if (typeof spec.searchFetch === 'function') {
+        baseList = await spec.searchFetch(q);
+      } else if (typeof spec.filterBaseListBySearch === 'function') {
+        baseList = spec.filterBaseListBySearch(q, baseList);
+      }
+    }
+
+    filterConfigAll = DynamicFilters.ensureEnumOptionsFromEntities(
+      DynamicFilters.ensureRangeBoundsFromEntities(
+        DynamicFilters.applyTypeOverrides(
+          DynamicFilters.buildFilterConfig(baseList),
+          Object.assign({}, DynamicFilters.filterTypeOverrides, persistedFilterTypes)
+        ),
+        baseList
+      ),
+      baseList
+    );
+    if (typeof spec.enrichFilterConfig === 'function') {
+      filterConfigAll = await spec.enrichFilterConfig(filterConfigAll);
+    }
+    filterConfig = filterConfigAll.filter((c) => !hiddenSet.has(c.key));
+    hiddenFiltersRestoreList = hiddenKeys
+      .map((key) => {
+        const row = filterConfigAll.find((c) => c.key === key);
+        return { key, label: row ? row.label : key };
+      })
+      .sort((a, b) => a.label.localeCompare(b.label));
+    const visibleKeySet = new Set(filterConfig.map((c) => c.key));
+    const activeFilters = {};
+    for (const k of Object.keys(activeFiltersRaw)) {
+      if (visibleKeySet.has(k)) activeFilters[k] = activeFiltersRaw[k];
+    }
+    activeFiltersNorm = DynamicFilters.stripNoopRangeFilters(activeFilters, filterConfig);
+    const filtered = DynamicFilters.applyFilters(baseList, activeFiltersNorm, filterConfig);
+    total = filtered.length;
+    const start = (page - 1) * pageSize;
+    pageItems = filtered.slice(start, start + pageSize);
+    effectivePage = page;
+  }
+
+  let pageBasePath =
+    spec.pageBasePath ??
+    (listId === 'captains' ? '/captains/roster' : listId === 'classes' ? '/classes' : '/fleet');
+  let partialPathPref =
+    spec.partialPath ??
+    (listId === 'captains'
+      ? '/captains/roster/partial'
+      : listId === 'classes'
+        ? '/classes/partial'
+        : '/fleet/partial');
+  function normalizeDynamicListAppPath(s) {
+    if (s == null || s === '') return s;
+    const t = String(s).trim();
+    return t.startsWith('/') ? t : `/${t.replace(/^\/+/u, '')}`;
+  }
+  pageBasePath = normalizeDynamicListAppPath(pageBasePath);
+  partialPathPref = normalizeDynamicListAppPath(partialPathPref);
+  const pageBaseTrim = (pageBasePath || '').replace(/\/+$/u, '');
+  if (
+    pageBaseTrim &&
+    (!partialPathPref ||
+      partialPathPref === 'partial' ||
+      partialPathPref === '/partial' ||
+      !String(partialPathPref).startsWith(`${pageBaseTrim}/`))
+  ) {
+    partialPathPref = `${pageBaseTrim}/partial`;
+  }
+  const domPrefix = spec.domPrefix != null ? String(spec.domPrefix) : 'fleet';
+  const resultsPanelIdPref =
+    spec.resultsPanelId != null ? String(spec.resultsPanelId) : 'fleetResultsPanel';
+  const paginationAriaLabelPref =
+    spec.paginationAriaLabel != null
+      ? String(spec.paginationAriaLabel)
+      : listId === 'captains'
+        ? 'Captain roster pagination'
+        : listId === 'classes'
+          ? 'Ship classes pagination'
+          : 'Fleet pagination';
+
+  const dynamicListRuntime = {
+    listId,
+    pageBasePath,
+    partialPath: partialPathPref,
+    summaryAllLabel: spec.summaryAllLabel || 'Showing all',
+    domPrefix,
+    resultsPanelId: resultsPanelIdPref,
+    paginationAriaLabel: paginationAriaLabelPref,
+    refreshMode: spec.refreshMode === 'clientMemory' ? 'clientMemory' : 'serverPartial',
+    adapterName: spec.adapterName != null ? String(spec.adapterName) : '',
+    adapterOptions:
+      spec.adapterOptions && typeof spec.adapterOptions === 'object' && !Array.isArray(spec.adapterOptions)
+        ? Object.assign({}, spec.adapterOptions)
+        : null
+  };
+
+  const vm = {
+    total,
+    page: effectivePage,
+    pageSize,
+    searchQuery: q,
+    filterConfig,
+    activeFilters: activeFiltersNorm,
+    persistedFilterOverrides: Object.assign({}, persistedFilterTypes),
+    hiddenFilterKeys: hiddenKeys.slice(),
+    hiddenFiltersRestoreList,
+    filters: {},
+    error: undefined,
+    apiBase: API_BASE,
+    pageBasePath,
+    partialPath: partialPathPref,
+    paginationAriaLabel: paginationAriaLabelPref,
+    dynamicListRuntime,
+    entityListItems: pageItems,
+    ...extras
+  };
+  const rk = spec.resultKey || 'items';
+  if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(rk)) {
+    vm[rk] = pageItems;
+  }
+  vm.listResultKey = rk;
+  if (spec.entityKey) vm.entityListType = spec.entityKey;
+  return vm;
+}
+
+/**
+ * Register GET list + partial routes. routeView = extraViews[] entry (optional); merges path/template/runtime overrides into spec.
+ */
+function registerDynamicListViewRoutes(def, routeView) {
+  const sid = String(def.storageId || def.id).trim();
+  const spec = DYNAMIC_LIST_SPEC_BY_STORAGE_ID.get(sid);
+  if (!spec) return;
+
+  const path = routeView && routeView.path != null ? routeView.path : def.path;
+  const partialPath = routeView && routeView.partialPath != null ? routeView.partialPath : def.partialPath;
+  const template = routeView && routeView.template != null ? routeView.template : def.template;
+  const partialTemplate = routeView && routeView.partialTemplate != null ? routeView.partialTemplate : def.partialTemplate;
+  const pageTitle = routeView && routeView.pageTitle != null ? routeView.pageTitle : def.pageTitle;
+  const title = routeView && routeView.title != null ? routeView.title : def.title;
+
+  const overlay = {
+    pageBasePath: path,
+    partialPath
+  };
+  const rv = routeView || {};
+  if (Object.prototype.hasOwnProperty.call(rv, 'domPrefix') && rv.domPrefix != null) overlay.domPrefix = String(rv.domPrefix);
+  else if (!routeView && def.domPrefix != null) overlay.domPrefix = String(def.domPrefix);
+  if (Object.prototype.hasOwnProperty.call(rv, 'resultsPanelId') && rv.resultsPanelId != null) {
+    overlay.resultsPanelId = String(rv.resultsPanelId);
+  } else if (!routeView && def.resultsPanelId != null) overlay.resultsPanelId = String(def.resultsPanelId);
+  if (Object.prototype.hasOwnProperty.call(rv, 'paginationAriaLabel') && rv.paginationAriaLabel != null) {
+    overlay.paginationAriaLabel = String(rv.paginationAriaLabel);
+  } else if (!routeView && def.paginationAriaLabel != null) {
+    overlay.paginationAriaLabel = String(def.paginationAriaLabel);
+  }
+  if (Object.prototype.hasOwnProperty.call(rv, 'apiListProfile') && rv.apiListProfile != null) {
+    overlay.apiListProfile = String(rv.apiListProfile);
+  } else if (!routeView && def.apiListProfile != null) {
+    overlay.apiListProfile = String(def.apiListProfile);
+  }
+  if (Object.prototype.hasOwnProperty.call(rv, 'refreshMode')) overlay.refreshMode = rv.refreshMode;
+  else if (!routeView && Object.prototype.hasOwnProperty.call(def, 'refreshMode')) {
+    overlay.refreshMode = def.refreshMode;
+  }
+  if (Object.prototype.hasOwnProperty.call(rv, 'adapterName')) overlay.adapterName = rv.adapterName;
+  else if (!routeView && Object.prototype.hasOwnProperty.call(def, 'adapterName')) {
+    overlay.adapterName = def.adapterName;
+  }
+  if (Object.prototype.hasOwnProperty.call(rv, 'adapterOptions')) overlay.adapterOptions = rv.adapterOptions;
+  else if (!routeView && Object.prototype.hasOwnProperty.call(def, 'adapterOptions')) {
+    overlay.adapterOptions = def.adapterOptions;
+  }
+
+  const mergedSpec = Object.assign({}, spec, overlay);
+  const errDef = mergeDefRouteView(def, routeView);
+
+  app.get(path, async (req, res) => {
+    try {
+      const vm = await buildDynamicListViewModel(req, mergedSpec);
+      res.set('Cache-Control', 'private, no-store, must-revalidate, max-age=0');
+      res.render(template, { title: pageTitle || title, ...vm });
+    } catch (err) {
+      console.error(`${path} error:`, err.message);
+      res.render(template, { title: pageTitle || title, ...renderListErrorVm(errDef) });
+    }
+  });
+
+  app.get(partialPath, async (req, res) => {
+    try {
+      const vm = await buildDynamicListViewModel(req, mergedSpec);
+      res.set('Cache-Control', 'private, no-store, must-revalidate, max-age=0');
+      res.render(partialTemplate, vm);
+    } catch (err) {
+      console.error(`${partialPath} error:`, err.message);
+      res.render(partialTemplate, renderListErrorVm(errDef));
+    }
+  });
+}
+
+for (let i = 0; i < DYNAMIC_LIST_DEFINITIONS.length; i++) {
+  const def = DYNAMIC_LIST_DEFINITIONS[i];
+  if (!def.path || !def.partialPath || !def.template || !def.partialTemplate) {
+    console.warn('dynamic-lists: skipping list missing path/template:', def.id);
+    continue;
+  }
+  registerDynamicListViewRoutes(def, null);
+  const extraViews = Array.isArray(def.extraViews) ? def.extraViews : [];
+  for (let j = 0; j < extraViews.length; j++) {
+    const ev = extraViews[j];
+    if (!ev || !ev.path || !ev.partialPath || !ev.template || !ev.partialTemplate) {
+      console.warn('dynamic-lists: skipping extraViews[' + j + '] for', def.id);
+      continue;
+    }
+    registerDynamicListViewRoutes(def, ev);
+  }
+}
 
 app.get('/fleet/search', async (req, res) => {
   try {
@@ -342,7 +1315,13 @@ app.get('/fleet/search', async (req, res) => {
       pageSize: ships.length,
       searchQuery: q,
       classes: classesRes.data,
-      filters: {}
+      filters: {},
+      filterConfig: [],
+      activeFilters: {},
+      persistedFilterOverrides: {},
+      hiddenFilterKeys: [],
+      hiddenFiltersRestoreList: [],
+      apiBase: API_BASE
     });
   } catch (err) {
     console.error('Search API error:', err.message);
@@ -354,7 +1333,13 @@ app.get('/fleet/search', async (req, res) => {
       pageSize: 100,
       classes: [],
       filters: {},
-      searchQuery: req.query.q || ''
+      filterConfig: [],
+      activeFilters: {},
+      persistedFilterOverrides: {},
+      hiddenFilterKeys: [],
+      hiddenFiltersRestoreList: [],
+      searchQuery: req.query.q || '',
+      apiBase: API_BASE
     });
   }
 });
@@ -425,25 +1410,9 @@ app.get('/ships/:id', async (req, res) => {
   }
 });
 
-app.get('/classes', async (req, res) => {
-  try {
-    const response = await api.get('/api/classes');
-    const classes = Array.isArray(response.data) ? response.data : [];
-    res.render('classes', {
-      title: 'Ship Classes',
-      classes
-    });
-  } catch (err) {
-    console.error('Classes API error:', err.message);
-    res.render('classes', {
-      title: 'Ship Classes',
-      classes: [],
-      error: 'Unable to load ship classes.'
-    });
-  }
-});
+/** /classes and /classes/partial are registered from the ship-class entity (storageId classes). */
 
-app.get('/classes/:id', async (req, res) => {
+app.get('/classes/:id(\\d+)', async (req, res) => {
   try {
     const response = await api.get(`/api/classes/${req.params.id}`);
     res.render('class-detail', {
@@ -459,24 +1428,8 @@ app.get('/classes/:id', async (req, res) => {
   }
 });
 
-app.get('/captains', async (req, res) => {
-  try {
-    const response = await api.get('/api/captains');
-    res.render('captains', {
-      title: 'Captains',
-      captains: response.data
-    });
-  } catch (err) {
-    console.error('Captains API error:', err.message);
-    res.render('captains', {
-      title: 'Captains',
-      captains: [],
-      error: 'Unable to load captains.'
-    });
-  }
-});
-
-app.get('/captains/:id', async (req, res) => {
+/** Numeric id only — /captains and /captains/partial come from captain entity dynamicList.views. */
+app.get('/captains/:id(\\d+)', async (req, res) => {
   try {
     const response = await api.get(`/api/captains/${req.params.id}`);
     res.render('captain-detail', {
@@ -526,27 +1479,7 @@ app.get('/timeline', async (req, res) => {
   }
 });
 
-app.get('/gallery', async (req, res) => {
-  try {
-    const response = await api.get('/api/ships', { params: { page: 1, pageSize: 50 } });
-    const data = response.data || {};
-    const items = data.items || [];
-    const ships = items.map(s => ({
-      ...s,
-      imageUrl: s.imageUrl ?? s.ImageUrl
-    }));
-    res.render('gallery', {
-      title: 'Photo Gallery',
-      ships
-    });
-  } catch (err) {
-    console.error('Gallery API error:', err.message);
-    res.render('gallery', {
-      title: 'Photo Gallery',
-      ships: []
-    });
-  }
-});
+/** /gallery and /gallery/partial are now registered via ship dynamicList views in entity-types.json. */
 
 // Placeholder when ship image unavailable (SVG - scales nicely)
 const PLACEHOLDER_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"><rect fill="#6c757d" width="400" height="300"/><text fill="#fff" x="200" y="150" dominant-baseline="middle" text-anchor="middle" font-size="16" font-family="sans-serif">No image</text></svg>';
@@ -1179,6 +2112,88 @@ app.delete('/admin/images/sources/:id', async (req, res) => {
   }
 });
 
+/** JSON for admin table: discovered attribute keys + saved type overrides (like /admin/images/sources). */
+app.get('/admin/fleet-filters/config', async (req, res) => {
+  try {
+    const listId = normalizeDynamicListId(req.query.listId);
+    const spec = DYNAMIC_LIST_SPEC_BY_STORAGE_ID.get(listId);
+    if (!spec) {
+      return res.status(404).json({ error: 'Unknown listId (not derived from entity types)', listId });
+    }
+    const cookie = req.headers && req.headers.cookie ? req.headers.cookie : '';
+    const baseList = await inboundApiCookie.run({ cookie }, () => spec.fetchAll());
+    const built = DynamicFilters.buildFilterConfig(baseList);
+    const keys = built.map((c) => ({
+      key: c.key,
+      label: c.label,
+      inferredType: c.type
+    }));
+    const overrides = readDynamicFilterOverrides(listId);
+    const hiddenKeys = readDynamicFilterHidden(listId);
+    res.json({ keys, overrides, hiddenKeys, listId });
+  } catch (e) {
+    console.error('fleet-filters config GET:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * Normalize body for /admin/fleet-filters/config.
+ * Prefer JSON (express.json). If the client sends application/x-www-form-urlencoded
+ * with a `payload` field, parse that — some stacks drop or empty JSON bodies on PUT/POST.
+ */
+function getFleetConfigSaveBody(req) {
+  const raw = req.body;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  if (typeof raw.payload === 'string' && raw.payload.trim()) {
+    try {
+      const parsed = JSON.parse(raw.payload);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+    } catch (e) {
+      return {};
+    }
+  }
+  return raw;
+}
+
+function handleFleetFiltersConfigSave(req, res) {
+  try {
+    const body = getFleetConfigSaveBody(req);
+    const listId = normalizeDynamicListId(body.listId);
+    const hasHidden = Object.prototype.hasOwnProperty.call(body, 'hiddenKeys');
+    const hasOverrides = Object.prototype.hasOwnProperty.call(body, 'overrides');
+    if (hasHidden) {
+      const arr = Array.isArray(body.hiddenKeys) ? body.hiddenKeys : [];
+      writeDynamicFilterHidden(listId, arr);
+    }
+    if (hasOverrides) {
+      const incoming =
+        body.overrides != null && typeof body.overrides === 'object' && !Array.isArray(body.overrides)
+          ? body.overrides
+          : {};
+      writeDynamicFilterOverrides(listId, incoming);
+    } else if (!hasHidden && !hasOverrides) {
+      const keys = Object.keys(body).filter((k) => k !== 'payload' && k !== 'listId');
+      if (keys.length) {
+        const legacy = {};
+        for (const k of keys) legacy[k] = body[k];
+        writeDynamicFilterOverrides(listId, legacy);
+      }
+    }
+    res.json({
+      ok: true,
+      listId,
+      overrides: readDynamicFilterOverrides(listId),
+      hiddenKeys: readDynamicFilterHidden(listId)
+    });
+  } catch (e) {
+    console.error('fleet-filters config save:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+}
+app.put('/admin/fleet-filters/config', handleFleetFiltersConfigSave);
+app.post('/admin/fleet-filters/config', handleFleetFiltersConfigSave);
+
 // In-memory job store for polling-based populate progress
 const populateJobs = new Map();
 const JOB_EXPIRE_MS = 30 * 60 * 1000; // 30 min
@@ -1416,24 +2431,6 @@ app.get('/admin/images/verify', async (req, res) => {
   }
 });
 
-app.get('/logs', (req, res) => {
-  res.render('logs', {
-    title: 'Daily Logs',
-    results: null,
-    query: req.query.q || ''
-  });
-});
-
-app.get('/logs/search.json', async (req, res) => {
-  try {
-    const query = req.query.q || '';
-    const response = await api.post('/api/logs/search', { query });
-    res.json(response.data);
-  } catch (err) {
-    res.status(500).json({ matches: 0, message: 'Search failed', excerpts: [] });
-  }
-});
-
 app.get('/logs/day.json', async (req, res) => {
   try {
     const shipName = req.query.shipName || '';
@@ -1445,25 +2442,6 @@ app.get('/logs/day.json', async (req, res) => {
       return res.status(404).json({ error: 'No log entries found' });
     }
     res.status(500).json({ error: err.message || 'Failed to load day log' });
-  }
-});
-
-app.post('/logs/search', async (req, res) => {
-  try {
-    const query = req.body.query || '';
-    const response = await api.post('/api/logs/search', { query });
-    res.render('logs', {
-      title: 'Daily Logs',
-      results: response.data,
-      query
-    });
-  } catch (err) {
-    console.error('Logs search error:', err.message);
-    res.render('logs', {
-      title: 'Daily Logs',
-      error: 'Search failed or timed out. Try a simpler query.',
-      query: req.body.query || ''
-    });
   }
 });
 

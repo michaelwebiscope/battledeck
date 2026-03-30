@@ -1,4 +1,9 @@
 $env:HTTP_PORT = '5005'
 $env:DATABASE_URL = '{{ account_path }}\accounts.db'
+{% if newrelic_license_key is defined and newrelic_license_key | length > 0 %}
+$env:NEW_RELIC_LICENSE_KEY = '{{ newrelic_license_key }}'
+$env:NEW_RELIC_APP_NAME = '{{ go_newrelic_account_app_name | default("NavalArchiveAccount") }}'
+$env:NEW_RELIC_DISTRIBUTED_TRACING_ENABLED = 'true'
+{% endif %}
 Set-Location '{{ account_path }}'
 & '{{ account_path }}\account-service.exe'

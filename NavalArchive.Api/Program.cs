@@ -81,6 +81,7 @@ builder.Services.AddSingleton<GenuineLogsFetcher>();
 builder.Services.AddSingleton<WikipediaDataFetcher>();
 builder.Services.AddSingleton<ImageSearchService>();
 builder.Services.AddScoped<ImageStorageService>();
+builder.Services.AddScoped<DynamicListService>();
 
 builder.Services.AddCors(options =>
 {

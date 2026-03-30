@@ -1,0 +1,120 @@
+<%
+  var et = typeof entityListType !== 'undefined' ? entityListType : '';
+  var ent = et && typeof entityTypes !== 'undefined' && entityTypes[et] ? entityTypes[et] : {};
+  var rows = typeof entityListItems !== 'undefined' && Array.isArray(entityListItems) ? entityListItems : [];
+  var emptyMessage = ent.emptyMessage || 'None found.';
+  var detailBase = ent.detailRoute || '';
+  var pluralLower = ent.pluralName ? String(ent.pluralName).toLowerCase() : 'items';
+  var shipEnt = typeof entityTypes !== 'undefined' && entityTypes.ship ? entityTypes.ship : {};
+  var shipPlural = shipEnt.pluralName ? String(shipEnt.pluralName).toLowerCase() : 'ships';
+  var primaryBtn = ent.listCardPrimaryLabel || ('View ' + (ent.displayName ? String(ent.displayName).toLowerCase() : 'item'));
+  function ecCell(row, col) {
+    var v = null;
+    if (col.relationship && col.field) {
+      var rel = row[col.relationship];
+      if (rel && typeof rel === 'object') {
+        v = rel[col.field] != null ? rel[col.field] : rel[col.field.charAt(0).toUpperCase() + col.field.slice(1)];
+      }
+    } else if (col.field) {
+      v = row[col.field] != null ? row[col.field] : row[col.field.charAt(0).toUpperCase() + col.field.slice(1)];
+    } else if (col.key) {
+      v = row[col.key];
+    }
+    if (v != null && typeof v === 'object' && v.name != null) return String(v.name);
+    if (v != null && typeof v === 'object' && v.Name != null) return String(v.Name);
+    return v != null && v !== '' ? String(v) : '—';
+  }
+%>
+<% if (typeof error !== 'undefined' && error) { %>
+<div class="alert alert-warning"><%= error %></div>
+<% } %>
+<% if (ent.listColumns && ent.listColumns.length) { %>
+<div class="card">
+  <div class="card-header">
+    <h2 class="h5 mb-0"><%= ent.listCardTitle || ent.listTitle || ent.pluralName || 'List' %></h2>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <% ent.listColumns.forEach(function(col) { %>
+            <th><%= col.label || col.key %></th>
+            <% }); %>
+          </tr>
+        </thead>
+        <tbody>
+          <% if (rows.length) { %>
+            <% rows.forEach(function(row) {
+                 var rid = row.id != null ? row.id : row.Id;
+            %>
+            <tr>
+              <% ent.listColumns.forEach(function(col, cidx) {
+                   var cell = ecCell(row, col);
+                   var isFirst = cidx === 0;
+              %>
+                <td>
+                  <% if (isFirst && detailBase && rid != null) { %>
+                    <a href="<%= detailBase %>/<%= rid %>" class="text-decoration-none fw-semibold"><%= cell %></a>
+                  <% } else { %><%= cell %><% } %>
+                </td>
+              <% }); %>
+            </tr>
+            <% }); %>
+          <% } else { %>
+            <tr><td colspan="<%= ent.listColumns.length %>" class="text-center py-4 text-muted"><%= emptyMessage %></td></tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<% } else { %>
+<div class="row g-4">
+  <% if (rows.length) { %>
+    <% rows.forEach(function(row) {
+      var rid = row.id != null ? row.id : row.Id;
+      var rname = row.name != null ? row.name : row.Name;
+      var stFields = Array.isArray(ent.subtitleFields) ? ent.subtitleFields : [];
+      var stParts = [];
+      for (var si = 0; si < stFields.length; si++) {
+        var fk = stFields[si];
+        var fv = row[fk] != null ? row[fk] : row[fk.charAt(0).toUpperCase() + fk.slice(1)];
+        if (fv != null && fv !== '') stParts.push(String(fv));
+      }
+      var ccount = row.shipCount != null ? row.shipCount : row.ShipCount;
+      var countLabel = ent.countLabel || '';
+    %>
+    <div class="col-md-6 col-lg-4">
+      <div class="card h-100">
+        <div class="card-body">
+          <h5 class="card-title"><%= rname != null ? rname : '—' %></h5>
+          <% if (stParts.length) { %><p class="card-text text-muted mb-1"><%= stParts.join(' · ') %></p><% } %>
+          <% if (ccount != null && ccount !== '') { %><p class="card-text small mb-2"><%= ccount %> <%= shipPlural %> <%= countLabel %></p><% } %>
+          <% if (detailBase && rid != null) { %>
+            <a href="<%= detailBase %>/<%= rid %>" class="btn btn-outline-dark btn-sm"><%= primaryBtn %></a>
+            <% if (ent.hasEdit) { %><a href="<%= detailBase %>/<%= rid %>" class="btn btn-outline-secondary btn-sm admin-only ms-1">Edit</a><% } %>
+          <% } %>
+        </div>
+      </div>
+    </div>
+    <% }); %>
+  <% } else { %>
+    <div class="col-12 text-center text-muted py-5"><%= emptyMessage %></div>
+  <% } %>
+</div>
+<% } %>
+<% if (typeof total !== 'undefined' && total > (pageSize || 100)) { %>
+<% var _pageBase = typeof pageBasePath !== 'undefined' && pageBasePath ? pageBasePath : '/'; var _fq = []; if (typeof searchQuery !== 'undefined' && searchQuery) _fq.push('q=' + encodeURIComponent(searchQuery)); if (typeof activeFilters !== 'undefined' && activeFilters && Object.keys(activeFilters).length) _fq.push('df=' + encodeURIComponent(JSON.stringify(activeFilters))); var _fqs = _fq.length ? ('&' + _fq.join('&')) : ''; var totalPages = Math.ceil(total / (pageSize || 100)); var _pagAria = typeof paginationAriaLabel !== 'undefined' && paginationAriaLabel ? paginationAriaLabel : 'Pagination'; %>
+<nav class="mt-3" data-dlf-pagination="1" aria-label="<%= _pagAria %>">
+  <ul class="pagination justify-content-center mb-0">
+    <li class="page-item <%= page <= 1 ? 'disabled' : '' %>">
+      <a class="page-link" href="<%= page <= 1 ? '#' : _pageBase + '?page=' + (page - 1) + _fqs %>">Previous</a>
+    </li>
+    <li class="page-item disabled"><span class="page-link">Page <%= page %> of <%= totalPages %> (<%= total %> <%= pluralLower %>)</span></li>
+    <li class="page-item <%= page >= totalPages ? 'disabled' : '' %>">
+      <a class="page-link" href="<%= page >= totalPages ? '#' : _pageBase + '?page=' + (page + 1) + _fqs %>">Next</a>
+    </li>
+  </ul>
+</nav>
+<% } %>

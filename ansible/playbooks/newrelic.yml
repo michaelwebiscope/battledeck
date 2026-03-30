@@ -1,6 +1,4 @@
 ---
-- ansible.builtin.import_playbook: newrelic-infra.yml
-- ansible.builtin.import_playbook: newrelic-go.yml
-- ansible.builtin.import_playbook: newrelic-node.yml
-- ansible.builtin.import_playbook: newrelic-java.yml
-- ansible.builtin.import_playbook: newrelic-otel.yml
+# Backward-compatible alias: full NR stack (infra + logs + .NET → java → go → otel → node).
+# Prefer referencing newrelic-dotnet-java-go.yml directly in new scripts.
+- ansible.builtin.import_playbook: newrelic-dotnet-java-go.yml

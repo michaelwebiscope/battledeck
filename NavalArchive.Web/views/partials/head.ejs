@@ -1,7 +1,7 @@
 <meta charset="UTF-8">
+<%- typeof nrBrowserHeader !== 'undefined' ? nrBrowserHeader : '' %>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title><%= typeof title !== 'undefined' ? title + ' | ' : '' %>WW2 Naval History Archive</title>
-<%- typeof nrBrowserHeader !== 'undefined' ? nrBrowserHeader : '' %>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -29,6 +29,7 @@
     background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 50%, #f0fdfa 100%);
   }
   /* Top Bar - contracts/widens on hover */
+  /* Above sticky filter dock (fleet-filters .fleet-filter-dock ~1015); below Bootstrap modals (1055). */
   .app-topbar {
     position: fixed;
     top: 0;
@@ -37,7 +38,7 @@
     height: 56px;
     background: linear-gradient(90deg, var(--blue-deep) 0%, var(--blue) 100%);
     box-shadow: 0 4px 24px rgba(12, 74, 110, 0.25);
-    z-index: 1000;
+    z-index: 1040;
     overflow: visible;
   }
   .topbar-inner {
@@ -316,13 +317,35 @@
   @media (max-width: 991px) {
     .app-topbar { height: 56px; }
     .app-topbar.expanded { height: auto; min-height: 56px; }
-    .topbar-nav { flex-direction: column; align-items: stretch; width: 100%; padding: 0.5rem 0; display: none; }
+    .topbar-nav {
+      flex-direction: column;
+      align-items: stretch;
+      width: 100%;
+      padding: 0.7rem;
+      margin-top: 0.55rem;
+      display: none;
+      background: rgba(6, 28, 48, 0.92);
+      border: 1px solid rgba(125, 211, 252, 0.24);
+      border-radius: 12px;
+      box-shadow: 0 12px 30px rgba(2, 8, 23, 0.42);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      max-height: min(72vh, 28rem);
+      overflow-y: auto;
+    }
     .app-topbar.expanded .topbar-nav { display: flex; }
     .topbar-inner { flex-wrap: wrap; }
     .topbar-nav { order: 3; width: 100%; }
     .topbar-toggle { display: flex !important; }
     .topbar-dropdown { position: static; }
-    .topbar-dropdown-trigger { width: 100%; justify-content: flex-start; }
+    .topbar-dropdown-trigger {
+      width: 100%;
+      justify-content: flex-start;
+      min-height: 44px;
+      border-radius: 10px;
+      color: rgba(241, 245, 249, 0.98);
+      font-weight: 600;
+    }
     .topbar-dropdown-trigger::after { transform: rotate(-90deg); }
     .topbar-dropdown-menu {
       position: static;
@@ -330,13 +353,30 @@
       visibility: visible;
       transform: none;
       box-shadow: none;
-      background: rgba(255,255,255,0.08);
-      margin: 0.25rem 0 0.5rem 1rem;
-      padding: 0.25rem 0;
+      background: rgba(15, 23, 42, 0.64);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      margin: 0.25rem 0 0.55rem 0.5rem;
+      border-radius: 10px;
+      padding: 0.35rem 0.25rem;
     }
-    .topbar-dropdown-menu a { color: rgba(255,255,255,0.95); }
-    .topbar-dropdown-menu a:hover { background: rgba(255,255,255,0.1); }
+    .topbar-dropdown-menu a {
+      color: rgba(241, 245, 249, 0.98);
+      min-height: 40px;
+      border-radius: 8px;
+    }
+    .topbar-dropdown-menu a:hover { background: rgba(255,255,255,0.14); }
     .topbar-dropdown-menu a.active { color: var(--cyan-light); }
+    .topbar-link {
+      min-height: 44px;
+      border-radius: 10px;
+      font-weight: 600;
+      color: rgba(241, 245, 249, 0.98);
+    }
+    .topbar-link:hover { background: rgba(255, 255, 255, 0.18); }
+    .topbar-link.active {
+      background: rgba(34, 211, 238, 0.24);
+      color: #ecfeff;
+    }
     .topbar-dropdown .topbar-dropdown-menu { display: none; }
     .topbar-dropdown.expanded .topbar-dropdown-menu { display: block; }
   }

@@ -1,0 +1,58 @@
+<%
+  var captainType = typeof entityTypes !== 'undefined' && entityTypes.captain ? entityTypes.captain : {};
+  var listCardTitle = 'Captain registry';
+  var emptyMessage = captainType.emptyMessage || 'None loaded.';
+%>
+<% if (typeof error !== 'undefined' && error) { %>
+<div class="alert alert-warning"><%= error %></div>
+<% } %>
+<div class="card">
+  <div class="card-header">
+    <h2 class="h5 mb-0"><%= listCardTitle %></h2>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Name</th>
+            <th>Rank</th>
+            <th>Service years</th>
+            <th>Ships</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% if (captains && captains.length > 0) { %>
+            <% captains.forEach(function(c) {
+              var capId = c.id || c.Id;
+            %>
+              <tr>
+                <td><a href="/captains/<%= capId %>" class="text-decoration-none fw-semibold"><%= c.name != null ? c.name : c.Name %></a></td>
+                <td><%= c.rank != null ? c.rank : c.Rank || '—' %></td>
+                <td><%= c.serviceYears != null ? c.serviceYears : (c.ServiceYears != null ? c.ServiceYears : '—') %></td>
+                <td><%= c.shipCount != null ? c.shipCount : (c.ShipCount != null ? c.ShipCount : '—') %></td>
+              </tr>
+            <% }); %>
+          <% } else { %>
+            <tr><td colspan="4" class="text-center py-4 text-muted"><%= emptyMessage %></td></tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<% if (typeof total !== 'undefined' && total > (pageSize || 100)) { %>
+<% var _pageBase = typeof pageBasePath !== 'undefined' && pageBasePath ? pageBasePath : '/captains/roster'; var _fq = []; if (typeof searchQuery !== 'undefined' && searchQuery) _fq.push('q=' + encodeURIComponent(searchQuery)); if (typeof activeFilters !== 'undefined' && activeFilters && Object.keys(activeFilters).length) _fq.push('df=' + encodeURIComponent(JSON.stringify(activeFilters))); var _fqs = _fq.length ? ('&' + _fq.join('&')) : ''; var totalPages = Math.ceil(total / (pageSize || 100)); %>
+<% var _pagAria = typeof paginationAriaLabel !== 'undefined' && paginationAriaLabel ? paginationAriaLabel : 'Captain roster pagination'; %>
+<nav class="mt-3" data-dlf-pagination="1" aria-label="<%= _pagAria %>">
+  <ul class="pagination justify-content-center mb-0">
+    <li class="page-item <%= page <= 1 ? 'disabled' : '' %>">
+      <a class="page-link" href="<%= page <= 1 ? '#' : _pageBase + '?page=' + (page - 1) + _fqs %>">Previous</a>
+    </li>
+    <li class="page-item disabled"><span class="page-link">Page <%= page %> of <%= totalPages %> (<%= total %> <%= captainType.pluralName ? captainType.pluralName.toLowerCase() : 'captains' %>)</span></li>
+    <li class="page-item <%= page >= totalPages ? 'disabled' : '' %>">
+      <a class="page-link" href="<%= page >= totalPages ? '#' : _pageBase + '?page=' + (page + 1) + _fqs %>">Next</a>
+    </li>
+  </ul>
+</nav>
+<% } %>

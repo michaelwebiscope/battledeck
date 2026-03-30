@@ -1,8 +1,7 @@
 ---
-# App-level NR instrumentation only (Go, Node, Java, OTEL).
-# Skips infra/logs/.NET agent install — use this when agents are already installed.
-# Run: ./scripts/deploy-navalansible.sh -newrelic-only
-- ansible.builtin.import_playbook: newrelic-go.yml
-- ansible.builtin.import_playbook: newrelic-node.yml
+# App-level NR only (no infra/logs/.NET reinstall). Same order as the tail of newrelic-dotnet-java-go.yml.
+# Use: ./scripts/deploy-navalansible.sh -newrelic-only
 - ansible.builtin.import_playbook: newrelic-java.yml
+- ansible.builtin.import_playbook: newrelic-go.yml
 - ansible.builtin.import_playbook: newrelic-otel.yml
+- ansible.builtin.import_playbook: newrelic-node.yml

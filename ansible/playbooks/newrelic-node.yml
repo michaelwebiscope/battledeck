@@ -25,6 +25,7 @@
             "NEW_RELIC_APP_NAME={{ newrelic_node_app_name | default('NavalArchiveWeb') }}",
             "NEW_RELIC_NO_CONFIG_FILE=true",
             "NEW_RELIC_DISTRIBUTED_TRACING_ENABLED=true",
+            "NEW_RELIC_BROWSER_MONITOR_ENABLE=true",
             "NODE_OPTIONS=-r {{ web_path }}\node_modules\newrelic\index.js"
           )
           Set-ItemProperty -Path $regPath -Name "Environment" -Value $updated -Type MultiString -Force
@@ -43,6 +44,7 @@
           $env:NEW_RELIC_APP_NAME = "{{ newrelic_node_app_name | default('NavalArchiveWeb') }}"
           $env:NEW_RELIC_NO_CONFIG_FILE = "true"
           $env:NEW_RELIC_DISTRIBUTED_TRACING_ENABLED = "true"
+          $env:NEW_RELIC_BROWSER_MONITOR_ENABLE = "true"
           $env:NODE_OPTIONS = "-r {{ web_path }}\node_modules\newrelic\index.js"
           Set-Location "{{ web_path }}"
           & "{{ node_dir }}\node.exe" server.js
@@ -54,6 +56,17 @@
         sc.exe stop NavalArchiveWeb 2>$null
         Start-Sleep -Seconds 2
         sc.exe start NavalArchiveWeb
+      args:
+        executable: powershell
+      failed_when: false
+      when: newrelic_license_key is defined and newrelic_license_key | length > 0
+
+    # Node may run from NavalArchiveWeb-Node scheduled task + start-node-web.ps1 (see scheduled_task.yml).
+    - name: Restart NavalArchiveWeb-Node scheduled task with updated start-node-web.ps1
+      ansible.windows.win_shell: |
+        Stop-ScheduledTask -TaskName "NavalArchiveWeb-Node" -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 3
+        Start-ScheduledTask -TaskName "NavalArchiveWeb-Node" -ErrorAction SilentlyContinue
       args:
         executable: powershell
       failed_when: false

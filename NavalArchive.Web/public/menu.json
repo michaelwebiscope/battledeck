@@ -7,6 +7,7 @@
       { "href": "/compare", "label": "Compare" },
       { "href": "/classes", "label": "Ship Classes" },
       { "href": "/captains", "label": "Captains" },
+      { "href": "/captains/roster", "label": "Captain roster" },
       { "href": "/timeline", "label": "Timeline" },
       { "href": "/stats", "label": "Statistics" },
       { "href": "/gallery", "label": "Photo Gallery" },

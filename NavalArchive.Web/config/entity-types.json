@@ -1,5 +1,5 @@
 {
-  "_comment": "Entity type definitions - drives templates. Add new types here; no code changes needed.",
+  "_comment": "Entity type definitions: UI + API paths. Any entity with apiPath gets filterable list routes (path=listRoute, partial=listRoute/partial) unless dynamicList.enabled is false. Omit dynamicList to use generic views/entity-list.ejs. Ship/captain use dynamicList for custom pages (fleet, roster, gallery). Patch fields in config/dynamic-lists.json overrides.{storageId} if needed.",
   "pages": {
     "gallery": { "title": "Photo Gallery", "description": "Archival photographs. Click any image to view full size.", "emptyMessage": "No images available. Ensure the API is running." }
   },
@@ -32,7 +32,37 @@
     "relationships": [
       { "key": "class", "label": "Class", "targetType": "class", "linkRoute": "/classes" },
       { "key": "captain", "label": "Captain", "targetType": "captain", "linkRoute": "/captains" }
-    ]
+    ],
+    "dynamicList": {
+      "extras": ["classes"],
+      "summaryAllLabel": "Showing all ships",
+      "views": [
+        {
+          "path": "/fleet",
+          "partialPath": "/fleet/partial",
+          "pageTitle": "Fleet Roster",
+          "title": "Fleet Roster",
+          "template": "fleet",
+          "partialTemplate": "partials/fleet-results-panel",
+          "apiListProfile": "fleet",
+          "domPrefix": "fleet",
+          "resultsPanelId": "fleetResultsPanel",
+          "paginationAriaLabel": "Fleet pagination"
+        },
+        {
+          "path": "/gallery",
+          "partialPath": "/gallery/partial",
+          "pageTitle": "Photo Gallery",
+          "title": "Photo Gallery",
+          "template": "gallery",
+          "partialTemplate": "partials/gallery-results-panel",
+          "apiListProfile": "gallery",
+          "domPrefix": "galleryDlf",
+          "resultsPanelId": "galleryResultsPanel",
+          "paginationAriaLabel": "Gallery pagination"
+        }
+      ]
+    }
   },
   "captain": {
     "displayName": "Captain",
@@ -49,7 +79,53 @@
     "emptyMessage": "None found.",
     "relationships": [
       { "key": "ships", "label": "Ships Commanded", "targetType": "ship", "linkRoute": "/ships", "isCollection": true }
-    ]
+    ],
+    "dynamicList": {
+      "views": [
+        {
+          "path": "/captains/roster",
+          "partialPath": "/captains/roster/partial",
+          "pageTitle": "Captain Roster",
+          "title": "Captain Roster",
+          "template": "captains-roster",
+          "partialTemplate": "partials/captains-roster-panel",
+          "paginationAriaLabel": "Captain roster pagination"
+        },
+        {
+          "path": "/captains",
+          "partialPath": "/captains/partial",
+          "pageTitle": "Captains",
+          "title": "Captains",
+          "template": "captains",
+          "partialTemplate": "partials/captains-gallery-panel",
+          "domPrefix": "captGallery",
+          "resultsPanelId": "captainsGalleryResults",
+          "paginationAriaLabel": "Captains pagination"
+        }
+      ]
+    }
+  },
+  "log": {
+    "displayName": "Log Entry",
+    "pluralName": "Daily Logs",
+    "detailRoute": "/logs",
+    "listRoute": "/logs",
+    "apiPath": "/api/lists/logs",
+    "hasImage": false,
+    "hasEdit": false,
+    "listTitle": "Daily Logs",
+    "searchPlaceholder": "Search logs by ship, date, source, or entry…",
+    "emptyMessage": "No logs available.",
+    "dynamicList": {
+      "template": "logs",
+      "partialTemplate": "partials/logs-results-panel",
+      "domPrefix": "logsDlf",
+      "resultsPanelId": "logsResultsPanel",
+      "paginationAriaLabel": "Logs pagination",
+      "summaryAllLabel": "Showing all logs",
+      "pageTitle": "Daily Logs",
+      "title": "Daily Logs"
+    }
   },
   "class": {
     "displayName": "Ship Class",
@@ -63,10 +139,23 @@
     "subtitleFields": ["type", "country"],
     "subtitleFormat": "{type} · {country}",
     "listTitle": "Ship Classes",
+    "searchPlaceholder": "Search by name, type, or country…",
     "emptyMessage": "None found.",
     "countLabel": "in class",
+    "listCardPrimaryLabel": "View ships",
     "relationships": [
       { "key": "ships", "label": "Ships in Class", "targetType": "ship", "linkRoute": "/ships", "isCollection": true }
-    ]
+    ],
+    "dynamicList": {
+      "template": "classes",
+      "partialTemplate": "partials/classes-results-panel",
+      "domPrefix": "classesDlf",
+      "resultsPanelId": "classesResultsPanel",
+      "paginationAriaLabel": "Ship classes pagination",
+      "summaryAllLabel": "Showing all ship classes",
+      "pageTitle": "Ship Classes",
+      "title": "Ship Classes"
+    }
   }
 }
+

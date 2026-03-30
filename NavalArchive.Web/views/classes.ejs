@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <%- include('partials/head') %>
+  <%- include('partials/dynamic-list-filters-head') %>
 </head>
 <body>
   <%- include('partials/header') %>
@@ -10,42 +11,43 @@
       <%
         var classType = typeof entityTypes !== 'undefined' && entityTypes['class'] ? entityTypes['class'] : {};
         var listTitle = classType.listTitle || 'Ship Classes';
-        var emptyMessage = classType.emptyMessage || 'None found.';
-        var countLabel = classType.countLabel || 'in class';
-        var shipPlural = (typeof entityTypes !== 'undefined' && entityTypes.ship && entityTypes.ship.pluralName) ? entityTypes.ship.pluralName.toLowerCase() : 'ships';
+        var searchPlaceholder = classType.searchPlaceholder || 'Search by name, type, or country…';
+        var rtc = typeof dynamicListRuntime !== 'undefined' && dynamicListRuntime ? dynamicListRuntime : {};
+        var _clBase = typeof pageBasePath !== 'undefined' ? pageBasePath : rtc.pageBasePath || '/classes';
+        var _dlfPartial = typeof partialPath !== 'undefined' ? partialPath : rtc.partialPath || '/classes/partial';
       %>
       <h1 class="mb-4"><%= listTitle %></h1>
-      <% if (typeof error !== 'undefined' && error) { %>
-        <div class="alert alert-warning"><%= error %></div>
-      <% } %>
-      <div class="row g-4">
-        <% if (classes && classes.length > 0) { %>
-          <% (Array.isArray(classes) ? classes : []).forEach(function(c) {
-            var cid = c.id ?? c.Id;
-            var cname = c.name ?? c.Name ?? '';
-            var ctype = c.type ?? c.Type ?? '-';
-            var ccountry = c.country ?? c.Country ?? '-';
-            var ccount = c.shipCount ?? c.ShipCount ?? 0;
-          %>
-            <div class="col-md-6 col-lg-4">
-              <div class="card h-100">
-                <div class="card-body">
-                  <h5 class="card-title"><%= cname %></h5>
-                  <p class="card-text text-muted mb-1"><%= ctype %> · <%= ccountry %></p>
-                  <p class="card-text small mb-2"><%= ccount %> <%= shipPlural %> <%= countLabel %></p>
-                  <a href="/classes/<%= cid %>" class="btn btn-outline-dark btn-sm">View <%= shipPlural %></a>
-                  <a href="/classes/<%= cid %>" class="btn btn-outline-secondary btn-sm admin-only ms-1">Edit</a>
-                </div>
-              </div>
-            </div>
-          <% }); %>
-        <% } else { %>
-          <div class="col-12 text-center text-muted py-5"><%= emptyMessage %></div>
-        <% } %>
+      <%
+        var _dlfNoClasses = '<p class="small text-muted mb-3">Filters are built from <code>/api/classes</code>. If you only see search, the API at <code>' + (typeof apiBase !== 'undefined' ? apiBase : '') + '</code> is not returning ship classes.</p>';
+      %>
+      <%- include('partials/dynamic-list-filters', {
+        dlfRuntimeDefault: Object.assign({}, rtc, {
+          listId: 'classes',
+          pageBasePath: '/classes',
+          partialPath: '/classes/partial',
+          summaryAllLabel: 'Showing all ship classes',
+          domPrefix: 'classesDlf',
+          resultsPanelId: 'classesResultsPanel',
+          paginationAriaLabel: 'Ship classes pagination',
+          refreshMode: 'serverPartial',
+          adapterName: '',
+          adapterOptions: {}
+        }),
+        dlfListId: 'classes',
+        dlfDomPrefix: 'classesDlf',
+        dlfResultsPanelId: 'classesResultsPanel',
+        dlfSearchPlaceholder: searchPlaceholder,
+        dlfFormAction: _clBase,
+        dlfSearchAriaLabel: 'Search ship classes',
+        dlfSearchInputTitle: 'Search (results update as you type)',
+        dlfNoFiltersHtml: _dlfNoClasses
+      }) %>
+      <div id="<%= rtc.resultsPanelId || 'classesResultsPanel' %>" class="classes-results-panel">
+      <%- include('partials/classes-results-panel') %>
       </div>
     </div>
   </main>
   <%- include('partials/footer') %>
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <%- include('partials/dynamic-list-filters-scripts') %>
 </body>
 </html>

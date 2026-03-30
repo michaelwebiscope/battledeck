@@ -1,6 +1,6 @@
 ---
 # Standalone playbook — called manually or from deploy scripts when code actually changes.
-# NOT imported by newrelic.yml / newrelic-app.yml (NR config runs != code deploys).
+# NOT imported by newrelic-dotnet-java-go.yml / newrelic-app.yml (NR config runs != code deploys).
 - name: New Relic - record deployment (change tracking)
   hosts: localhost
   connection: local

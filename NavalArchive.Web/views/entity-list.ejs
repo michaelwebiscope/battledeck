@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('partials/head') %>
+  <%- include('partials/dynamic-list-filters-head') %>
+</head>
+<body>
+  <%- include('partials/header') %>
+  <main class="app-shell">
+    <div class="container py-4">
+      <%
+        var et = typeof entityListType !== 'undefined' ? entityListType : '';
+        var meta = et && typeof entityTypes !== 'undefined' && entityTypes[et] ? entityTypes[et] : {};
+        var listTitle = meta.listTitle || (typeof title !== 'undefined' ? title : 'List');
+        var searchPlaceholder = meta.searchPlaceholder || 'Search…';
+        var rtc = typeof dynamicListRuntime !== 'undefined' && dynamicListRuntime ? dynamicListRuntime : {};
+        var _pgBase = typeof pageBasePath !== 'undefined' ? pageBasePath : rtc.pageBasePath || '/';
+        var _dlfPartial = typeof partialPath !== 'undefined' ? partialPath : rtc.partialPath || (_pgBase + '/partial');
+        var apiHint = meta.apiPath || '';
+        var _dlfNoData = '<p class="small text-muted mb-3">Filters are inferred from your API data at <code>' + apiHint + '</code>. If you only see search, the API at <code>' + (typeof apiBase !== 'undefined' ? apiBase : '') + '</code> did not return rows.</p>';
+      %>
+      <h1 class="mb-4"><%= listTitle %></h1>
+      <%- include('partials/dynamic-list-filters', {
+        dlfRuntimeDefault: rtc,
+        dlfListId: rtc.listId != null ? String(rtc.listId) : '',
+        dlfDomPrefix: rtc.domPrefix || '',
+        dlfResultsPanelId: rtc.resultsPanelId != null ? String(rtc.resultsPanelId) : '',
+        dlfSearchPlaceholder: searchPlaceholder,
+        dlfFormAction: _pgBase,
+        dlfSearchAriaLabel: 'Search ' + (meta.pluralName || listTitle).toLowerCase(),
+        dlfSearchInputTitle: 'Search (results update as you type)',
+        dlfNoFiltersHtml: _dlfNoData
+      }) %>
+      <div id="<%= rtc.resultsPanelId || 'entityListResults' %>" class="entity-list-results">
+      <%- include('partials/entity-list-panel') %>
+      </div>
+    </div>
+  </main>
+  <%- include('partials/footer') %>
+  <%- include('partials/dynamic-list-filters-scripts') %>
+</body>
+</html>

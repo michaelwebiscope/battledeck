@@ -7,7 +7,7 @@
     <nav class="topbar-nav">
       <% (navItems || []).forEach(function(item) { %>
       <% if (item.items) { %>
-      <div class="topbar-dropdown" onclick="if(window.innerWidth<=991) this.classList.toggle('expanded')">
+      <div class="topbar-dropdown">
         <button type="button" class="topbar-dropdown-trigger" aria-haspopup="true" aria-expanded="false">
           <i class="bi bi-<%= item.label === 'Explore' ? 'compass' : item.label === 'Support' ? 'heart' : item.label === 'Member' ? 'person' : item.label === 'Cart' ? 'cart' : 'folder2-open' %>"></i>
           <span><%= item.label %></span>
@@ -68,6 +68,52 @@
       document.body.classList.remove('admin-mode');
     }
     window.dispatchEvent(new CustomEvent('adminModeChanged', { detail: { enabled: toggle.checked } }));
+  });
+})();
+
+(function () {
+  var topbar = document.getElementById('appTopbar');
+  if (!topbar) return;
+
+  function isMobileNav() {
+    return window.innerWidth <= 991;
+  }
+
+  function closeOtherDropdowns(current) {
+    var all = topbar.querySelectorAll('.topbar-dropdown');
+    for (var i = 0; i < all.length; i++) {
+      var d = all[i];
+      if (d === current) continue;
+      d.classList.remove('expanded');
+      var t = d.querySelector('.topbar-dropdown-trigger');
+      if (t) t.setAttribute('aria-expanded', 'false');
+    }
+  }
+
+  var triggers = topbar.querySelectorAll('.topbar-dropdown-trigger');
+  for (var i = 0; i < triggers.length; i++) {
+    triggers[i].addEventListener('click', function (e) {
+      if (!isMobileNav()) return;
+      e.preventDefault();
+      e.stopPropagation();
+      var dd = this.closest('.topbar-dropdown');
+      if (!dd) return;
+      var next = !dd.classList.contains('expanded');
+      closeOtherDropdowns(dd);
+      dd.classList.toggle('expanded', next);
+      this.setAttribute('aria-expanded', next ? 'true' : 'false');
+    });
+  }
+
+  document.addEventListener('click', function (e) {
+    if (!isMobileNav()) return;
+    if (topbar.contains(e.target)) return;
+    closeOtherDropdowns(null);
+  });
+
+  window.addEventListener('resize', function () {
+    if (isMobileNav()) return;
+    closeOtherDropdowns(null);
   });
 })();
 </script>

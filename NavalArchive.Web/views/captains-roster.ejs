@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('partials/head') %>
+  <%- include('partials/dynamic-list-filters-head') %>
+</head>
+<body>
+  <%- include('partials/header') %>
+  <main class="app-shell">
+    <div class="container py-4">
+      <%
+        var capType = typeof entityTypes !== 'undefined' && entityTypes.captain ? entityTypes.captain : {};
+        var searchPlaceholder = capType.searchPlaceholder || 'Search by name or rank…';
+        var _cpBase = typeof pageBasePath !== 'undefined' ? pageBasePath : '/captains/roster';
+      %>
+      <h1 class="mb-4"><%= typeof title !== 'undefined' ? title : 'Captain Roster' %></h1>
+      <%
+        var _dlfPartial = typeof partialPath !== 'undefined' ? partialPath : '/captains/roster/partial';
+        var _dlfNoCap = '<p class="small text-muted mb-3">Filters are built from <code>/api/captains</code>. If you only see search, the API at <code>' + (typeof apiBase !== 'undefined' ? apiBase : '') + '</code> is not returning captains.</p>';
+      %>
+      <%- include('partials/dynamic-list-filters', {
+        dlfRuntimeDefault: Object.assign(
+          {
+            listId: 'captains',
+            pageBasePath: _cpBase,
+            partialPath: _dlfPartial,
+            summaryAllLabel: 'Showing all captains',
+            domPrefix: 'fleet',
+            resultsPanelId: 'fleetResultsPanel',
+            paginationAriaLabel: 'Captain roster pagination'
+          },
+          typeof dynamicListRuntime !== 'undefined' && dynamicListRuntime ? dynamicListRuntime : {}
+        ),
+        dlfListId: 'captains',
+        dlfDomPrefix: 'fleet',
+        dlfResultsPanelId: 'fleetResultsPanel',
+        dlfSearchPlaceholder: searchPlaceholder,
+        dlfFormAction: _cpBase,
+        dlfSearchAriaLabel: 'Search captains',
+        dlfSearchInputTitle: 'Search (results update as you type)',
+        dlfNoFiltersHtml: _dlfNoCap
+      }) %>
+      <div id="fleetResultsPanel" class="fleet-results-panel">
+      <%- include('partials/captains-roster-panel') %>
+      </div>
+    </div>
+  </main>
+  <%- include('partials/footer') %>
+  <%- include('partials/dynamic-list-filters-scripts') %>
+</body>
+</html>

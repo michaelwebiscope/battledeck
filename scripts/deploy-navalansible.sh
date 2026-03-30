@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Deploy navalansible: Ansible playbook (run terraform apply separately for first-time VM creation)
-# Usage: ./scripts/deploy-navalansible.sh [-newrelic] [-skip-services] [-go-only] [-newrelic-only]
+# Usage: ./scripts/deploy-navalansible.sh [-fullrun] [-newrelic] [-newrelic-only] [-skip-services] [-go-only]
 # Requires: ansible, pywinrm (pip install pywinrm)
 
 set -e
@@ -9,19 +9,26 @@ REPO_ROOT="$(pwd)"
 TFVARS_FILE="$REPO_ROOT/terraform-navalansible/terraform.tfvars"
 TFVARS_FALLBACK_FILE="$REPO_ROOT/terraform/terraform.tfvars"
 
-ENABLE_NEWRELIC=false
-NEWRELIC_ONLY=false
+# -fullrun: after main deploy (site or go-only), run full New Relic stack at the end.
+FULLRUN=false
+# -newrelic: run ONLY full New Relic playbook (infra → java → go → otel → node); skip site/go deploy.
+NEWRELIC_STANDALONE=false
+# -newrelic-only: run ONLY app-layer NR (java → go → otel → node); skip site + skip infra reinstall.
+NEWRELIC_APP_ONLY=false
 UPDATE_SERVICES=true
 GO_ONLY=false
 while [ $# -gt 0 ]; do
   case "$1" in
+    -fullrun|--fullrun)
+      FULLRUN=true
+      shift
+      ;;
     -newrelic|--newrelic)
-      ENABLE_NEWRELIC=true
+      NEWRELIC_STANDALONE=true
       shift
       ;;
     -newrelic-only|--newrelic-only)
-      NEWRELIC_ONLY=true
-      ENABLE_NEWRELIC=true
+      NEWRELIC_APP_ONLY=true
       shift
       ;;
     -skip-services|--skip-services)
@@ -37,9 +44,11 @@ while [ $# -gt 0 ]; do
       shift
       ;;
     -h|--help)
-      echo "Usage: ./scripts/deploy-navalansible.sh [-newrelic] [-newrelic-only] [-skip-services] [-go-only]"
-      echo "  -newrelic        also run ansible/playbooks/newrelic.yml after site deploy"
-      echo "  -newrelic-only   run only newrelic.yml (skip site.yml entirely — ~2 min)"
+      echo "Usage: ./scripts/deploy-navalansible.sh [-fullrun] [-newrelic] [-newrelic-only] [-skip-services] [-go-only]"
+      echo "  (no NR flags)    deploy only: site.yml (or -go-only) — no observability playbooks"
+      echo "  -fullrun         after site (or -go-only), run full New Relic: infra+logs+.NET → java → go → otel → node"
+      echo "  -newrelic        New Relic only: same full NR stack as -fullrun, but skip site/go deploy"
+      echo "  -newrelic-only   NR app layer only (java → go → otel → node), no infra reinstall — ~2 min"
       echo "  -skip-services   skip services.yml (faster repeated deploys)"
       echo "  -update-services force services.yml run (default)"
       echo "  -go-only         hot-swap Go binaries only (~2 min, no full redeploy)"
@@ -47,11 +56,21 @@ while [ $# -gt 0 ]; do
       ;;
     *)
       echo "Unknown argument: $1"
-      echo "Usage: ./scripts/deploy-navalansible.sh [-newrelic] [-newrelic-only] [-skip-services] [-go-only]"
+      echo "Usage: ./scripts/deploy-navalansible.sh [-fullrun] [-newrelic] [-newrelic-only] [-skip-services] [-go-only]"
       exit 1
       ;;
   esac
 done
+
+if [ "$NEWRELIC_STANDALONE" = true ] && [ "$NEWRELIC_APP_ONLY" = true ]; then
+  echo "NOTE: -newrelic overrides -newrelic-only (full NR stack only, skip site)."
+  NEWRELIC_APP_ONLY=false
+fi
+
+NEEDS_NR=false
+if [ "$FULLRUN" = true ] || [ "$NEWRELIC_STANDALONE" = true ] || [ "$NEWRELIC_APP_ONLY" = true ]; then
+  NEEDS_NR=true
+fi
 
 read_tfvar() {
   local key="$1"
@@ -96,8 +115,7 @@ GITHUB_REPO_URL=$(read_tfvar_any "github_repo_url")
 # macOS: avoid fork safety when running Ansible
 export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
 
-# Only read NR license key when -newrelic is used — site deploy is NR-free without the flag
-if [ "$ENABLE_NEWRELIC" = true ]; then
+if [ "$NEEDS_NR" = true ]; then
   [ -n "$NEWRELIC_LICENSE_KEY" ] || NEWRELIC_LICENSE_KEY=$(read_tfvar_any "newrelic_license_key")
 fi
 
@@ -111,7 +129,8 @@ SITE_ARGS=(
 if [ -n "$GITHUB_TOKEN" ]; then
   SITE_ARGS+=( -e "github_token=$GITHUB_TOKEN" )
 fi
-if [ "$ENABLE_NEWRELIC" = true ] && [ -n "$NEWRELIC_LICENSE_KEY" ]; then
+# Pass license into site deploy only when a full deploy may layer NR-related vars (full run)
+if [ "$FULLRUN" = true ] && [ -n "$NEWRELIC_LICENSE_KEY" ]; then
   SITE_ARGS+=( -e "newrelic_license_key=$NEWRELIC_LICENSE_KEY" )
 fi
 
@@ -130,8 +149,9 @@ run_ansible() {
   exit $rc
 }
 
-if [ "$NEWRELIC_ONLY" = true ]; then
-  : # skip site.yml — jump straight to NR playbook below
+# --- Main deploy (site or go-only). Skipped for -newrelic / -newrelic-only ---
+if [ "$NEWRELIC_STANDALONE" = true ] || [ "$NEWRELIC_APP_ONLY" = true ]; then
+  echo "=== 2. Skipping site / go-only (New Relic-only mode) ==="
 elif [ "$GO_ONLY" = true ]; then
   echo "=== 2. Ansible playbook (Go binaries only - ~2 min) ==="
   run_ansible playbooks/go-binaries-only.yml "${SITE_ARGS[@]}"
@@ -140,23 +160,18 @@ else
   run_ansible playbooks/site.yml "${SITE_ARGS[@]}"
 fi
 
-if [ "$ENABLE_NEWRELIC" = true ]; then
-  echo "=== 3. Ansible playbook (New Relic) ==="
-
-  # Env vars take precedence over terraform.tfvars
+# --- New Relic ---
+if [ "$NEWRELIC_STANDALONE" = true ]; then
+  echo "=== 3. New Relic only (full stack: infra + logs + .NET → java → go → otel → node) ==="
+  [ -n "$NEWRELIC_LICENSE_KEY" ] || NEWRELIC_LICENSE_KEY=$(read_tfvar_any "newrelic_license_key")
   [ -n "$NEWRELIC_API_KEY" ] || NEWRELIC_API_KEY=$(read_tfvar_any "newrelic_api_key")
   [ -n "$NEWRELIC_ACCOUNT_ID" ] || NEWRELIC_ACCOUNT_ID=$(read_tfvar_any "newrelic_account_id")
-  [ -n "$NEWRELIC_LICENSE_KEY" ] || NEWRELIC_LICENSE_KEY=$(read_tfvar_any "newrelic_license_key")
-
   [ -n "$NEWRELIC_ACCOUNT_ID" ] || NEWRELIC_ACCOUNT_ID="7849242"
   if [ -z "$NEWRELIC_API_KEY" ]; then
-    echo "ERROR: NEWRELIC_API_KEY is required with -newrelic."
-    echo "Set env var NEWRELIC_API_KEY, or add newrelic_api_key to:"
-    echo "  - $TFVARS_FILE"
-    echo "  - $TFVARS_FALLBACK_FILE"
+    echo "ERROR: NEWRELIC_API_KEY is required for -newrelic (infra/.NET install)."
+    echo "Set env var NEWRELIC_API_KEY, or add newrelic_api_key to terraform.tfvars"
     exit 1
   fi
-
   NR_ARGS=(
     -e "ansible_host=$VM_IP"
     -e "vm_admin_password=$VM_ADMIN_PASSWORD"
@@ -164,16 +179,47 @@ if [ "$ENABLE_NEWRELIC" = true ]; then
     -e "newrelic_api_key=$NEWRELIC_API_KEY"
     -e "newrelic_account_id=$NEWRELIC_ACCOUNT_ID"
   )
-  if [ -n "$NEWRELIC_LICENSE_KEY" ]; then
-    NR_ARGS+=( -e "newrelic_license_key=$NEWRELIC_LICENSE_KEY" )
-  fi
+  [ -n "$NEWRELIC_LICENSE_KEY" ] && NR_ARGS+=( -e "newrelic_license_key=$NEWRELIC_LICENSE_KEY" )
+  python3 -m ansible playbook playbooks/newrelic-dotnet-java-go.yml "${NR_ARGS[@]}"
 
-  if [ "$NEWRELIC_ONLY" = true ]; then
-    echo "=== Skipping infra/logs/.NET agent (already installed) ==="
-    python3 -m ansible playbook playbooks/newrelic-app.yml "${NR_ARGS[@]}"
-  else
-    python3 -m ansible playbook playbooks/newrelic.yml "${NR_ARGS[@]}"
+elif [ "$NEWRELIC_APP_ONLY" = true ]; then
+  echo "=== 3. New Relic app layer only (java → go → otel → node) ==="
+  [ -n "$NEWRELIC_LICENSE_KEY" ] || NEWRELIC_LICENSE_KEY=$(read_tfvar_any "newrelic_license_key")
+  if [ -z "$NEWRELIC_LICENSE_KEY" ]; then
+    echo "ERROR: newrelic_license_key is required for -newrelic-only."
+    exit 1
   fi
+  [ -n "$NEWRELIC_ACCOUNT_ID" ] || NEWRELIC_ACCOUNT_ID=$(read_tfvar_any "newrelic_account_id")
+  [ -n "$NEWRELIC_ACCOUNT_ID" ] || NEWRELIC_ACCOUNT_ID="7849242"
+  NR_ARGS=(
+    -e "ansible_host=$VM_IP"
+    -e "vm_admin_password=$VM_ADMIN_PASSWORD"
+    -e "vm_admin_username=azureadmin"
+    -e "newrelic_account_id=$NEWRELIC_ACCOUNT_ID"
+    -e "newrelic_license_key=$NEWRELIC_LICENSE_KEY"
+  )
+  python3 -m ansible playbook playbooks/newrelic-app.yml "${NR_ARGS[@]}"
+
+elif [ "$FULLRUN" = true ]; then
+  echo "=== 3. New Relic full stack (infra + logs + .NET → java → go → otel → node) ==="
+  [ -n "$NEWRELIC_LICENSE_KEY" ] || NEWRELIC_LICENSE_KEY=$(read_tfvar_any "newrelic_license_key")
+  [ -n "$NEWRELIC_API_KEY" ] || NEWRELIC_API_KEY=$(read_tfvar_any "newrelic_api_key")
+  [ -n "$NEWRELIC_ACCOUNT_ID" ] || NEWRELIC_ACCOUNT_ID=$(read_tfvar_any "newrelic_account_id")
+  [ -n "$NEWRELIC_ACCOUNT_ID" ] || NEWRELIC_ACCOUNT_ID="7849242"
+  if [ -z "$NEWRELIC_API_KEY" ]; then
+    echo "ERROR: NEWRELIC_API_KEY is required with -fullrun (infra/.NET install)."
+    echo "Set env var NEWRELIC_API_KEY, or add newrelic_api_key to terraform.tfvars"
+    exit 1
+  fi
+  NR_ARGS=(
+    -e "ansible_host=$VM_IP"
+    -e "vm_admin_password=$VM_ADMIN_PASSWORD"
+    -e "vm_admin_username=azureadmin"
+    -e "newrelic_api_key=$NEWRELIC_API_KEY"
+    -e "newrelic_account_id=$NEWRELIC_ACCOUNT_ID"
+  )
+  [ -n "$NEWRELIC_LICENSE_KEY" ] && NR_ARGS+=( -e "newrelic_license_key=$NEWRELIC_LICENSE_KEY" )
+  python3 -m ansible playbook playbooks/newrelic-dotnet-java-go.yml "${NR_ARGS[@]}"
 fi
 
 cd ..

@@ -1,0 +1,18 @@
+<% /* Plug-in: filters + results panel for /captains card page. Locals: searchPlaceholder (optional). */ %>
+<%
+  var sp = typeof searchPlaceholder !== 'undefined' ? searchPlaceholder : 'Search by name or rank…';
+  var _api = typeof apiBase !== 'undefined' ? apiBase : '';
+  var _no = '<p class="small text-muted mb-3">Filters need <code>/api/captains</code>. If only search shows, the API at <code>' + _api + '</code> is empty or unreachable.</p>';
+%>
+<%- include('dynamic-list-filters', {
+  dlfDomPrefix: 'captGallery',
+  dlfListId: 'captains',
+  dlfResultsPanelId: 'captainsGalleryResults',
+  dlfRuntimeDefault: { listId: 'captains', pageBasePath: '/captains', partialPath: '/captains/partial', summaryAllLabel: 'Showing all captains', domPrefix: 'captGallery', resultsPanelId: 'captainsGalleryResults', paginationAriaLabel: 'Captains pagination' },
+  dlfSearchPlaceholder: sp,
+  dlfFormAction: '/captains',
+  dlfSearchAriaLabel: 'Search captains',
+  dlfSearchInputTitle: 'Search (results update as you type)',
+  dlfNoFiltersHtml: _no
+}) %>
+<div id="captainsGalleryResults" class="fleet-results-panel"><%- include('captains-gallery-panel') %></div>

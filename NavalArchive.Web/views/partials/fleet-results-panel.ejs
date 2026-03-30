@@ -1,0 +1,74 @@
+<%
+  var shipType = typeof entityTypes !== 'undefined' && entityTypes.ship ? entityTypes.ship : {};
+  var listCardTitle = shipType.listCardTitle || 'Complete Registry';
+  var emptyMessage = shipType.emptyMessage || 'None loaded.';
+  var listColumns = shipType.listColumns || [];
+%>
+<% if (typeof error !== 'undefined' && error) { %>
+<div class="alert alert-warning"><%= error %></div>
+<% } %>
+<div class="card">
+  <div class="card-header">
+    <h2 class="h5 mb-0"><%= listCardTitle %></h2>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <style>body.admin-mode .fleet-table .fleet-chk-cell,body.admin-mode .fleet-table .fleet-edit-cell{display:table-cell!important}</style>
+      <table class="table table-hover mb-0 fleet-table">
+        <thead class="table-light">
+          <tr>
+            <th class="admin-only fleet-chk-cell" style="width: 36px; vertical-align: middle;"><input type="checkbox" id="fleetSelectAll" class="form-check-input" title="Select all on page"></th>
+            <% if (listColumns.length > 0) { listColumns.forEach(function(col) { %><th><%= col.label %></th><% }); } else { %>
+            <th>Name</th><th>Class</th><th>Type</th><th>Country</th><th>Captain</th><th>Rank</th><th>Year</th><th>Description</th>
+            <% } %>
+            <th class="admin-only fleet-edit-cell" style="width: 60px; vertical-align: middle;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% if (ships && ships.length > 0) { %>
+            <% ships.forEach(function(ship) {
+              var shipEntity = toEntity(ship, 'ship');
+              var shipId = ship.id || ship.Id;
+            %>
+              <tr data-ship-id="<%= shipId %>" data-ship-name="<%= (ship.name || '').replace(/"/g, '&quot;') %>">
+                <td class="admin-only fleet-chk-cell" style="vertical-align: middle;"><input type="checkbox" class="form-check-input fleet-ship-chk" value="<%= shipId %>"></td>
+                <td>
+                  <div class="d-flex align-items-center">
+                    <span class="me-2 flex-shrink-0"><%- include('entity-image', { entity: shipEntity, size: '48x32' }) %></span>
+                    <a href="/ships/<%= ship.id || ship.Id %>" class="text-decoration-none fw-bold"><%= ship.name %></a>
+                    <a href="/compare?id1=<%= ship.id || ship.Id %>" class="text-muted small ms-1" title="Compare">↔</a>
+                  </div>
+                </td>
+                <td><%= ship.class ? ship.class.name : '-' %></td>
+                <td><%= ship.class ? ship.class.type : '-' %></td>
+                <td><%= ship.class ? ship.class.country : '-' %></td>
+                <td><%= ship.captain ? ship.captain.name : '-' %></td>
+                <td><%= ship.captain ? ship.captain.rank : '-' %></td>
+                <td><%= ship.yearCommissioned %></td>
+                <td class="small text-muted" style="max-width: 180px;" title="<%= (ship.description || '').replace(/"/g, '&quot;') %>"><%= (ship.description || '').length > 80 ? (ship.description || '').substring(0, 80) + '…' : (ship.description || '') %></td>
+                <td class="admin-only fleet-edit-cell" style="vertical-align: middle;"><a href="/ships/<%= ship.id || ship.Id %>" class="btn btn-outline-secondary btn-sm">Edit</a></td>
+              </tr>
+            <% }); %>
+          <% } else { %>
+            <tr><td colspan="10" class="text-center py-4 text-muted"><%= emptyMessage %></td></tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<% if (typeof total !== 'undefined' && total > (pageSize || 100)) { %>
+<% var _pageBase = typeof pageBasePath !== 'undefined' && pageBasePath ? pageBasePath : '/fleet'; var _fq = []; if (typeof searchQuery !== 'undefined' && searchQuery) _fq.push('q=' + encodeURIComponent(searchQuery)); if (typeof activeFilters !== 'undefined' && activeFilters && Object.keys(activeFilters).length) _fq.push('df=' + encodeURIComponent(JSON.stringify(activeFilters))); var _fqs = _fq.length ? ('&' + _fq.join('&')) : ''; var totalPages = Math.ceil(total / (pageSize || 100)); %>
+<% var _pagAria = typeof paginationAriaLabel !== 'undefined' && paginationAriaLabel ? paginationAriaLabel : 'Fleet pagination'; %>
+<nav class="mt-3" data-dlf-pagination="1" aria-label="<%= _pagAria %>">
+  <ul class="pagination justify-content-center mb-0">
+    <li class="page-item <%= page <= 1 ? 'disabled' : '' %>">
+      <a class="page-link" href="<%= page <= 1 ? '#' : _pageBase + '?page=' + (page - 1) + _fqs %>">Previous</a>
+    </li>
+    <li class="page-item disabled"><span class="page-link">Page <%= page %> of <%= totalPages %> (<%= total %> <%= shipType.pluralName ? shipType.pluralName.toLowerCase() : 'items' %>)</span></li>
+    <li class="page-item <%= page >= totalPages ? 'disabled' : '' %>">
+      <a class="page-link" href="<%= page >= totalPages ? '#' : _pageBase + '?page=' + (page + 1) + _fqs %>">Next</a>
+    </li>
+  </ul>
+</nav>
+<% } %>

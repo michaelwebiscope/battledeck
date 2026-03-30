@@ -1,0 +1,156 @@
+<!--
+  dynamic-list-filters.ejs — client: public/js/dynamic-list-filters.js + DynamicFilters.
+  Lists are registered from entity types (apiPath + optional dynamicList). Use generic views/entity-list.ejs or custom templates.
+  Wrap results in a div whose id matches dynamicListRuntime.resultsPanelId. Pagination nav: data-dlf-pagination (see entity-list-panel).
+  Locals: dlfRuntimeDefault, dlfSearchPlaceholder, dlfFormAction, dlfSearchAriaLabel;
+  optional dlfSearchInputTitle, dlfHiddenRestoreEmpty, dlfNoFiltersHtml, dlfDomPrefix,
+  dlfListId, dlfResultsPanelId — use these when the page’s DOM ids/listId must match (classes, captains gallery, etc.).
+  Runtime contract also supports: refreshMode ('serverPartial'|'clientMemory'), adapterName, adapterOptions.
+-->
+<%
+  var _dlfDef = typeof dlfRuntimeDefault !== 'undefined' && dlfRuntimeDefault ? dlfRuntimeDefault : {};
+  var _dlfSrv = typeof dynamicListRuntime !== 'undefined' && dynamicListRuntime ? dynamicListRuntime : {};
+  var _rtc = Object.assign({}, _dlfDef, _dlfSrv);
+  var _dlfPrefix =
+    typeof dlfDomPrefix !== 'undefined' && dlfDomPrefix
+      ? String(dlfDomPrefix)
+      : (_rtc.domPrefix != null ? String(_rtc.domPrefix) : 'fleet');
+  _rtc.domPrefix = _dlfPrefix;
+  if (typeof dlfListId !== 'undefined' && dlfListId != null && String(dlfListId).trim() !== '') {
+    _rtc.listId = String(dlfListId).trim();
+  }
+  if (typeof dlfResultsPanelId !== 'undefined' && dlfResultsPanelId != null && String(dlfResultsPanelId).trim() !== '') {
+    _rtc.resultsPanelId = String(dlfResultsPanelId).trim();
+  }
+  if (_rtc.pageBasePath != null && String(_rtc.pageBasePath).trim().charAt(0) !== '/') {
+    _rtc.pageBasePath = '/' + String(_rtc.pageBasePath).trim().replace(/^\/+/, '');
+  }
+  if (_rtc.partialPath != null && String(_rtc.partialPath).trim() !== '') {
+    var _pp = String(_rtc.partialPath).trim();
+    if (_pp.charAt(0) !== '/') {
+      var _pbase = (_rtc.pageBasePath != null ? String(_rtc.pageBasePath) : '').replace(/\/+$/, '');
+      _rtc.partialPath = (_pbase ? _pbase + '/' : '/') + _pp.replace(/^\/+/, '');
+    }
+  }
+  var _pbaseCanon = (_rtc.pageBasePath != null ? String(_rtc.pageBasePath) : '').replace(/\/+$/, '');
+  if (_pbaseCanon) {
+    var _ppCanon = _rtc.partialPath != null ? String(_rtc.partialPath).trim() : '';
+    if (
+      !_ppCanon ||
+      _ppCanon === 'partial' ||
+      _ppCanon === '/partial' ||
+      _ppCanon.indexOf(_pbaseCanon + '/') !== 0
+    ) {
+      _rtc.partialPath = _pbaseCanon + '/partial';
+    }
+  }
+  _rtc.refreshMode = _rtc.refreshMode === 'clientMemory' ? 'clientMemory' : 'serverPartial';
+  if (_rtc.adapterName == null) _rtc.adapterName = '';
+  else _rtc.adapterName = String(_rtc.adapterName).trim();
+  if (!_rtc.adapterOptions || typeof _rtc.adapterOptions !== 'object' || Array.isArray(_rtc.adapterOptions)) {
+    _rtc.adapterOptions = {};
+  }
+  var _dlfSit = typeof dlfSearchInputTitle !== 'undefined' ? dlfSearchInputTitle : dlfSearchPlaceholder;
+  var _dlfHRE = typeof dlfHiddenRestoreEmpty !== 'undefined' ? dlfHiddenRestoreEmpty : 'No fields match the current data.';
+  var _dlfDockBodyId = _dlfPrefix + 'FilterDockBody';
+%>
+<script type="application/json" id="dynamicListRuntimeConfig"><%- JSON.stringify(_rtc) %></script>
+<% if (typeof filterConfig !== 'undefined' && filterConfig.length > 0) { %>
+<script type="application/json" id="<%= _dlfPrefix %>FilterConfigJson"><%- JSON.stringify(filterConfig) %></script>
+<script type="application/json" id="<%= _dlfPrefix %>ActiveFiltersJson"><%- JSON.stringify(typeof activeFilters !== 'undefined' ? activeFilters : {}) %></script>
+<script type="application/json" id="<%= _dlfPrefix %>PersistedOverridesJson"><%- JSON.stringify(typeof persistedFilterOverrides !== 'undefined' ? persistedFilterOverrides : {}) %></script>
+<script type="application/json" id="<%= _dlfPrefix %>HiddenFilterKeysJson"><%- JSON.stringify(typeof hiddenFilterKeys !== 'undefined' ? hiddenFilterKeys : []) %></script>
+<div class="fleet-filter-dock mb-3" id="<%= _dlfPrefix %>FilterDock" data-dlf-prefix="<%= _dlfPrefix %>" data-dlf-results-panel="<%= _rtc.resultsPanelId != null ? String(_rtc.resultsPanelId) : 'fleetResultsPanel' %>" data-dlf-list-id="<%= _rtc.listId != null ? String(_rtc.listId) : 'fleet' %>">
+  <span class="fleet-filter-dock__resize fleet-filter-dock__resize--e" aria-hidden="true"></span>
+  <span class="fleet-filter-dock__resize fleet-filter-dock__resize--s" aria-hidden="true"></span>
+  <span class="fleet-filter-dock__resize fleet-filter-dock__resize--se" aria-hidden="true"></span>
+  <div class="fleet-filter-dock__toolbar">
+    <div class="fleet-filter-dock__window-tools d-flex align-items-center gap-1 flex-shrink-0">
+      <div class="fleet-filter-dock__drag-bar" id="<%= _dlfPrefix %>FilterDragBar" title="Drag panel (popup mode)" aria-hidden="true"></div>
+      <button type="button" class="btn btn-sm btn-outline-secondary py-2 px-2 fleet-filter-mode-btn" id="<%= _dlfPrefix %>FilterInlineToggle" title="Inline mode" aria-pressed="false">
+        <i class="bi bi-layout-text-window-reverse" aria-hidden="true"></i>
+        <span class="visually-hidden">Inline mode</span>
+      </button>
+      <button type="button" class="btn btn-sm btn-outline-secondary py-2 px-2 fleet-filter-mode-btn" id="<%= _dlfPrefix %>FilterSideToggle" title="Side mode" aria-pressed="false">
+        <i class="bi bi-layout-sidebar" aria-hidden="true"></i>
+        <span class="visually-hidden">Side mode</span>
+      </button>
+      <button type="button" class="btn btn-sm btn-outline-secondary py-2 px-2 fleet-filter-mode-btn" id="<%= _dlfPrefix %>FilterFloatToggle" title="Popup mode" aria-pressed="false">
+        <i class="bi bi-window-stack" aria-hidden="true"></i>
+        <span class="visually-hidden">Popup mode</span>
+      </button>
+    </div>
+    <% if (typeof hiddenFilterKeys !== 'undefined' && hiddenFilterKeys.length > 0) {
+         var _dlfRestoreList = [];
+         if (typeof hiddenFiltersRestoreList !== 'undefined' && hiddenFiltersRestoreList.length) {
+           _dlfRestoreList = hiddenFiltersRestoreList;
+         } else {
+           _dlfRestoreList = hiddenFilterKeys.map(function (k) { return { key: k, label: String(k) }; });
+         }
+    %>
+    <div class="btn-group admin-only fleet-filter-dock__hidden-tools flex-shrink-0" role="group" aria-label="Restore removed filters">
+      <div class="dropdown">
+        <button type="button" class="btn btn-sm btn-outline-primary py-2 px-2 rounded-start-3 dropdown-toggle" id="<%= _dlfPrefix %>AddFilterDropdown" data-bs-toggle="dropdown" data-bs-auto-close="true" aria-expanded="false" title="Add back one removed filter">
+          <i class="bi bi-plus-lg" aria-hidden="true"></i><span class="visually-hidden"> Add filter</span>
+        </button>
+        <ul class="dropdown-menu dropdown-menu-start fleet-filter-add-dropdown py-1" aria-labelledby="<%= _dlfPrefix %>AddFilterDropdown" style="max-height: min(50vh, 18rem); overflow-y: auto;">
+          <% if (_dlfRestoreList.length) { %>
+            <% _dlfRestoreList.forEach(function (item) { %>
+            <li><button type="button" class="dropdown-item fleet-add-filter-item small py-2" data-filter-key="<%= item.key %>"><%= item.label %></button></li>
+            <% }); %>
+          <% } else { %>
+            <li><span class="dropdown-item-text small text-muted py-2"><%= _dlfHRE %></span></li>
+          <% } %>
+        </ul>
+      </div>
+      <button type="button" class="btn btn-sm btn-outline-secondary py-2 px-2 rounded-end-3" id="<%= _dlfPrefix %>RestoreHiddenFiltersBtn" title="Show every removed filter again">Restore all</button>
+    </div>
+    <% } %>
+    <button type="button" class="fleet-filter-dock__toggle btn d-flex align-items-center justify-content-between gap-2 py-2 px-3 rounded-3" id="<%= _dlfPrefix %>FilterToggleBtn" aria-expanded="true" aria-controls="<%= _dlfDockBodyId %>" title="Show or hide filters">
+      <span class="fleet-filter-toggle-inner d-flex align-items-center gap-2 min-w-0 text-start flex-grow-1">
+        <span class="fw-semibold small text-uppercase text-secondary flex-shrink-0" style="letter-spacing:0.06em;">Filters</span>
+        <span id="<%= _dlfPrefix %>FilterSummary" class="dlf-filter-summary small text-muted text-truncate min-w-0"></span>
+      </span>
+      <i class="bi bi-chevron-down fleet-filter-toggle-icon flex-shrink-0" aria-hidden="true"></i>
+      <span class="visually-hidden">Toggle filters</span>
+    </button>
+    <aside class="fleet-filter-dock__search-wrap" aria-label="<%= dlfSearchAriaLabel %>">
+      <form id="<%= _dlfPrefix %>SearchForm" action="<%= dlfFormAction %>" method="GET" class="fleet-filter-dock__search w-100 d-flex align-items-stretch">
+        <button type="button" class="fleet-filter-search-open-btn" id="<%= _dlfPrefix %>FilterSearchOpenBtn" aria-label="Open search" title="Search">
+          <i class="bi bi-search" aria-hidden="true"></i>
+        </button>
+        <label class="fleet-filter-search-shell w-100 mb-0 flex-grow-1 min-w-0">
+          <i class="bi bi-search fleet-filter-search-shell__icon" aria-hidden="true"></i>
+          <span class="visually-hidden"><%= dlfSearchPlaceholder %></span>
+          <input type="text" name="q" id="<%= _dlfPrefix %>FilterSearchInput" class="fleet-filter-search-input fleet-filter-search-shell__input" placeholder="<%= dlfSearchPlaceholder %>" value="<%= typeof searchQuery !== 'undefined' ? searchQuery : '' %>" autocomplete="off" enterkeyhint="search" data-placeholder-short="Search" data-placeholder-full=<%- JSON.stringify(dlfSearchPlaceholder) %> title="<%= _dlfSit %>">
+        </label>
+      </form>
+    </aside>
+  </div>
+  <div class="fleet-filter-dock__menu">
+    <div class="fleet-filter-body-clip">
+      <div id="<%= _dlfDockBodyId %>" class="fleet-filter-dock__body">
+        <div class="fleet-filter-dock__filters-scroll">
+          <form id="<%= _dlfPrefix %>FilterForm" action="<%= dlfFormAction %>" method="GET" class="d-flex flex-column gap-3" onsubmit="return false;">
+            <div id="<%= _dlfPrefix %>DynamicFiltersMount"></div>
+          </form>
+        </div>
+        <div id="<%= _dlfPrefix %>FilterPills" class="fleet-filter-dock__pills mt-3 pt-3 border-top d-flex flex-wrap align-items-center gap-2" aria-live="polite"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<% } else { %>
+<% if (typeof dlfNoFiltersHtml !== 'undefined' && dlfNoFiltersHtml) { %>
+<%- dlfNoFiltersHtml %>
+<% } else { %>
+<p class="small text-muted mb-3">Dynamic filters need list data from the API. Only search is available until rows load.</p>
+<% } %>
+<form id="<%= _dlfPrefix %>SearchForm" action="<%= dlfFormAction %>" method="GET" class="mb-3">
+  <label class="fleet-filter-search-shell fleet-filter-search-shell--standalone w-100 mb-0">
+    <i class="bi bi-search fleet-filter-search-shell__icon" aria-hidden="true"></i>
+    <span class="visually-hidden"><%= dlfSearchPlaceholder %></span>
+    <input type="text" name="q" id="<%= _dlfPrefix %>FilterSearchInput" class="fleet-filter-search-input fleet-filter-search-shell__input" placeholder="<%= dlfSearchPlaceholder %>" value="<%= typeof searchQuery !== 'undefined' ? searchQuery : '' %>" enterkeyhint="search" title="Results update as you type">
+  </label>
+</form>
+<% } %>

@@ -1,0 +1,22 @@
+---
+# New Relic in proven order:
+#   1. newrelic-infra — infrastructure, logs, .NET APM (newrelic_install)
+#   2. newrelic-java — ImagePopulator + Java agent
+#   3. newrelic-go — account-service + payment-service
+#   4. newrelic-otel — OTEL auto-instrumentation on Card, Cart, Order, PaymentChain, Shipping, Notification
+#   5. newrelic-node — Node.js APM (NavalArchiveWeb) + browser/RUM via getBrowserTimingHeader() in head.ejs
+#
+# Does not run newrelic-app.yml.
+#
+# Required extra vars (example):
+#   -e "ansible_host=<VM_IP>" -e "vm_admin_password=..." -e "vm_admin_username=azureadmin"
+#   -e "newrelic_api_key=..." -e "newrelic_account_id=..." -e "newrelic_license_key=..."
+#
+# Run:
+#   cd ansible && python3 -m ansible playbook playbooks/newrelic-dotnet-java-go.yml -i inventory.yml ...
+
+- ansible.builtin.import_playbook: newrelic-infra.yml
+- ansible.builtin.import_playbook: newrelic-java.yml
+- ansible.builtin.import_playbook: newrelic-go.yml
+- ansible.builtin.import_playbook: newrelic-otel.yml
+- ansible.builtin.import_playbook: newrelic-node.yml

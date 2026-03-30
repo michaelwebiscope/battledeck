@@ -1,0 +1,57 @@
+<%
+  var logType = typeof entityTypes !== 'undefined' && entityTypes.log ? entityTypes.log : {};
+  var emptyMessage = logType.emptyMessage || 'No logs available.';
+  var logsList = Array.isArray(logs) ? logs : [];
+%>
+<% if (typeof error !== 'undefined' && error) { %>
+<div class="alert alert-warning"><%= error %></div>
+<% } %>
+<div class="card">
+  <div class="card-header">
+    <h2 class="h5 mb-0">Daily Logs</h2>
+  </div>
+  <div class="card-body">
+    <% if (logsList.length === 0) { %>
+      <p class="mb-0 text-muted"><%= emptyMessage %></p>
+    <% } else { %>
+      <div class="list-group list-group-flush">
+        <% logsList.forEach(function(log) {
+          var shipName = log.shipName || log.ShipName || '';
+          var logDate = log.logDate || log.LogDate || '';
+          var source = log.source || log.Source || '';
+          var excerpt = log.excerpt || log.Excerpt || log.entry || log.Entry || '';
+        %>
+        <button
+          type="button"
+          class="list-group-item list-group-item-action text-start"
+          data-log-ship="<%= shipName %>"
+          data-log-date="<%= logDate %>"
+          title="Open full day log">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <strong><%= shipName || 'Unknown ship' %></strong>
+            <span class="text-muted small"><%= logDate || '-' %></span>
+          </div>
+          <% if (source) { %>
+          <div class="small text-muted mb-2"><%= source %></div>
+          <% } %>
+          <p class="mb-0 font-monospace small"><%= excerpt %></p>
+        </button>
+        <% }); %>
+      </div>
+    <% } %>
+  </div>
+</div>
+<% if (typeof total !== 'undefined' && total > (pageSize || 100)) { %>
+<% var _pageBase = typeof pageBasePath !== 'undefined' && pageBasePath ? pageBasePath : '/logs'; var _fq = []; if (typeof searchQuery !== 'undefined' && searchQuery) _fq.push('q=' + encodeURIComponent(searchQuery)); if (typeof activeFilters !== 'undefined' && activeFilters && Object.keys(activeFilters).length) _fq.push('df=' + encodeURIComponent(JSON.stringify(activeFilters))); var _fqs = _fq.length ? ('&' + _fq.join('&')) : ''; var totalPages = Math.ceil(total / (pageSize || 100)); var _pagAria = typeof paginationAriaLabel !== 'undefined' && paginationAriaLabel ? paginationAriaLabel : 'Logs pagination'; %>
+<nav class="mt-3" data-dlf-pagination="1" aria-label="<%= _pagAria %>">
+  <ul class="pagination justify-content-center mb-0">
+    <li class="page-item <%= page <= 1 ? 'disabled' : '' %>">
+      <a class="page-link" href="<%= page <= 1 ? '#' : _pageBase + '?page=' + (page - 1) + _fqs %>">Previous</a>
+    </li>
+    <li class="page-item disabled"><span class="page-link">Page <%= page %> of <%= totalPages %> (<%= total %> logs)</span></li>
+    <li class="page-item <%= page >= totalPages ? 'disabled' : '' %>">
+      <a class="page-link" href="<%= page >= totalPages ? '#' : _pageBase + '?page=' + (page + 1) + _fqs %>">Next</a>
+    </li>
+  </ul>
+</nav>
+<% } %>

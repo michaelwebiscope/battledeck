@@ -1,0 +1,4 @@
+{
+  "_comment": "Optional patches keyed by storageId (fleet, captains, classes, …). List routes are built from config/entity-types.json — add or edit an entity with apiPath; use dynamicList for templates/extras or omit for generic entity-list.",
+  "overrides": {}
+}

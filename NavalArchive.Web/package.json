@@ -4,9 +4,12 @@
   "description": "WW2 Naval History Archive - Frontend",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "PORT=3000 node server.js",
+    "dev": "PORT=3000 node server.js",
+    "dev:alt-api": "API_URL=http://127.0.0.1:5040 BIND_HOST=127.0.0.1 PORT=3000 node server.js",
+    "test": "node scripts/test-dynamic-filters.js",
+    "test:fleet-save": "node scripts/test-fleet-filters-save.js",
+    "traffic-sim": "node scripts/traffic-simulator.mjs"
   },
   "keywords": [],
   "author": "",
