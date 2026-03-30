@@ -75,9 +75,7 @@ builder.Services.AddDbContext<LogsDbContext>(options =>
     options.UseSqlite("Data Source=logs.db"));
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<CacheInvalidationService>();
-builder.Services.AddSingleton<DataSyncService>();
 builder.Services.AddSingleton<LogsDataService>();
-builder.Services.AddSingleton<GenuineLogsFetcher>();
 builder.Services.AddSingleton<WikipediaDataFetcher>();
 builder.Services.AddSingleton<ImageSearchService>();
 builder.Services.AddScoped<ImageStorageService>();

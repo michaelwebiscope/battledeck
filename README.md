@@ -86,7 +86,7 @@ Ship descriptions and images are fetched from **Wikipedia** on first run (or whe
 
 - **Automatic:** Runs in background ~2 seconds after startup
 - **Cache:** Saved to `NavalArchive.Api/Data/fetched-ships.json` (delete to re-fetch)
-- **Manual:** Click "Refresh from Wikipedia" on the Home page, or `POST /api/admin/sync`
+- **Manual:** Use Admin Image Audit populate actions (Java ImagePopulator stream)
 
 **Captain's Logs** are also fetched from Wikipedia (Battle of Midway, Leyte Gulf, Bismarck, Pearl Harbor, etc.) and cached in `Data/captain-logs.json`.
 

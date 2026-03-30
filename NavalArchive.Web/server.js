@@ -20,6 +20,7 @@ const FLEET_FILTER_OVERRIDES_PATH = path.join(__dirname, 'config', 'fleet-filter
 const FLEET_FILTER_HIDDEN_PATH = path.join(__dirname, 'config', 'fleet-filter-hidden.json');
 const CAPTAIN_FILTER_OVERRIDES_PATH = path.join(__dirname, 'config', 'captain-filter-overrides.json');
 const CAPTAIN_FILTER_HIDDEN_PATH = path.join(__dirname, 'config', 'captain-filter-hidden.json');
+const IMAGE_FETCH_MODE_PATH = path.join(__dirname, 'config', 'image-fetch-mode.json');
 
 const DYNAMIC_FILTERS_GENERIC_DIR = path.join(__dirname, 'config', 'dynamic-filters');
 
@@ -130,6 +131,27 @@ function readFleetFilterHidden() {
 function writeFleetFilterHidden(keys) {
   writeDynamicFilterHidden('fleet', keys);
 }
+
+function readImageFetchMode() {
+  try {
+    if (!fs.existsSync(IMAGE_FETCH_MODE_PATH)) return { disableDotNetImageFetch: false };
+    const raw = fs.readFileSync(IMAGE_FETCH_MODE_PATH, 'utf8');
+    const data = JSON.parse(raw);
+    return {
+      disableDotNetImageFetch: data?.disableDotNetImageFetch === true
+    };
+  } catch (e) {
+    console.warn('image-fetch-mode read failed:', e.message);
+    return { disableDotNetImageFetch: false };
+  }
+}
+
+function writeImageFetchMode(mode) {
+  const payload = { disableDotNetImageFetch: mode?.disableDotNetImageFetch === true };
+  fs.writeFileSync(IMAGE_FETCH_MODE_PATH, JSON.stringify(payload, null, 2), 'utf8');
+}
+
+let imageFetchMode = readImageFetchMode();
 
 function imageUploadHandler(entity) {
   return async (req, res) => {
@@ -473,6 +495,15 @@ app.post('/api/captains/delete/:id', async (req, res) => {
 // Proxy /api/* to API for client-side fetches (local dev; on IIS, /api/* is rewritten to API)
 app.use('/api', async (req, res) => {
   try {
+    if (
+      imageFetchMode.disableDotNetImageFetch === true &&
+      req.method === 'POST' &&
+      /^\/images\/(ship|captain)\/\d+\/from-url(?:\?.*)?$/i.test(req.url || '')
+    ) {
+      return res.status(503).json({
+        error: 'Java-only image mode is enabled. .NET from-url image fetching is disabled.'
+      });
+    }
     const url = `${API_BASE}/api${req.url}`;
       const headers = { 'Content-Type': 'application/json' };
       if (req.headers['x-api-key']) headers['X-API-Key'] = req.headers['x-api-key'];
@@ -2048,6 +2079,11 @@ app.get('/admin/add-from-url', (req, res) => {
 
 app.get('/admin/images', async (req, res) => {
   try {
+    // Prevent stale inline JS in admin audit page after local template edits.
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+    res.set('Surrogate-Control', 'no-store');
     const [auditRes, shipsRes, captainsRes, sourcesRes] = await Promise.all([
       api.get('/api/images/audit'),
       api.get('/api/ships', { params: { page: 1, pageSize: 500 } }).catch(() => ({ data: {} })),
@@ -2060,11 +2096,29 @@ app.get('/admin/images', async (req, res) => {
       audit: auditRes.data,
       ships: shipsData.items || [],
       captains: captainsRes.data || [],
-      imageSources: Array.isArray(sourcesRes.data) ? sourcesRes.data : []
+      imageSources: Array.isArray(sourcesRes.data) ? sourcesRes.data : [],
+      imageFetchMode
     });
   } catch (err) {
     console.error('Image audit error:', err.message);
-    res.render('admin-images', { title: 'Image Audit', audit: null, ships: [], captains: [], imageSources: [], error: err.message });
+    res.render('admin-images', { title: 'Image Audit', audit: null, ships: [], captains: [], imageSources: [], imageFetchMode, error: err.message });
+  }
+});
+
+app.get('/admin/images/fetch-mode', (req, res) => {
+  res.json(imageFetchMode);
+});
+
+app.put('/admin/images/fetch-mode', (req, res) => {
+  const nextMode = {
+    disableDotNetImageFetch: req.body?.disableDotNetImageFetch === true
+  };
+  imageFetchMode = nextMode;
+  try {
+    writeImageFetchMode(nextMode);
+    res.json(nextMode);
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to save image fetch mode.' });
   }
 });
 
@@ -2208,7 +2262,6 @@ setInterval(cleanupOldJobs, 60000);
 
 app.post('/admin/images/populate', async (req, res) => {
   try {
-    const runSyncFirst = req.body?.runSyncFirst === true;
     const usePolling = req.body?.usePolling === true;
     const keys = {};
     if (req.body?.pexelsApiKey) keys.pexelsApiKey = req.body.pexelsApiKey;
@@ -2233,28 +2286,14 @@ app.post('/admin/images/populate', async (req, res) => {
         const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
         const maxRetries = 3;
         const retryDelayMs = 10000;
+        let sawResultEvent = false;
+        let heartbeatTimer = null;
 
         try {
-          if (runSyncFirst) {
-            for (let attempt = 1; attempt <= maxRetries; attempt++) {
-              try {
-                const syncRes = await api.post('/api/admin/sync?force=true', {}, { timeout: 120000 });
-                add({ type: 'sync', message: syncRes.data?.message || 'Completed' });
-                break;
-              } catch (syncErr) {
-                const msg = syncErr.response?.data?.message || syncErr.message;
-                const is429 = syncErr.response?.status === 429;
-                add({ type: 'sync', error: msg });
-                if (attempt < maxRetries) {
-                  add({ type: 'info', data: `Retry ${attempt}/${maxRetries - 1} in ${retryDelayMs / 1000}s${is429 ? ' (429 rate limit)' : ''}...` });
-                  await sleep(retryDelayMs);
-                } else {
-                  add({ type: 'info', data: 'Continuing with cached data (sync failed).' });
-                  break;
-                }
-              }
-            }
-          }
+          add({ type: 'info', data: 'Populate job queued. Connecting to Java stream...' });
+          heartbeatTimer = setInterval(() => {
+            if (!job.done) add({ type: 'progress', data: '[live] waiting for next progress event...' });
+          }, 4000);
 
           for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
@@ -2277,7 +2316,11 @@ app.post('/admin/images/populate', async (req, res) => {
                     if (m) {
                       try {
                         const evt = JSON.parse(m[1].trim());
-                        if (evt && (evt.type || evt.Type)) add(evt);
+                        if (evt && (evt.type || evt.Type)) {
+                          const t = String(evt.type || evt.Type || '').toLowerCase();
+                          if (t === 'ship' || t === 'captain' || t === 'progress') sawResultEvent = true;
+                          add(evt);
+                        }
                       } catch (e) { /* skip malformed */ }
                     }
                   }
@@ -2285,7 +2328,16 @@ app.post('/admin/images/populate', async (req, res) => {
                 streamRes.data.on('end', () => {
                   if (buf.trim()) {
                     const m = buf.match(/^data:\s*(.+)/s);
-                    if (m) try { const evt = JSON.parse(m[1].trim()); if (evt && (evt.type || evt.Type)) add(evt); } catch (e) {}
+                    if (m) {
+                      try {
+                        const evt = JSON.parse(m[1].trim());
+                        if (evt && (evt.type || evt.Type)) {
+                          const t = String(evt.type || evt.Type || '').toLowerCase();
+                          if (t === 'ship' || t === 'captain' || t === 'progress') sawResultEvent = true;
+                          add(evt);
+                        }
+                      } catch (e) {}
+                    }
                   }
                   resolve();
                 });
@@ -2304,29 +2356,29 @@ app.post('/admin/images/populate', async (req, res) => {
               }
             }
           }
+          if (!sawResultEvent) {
+            // Keep empty-queue runs visibly progressive in the UI (not all lines at once).
+            await sleep(900);
+            add({ type: 'progress', data: '[live] finalize: no eligible uncached images found.' });
+            await sleep(900);
+            add({ type: 'info', data: 'No eligible uncached images were found for this run.' });
+          }
           job.done = true;
           job.updatedAt = Date.now();
         } catch (err) {
           add({ type: 'error', error: err.message });
           job.done = true;
           job.updatedAt = Date.now();
+        } finally {
+          if (heartbeatTimer) clearInterval(heartbeatTimer);
         }
       })();
       return;
     }
 
-    const logLines = [];
-    if (runSyncFirst) {
-      try {
-        const syncRes = await api.post('/api/admin/sync?force=true', {}, { timeout: 120000 });
-        logLines.push('[Sync] ' + (syncRes.data?.message || 'Completed'));
-      } catch (syncErr) {
-        logLines.push('[Sync] Error: ' + (syncErr.response?.data?.message || syncErr.message));
-      }
-    }
     const response = await api.post('/api/images/populate', keys, { timeout: 300000 });
     const data = response.data || {};
-    data.logLines = logLines;
+    data.logLines = [];
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -2482,19 +2534,6 @@ app.get('/simulation', (req, res) => {
   res.render('simulation', {
     title: 'Live Battle'
   });
-});
-
-app.post('/admin/sync', async (req, res) => {
-  try {
-    const force = req.query.force === 'true' || req.body?.force === true;
-    const response = await api.post(`/api/admin/sync${force ? '?force=true' : ''}`);
-    res.json(response.data);
-  } catch (err) {
-    console.error('Sync error:', err.message);
-    res.status(err.response?.status || 500).json({
-      error: err.response?.data?.error || 'Sync failed'
-    });
-  }
 });
 
 app.post('/simulation/join', async (req, res) => {
