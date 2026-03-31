@@ -128,6 +128,7 @@ SITE_ARGS=(
 )
 
 # Optional: API DB/Redis settings (demo). Read from terraform.tfvars if present.
+# NOTE: These values can contain spaces/semicolons. Pass via JSON to avoid truncation.
 API_DATABASE_PROVIDER=$(read_tfvar_any "api_database_provider")
 API_CONN_MAIN=$(read_tfvar_any "api_conn_main")
 API_CONN_LOGS=$(read_tfvar_any "api_conn_logs")
@@ -135,23 +136,27 @@ API_REDIS_CONFIGURATION=$(read_tfvar_any "api_redis_configuration")
 API_REDIS_INSTANCE_NAME=$(read_tfvar_any "api_redis_instance_name")
 API_DYNAMICLISTS_DB_MODE=$(read_tfvar_any "api_dynamiclists_db_mode")
 
-if [ -n "$API_DATABASE_PROVIDER" ]; then
-  SITE_ARGS+=( -e "api_database_provider=$API_DATABASE_PROVIDER" )
-fi
-if [ -n "$API_CONN_MAIN" ]; then
-  SITE_ARGS+=( -e "api_conn_main=$API_CONN_MAIN" )
-fi
-if [ -n "$API_CONN_LOGS" ]; then
-  SITE_ARGS+=( -e "api_conn_logs=$API_CONN_LOGS" )
-fi
-if [ -n "$API_REDIS_CONFIGURATION" ]; then
-  SITE_ARGS+=( -e "api_redis_configuration=$API_REDIS_CONFIGURATION" )
-fi
-if [ -n "$API_REDIS_INSTANCE_NAME" ]; then
-  SITE_ARGS+=( -e "api_redis_instance_name=$API_REDIS_INSTANCE_NAME" )
-fi
-if [ -n "$API_DYNAMICLISTS_DB_MODE" ]; then
-  SITE_ARGS+=( -e "api_dynamiclists_db_mode=$API_DYNAMICLISTS_DB_MODE" )
+export API_DATABASE_PROVIDER API_CONN_MAIN API_CONN_LOGS API_REDIS_CONFIGURATION API_REDIS_INSTANCE_NAME API_DYNAMICLISTS_DB_MODE
+
+API_EXTRAVARS_JSON=$(python3 - <<'PY'
+import json, os
+d = {}
+def put(k, v):
+    v = (v or "").strip()
+    if v:
+        d[k] = v
+put("api_database_provider", os.environ.get("API_DATABASE_PROVIDER"))
+put("api_conn_main", os.environ.get("API_CONN_MAIN"))
+put("api_conn_logs", os.environ.get("API_CONN_LOGS"))
+put("api_redis_configuration", os.environ.get("API_REDIS_CONFIGURATION"))
+put("api_redis_instance_name", os.environ.get("API_REDIS_INSTANCE_NAME"))
+put("api_dynamiclists_db_mode", os.environ.get("API_DYNAMICLISTS_DB_MODE"))
+print(json.dumps(d))
+PY
+)
+
+if [ "$API_EXTRAVARS_JSON" != "{}" ]; then
+  SITE_ARGS+=( -e "$API_EXTRAVARS_JSON" )
 fi
 if [ -n "$GITHUB_TOKEN" ]; then
   SITE_ARGS+=( -e "github_token=$GITHUB_TOKEN" )
