@@ -5,7 +5,28 @@
       <handlers>
         <add name="aspNetCore" path="*" verb="*" modules="AspNetCoreModuleV2" resourceType="Unspecified" />
       </handlers>
-      <aspNetCore processPath="{{ dotnet_dir }}\dotnet.exe" arguments=".\NavalArchive.Api.dll" stdoutLogEnabled="true" stdoutLogFile=".\logs\stdout" hostingModel="inprocess" />
+      <aspNetCore processPath="{{ dotnet_dir }}\dotnet.exe" arguments=".\NavalArchive.Api.dll" stdoutLogEnabled="true" stdoutLogFile=".\logs\stdout" hostingModel="inprocess">
+        <environmentVariables>
+          {% if api_database_provider is defined and api_database_provider | length > 0 %}
+          <environmentVariable name="DatabaseProvider" value="{{ api_database_provider }}" />
+          {% endif %}
+          {% if api_conn_main is defined and api_conn_main | length > 0 %}
+          <environmentVariable name="ConnectionStrings__NavalArchiveDb" value="{{ api_conn_main }}" />
+          {% endif %}
+          {% if api_conn_logs is defined and api_conn_logs | length > 0 %}
+          <environmentVariable name="ConnectionStrings__LogsDb" value="{{ api_conn_logs }}" />
+          {% endif %}
+          {% if api_redis_configuration is defined and api_redis_configuration | length > 0 %}
+          <environmentVariable name="Redis__Configuration" value="{{ api_redis_configuration }}" />
+          {% endif %}
+          {% if api_redis_instance_name is defined and api_redis_instance_name | length > 0 %}
+          <environmentVariable name="Redis__InstanceName" value="{{ api_redis_instance_name }}" />
+          {% endif %}
+          {% if api_dynamiclists_db_mode is defined and api_dynamiclists_db_mode | length > 0 %}
+          <environmentVariable name="DynamicLists__UseDatabaseQueryMode" value="{{ api_dynamiclists_db_mode }}" />
+          {% endif %}
+        </environmentVariables>
+      </aspNetCore>
     </system.webServer>
   </location>
 </configuration>

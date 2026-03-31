@@ -126,6 +126,33 @@ SITE_ARGS=(
   -e "github_repo_url=$GITHUB_REPO_URL"
   -e "update_services=$UPDATE_SERVICES"
 )
+
+# Optional: API DB/Redis settings (demo). Read from terraform.tfvars if present.
+API_DATABASE_PROVIDER=$(read_tfvar_any "api_database_provider")
+API_CONN_MAIN=$(read_tfvar_any "api_conn_main")
+API_CONN_LOGS=$(read_tfvar_any "api_conn_logs")
+API_REDIS_CONFIGURATION=$(read_tfvar_any "api_redis_configuration")
+API_REDIS_INSTANCE_NAME=$(read_tfvar_any "api_redis_instance_name")
+API_DYNAMICLISTS_DB_MODE=$(read_tfvar_any "api_dynamiclists_db_mode")
+
+if [ -n "$API_DATABASE_PROVIDER" ]; then
+  SITE_ARGS+=( -e "api_database_provider=$API_DATABASE_PROVIDER" )
+fi
+if [ -n "$API_CONN_MAIN" ]; then
+  SITE_ARGS+=( -e "api_conn_main=$API_CONN_MAIN" )
+fi
+if [ -n "$API_CONN_LOGS" ]; then
+  SITE_ARGS+=( -e "api_conn_logs=$API_CONN_LOGS" )
+fi
+if [ -n "$API_REDIS_CONFIGURATION" ]; then
+  SITE_ARGS+=( -e "api_redis_configuration=$API_REDIS_CONFIGURATION" )
+fi
+if [ -n "$API_REDIS_INSTANCE_NAME" ]; then
+  SITE_ARGS+=( -e "api_redis_instance_name=$API_REDIS_INSTANCE_NAME" )
+fi
+if [ -n "$API_DYNAMICLISTS_DB_MODE" ]; then
+  SITE_ARGS+=( -e "api_dynamiclists_db_mode=$API_DYNAMICLISTS_DB_MODE" )
+fi
 if [ -n "$GITHUB_TOKEN" ]; then
   SITE_ARGS+=( -e "github_token=$GITHUB_TOKEN" )
 fi

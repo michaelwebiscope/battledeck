@@ -8,3 +8,18 @@ vm_admin_password    = "YourSecurePassword123!"
 vm_size              = "Standard_B2s"
 restrict_to_my_ip    = true
 allowed_ip           = ""  # Override if auto-detect fails
+
+# --- Demo DB/Cache settings (OPTIONAL) ---
+# These are passed into Ansible to configure the API (IIS) at deploy time.
+# WARNING: tfvars is plaintext. For real environments use a secret store.
+
+# api_database_provider = "Sqlite"   # or "Postgres" / "SqlServer"
+# api_conn_main = "Host=...;Port=5432;Database=navalarchive;Username=...;Password=..."
+# api_conn_logs = "Host=...;Port=5432;Database=navalarchive_logs;Username=...;Password=..."
+
+# Redis is optional: if omitted/empty, API uses in-memory distributed cache for sessions.
+# api_redis_configuration = "host:6379,password=..."
+# api_redis_instance_name = "navalarchive:"
+
+# Dynamic lists DB-query mode (rollout flag)
+# api_dynamiclists_db_mode = "true"
