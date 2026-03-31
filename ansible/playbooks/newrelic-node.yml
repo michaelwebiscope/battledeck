@@ -51,53 +51,9 @@
         dest: C:\inetpub\start-node-web.ps1
       when: newrelic_license_key is defined and newrelic_license_key | length > 0
 
-    # sc.exe stop can block WinRM for a long time if Node ignores SCM stop; use bounded WaitForStatus + PID kill.
-    - name: Restart NavalArchiveWeb service (bounded stop/start)
-      ansible.windows.win_shell: |
-        $ErrorActionPreference = 'Continue'
-        $svcName = 'NavalArchiveWeb'
-        try {
-          Add-Type -AssemblyName System.ServiceProcess
-          $ctl = New-Object System.ServiceProcess.ServiceController($svcName)
-        } catch {
-          exit 0
-        }
-        function RefreshCtl { try { $ctl.Refresh() } catch {} }
-        RefreshCtl
-        if ($ctl.Status -eq [System.ServiceProcess.ServiceControllerStatus]::Running) {
-          try { $ctl.Stop() } catch {}
-          try {
-            $ctl.WaitForStatus(
-              [System.ServiceProcess.ServiceControllerStatus]::Stopped,
-              (New-TimeSpan -Seconds 45)
-            )
-          } catch {}
-        }
-        RefreshCtl
-        if ($ctl.Status -ne [System.ServiceProcess.ServiceControllerStatus]::Stopped) {
-          $wsvc = Get-CimInstance Win32_Service -Filter "Name='$svcName'" -ErrorAction SilentlyContinue
-          if ($wsvc -and $wsvc.ProcessId -gt 0) {
-            Stop-Process -Id $wsvc.ProcessId -Force -ErrorAction SilentlyContinue
-          }
-          Start-Sleep -Seconds 2
-          RefreshCtl
-        }
-        if ($ctl.Status -ne [System.ServiceProcess.ServiceControllerStatus]::Running) {
-          try { $ctl.Start() } catch {}
-          try {
-            $ctl.WaitForStatus(
-              [System.ServiceProcess.ServiceControllerStatus]::Running,
-              (New-TimeSpan -Seconds 90)
-            )
-          } catch {}
-        }
-        exit 0
-      args:
-        executable: powershell
-      failed_when: false
-      when: newrelic_license_key is defined and newrelic_license_key | length > 0
-
-    # Node may run from NavalArchiveWeb-Node scheduled task + start-node-web.ps1 (see scheduled_task.yml).
+    # Production Node is started via NavalArchiveWeb-Node + C:\inetpub\start-node-web.ps1 (see scheduled_task.yml).
+    # Do NOT restart the NavalArchiveWeb Windows service here: sc/stop often blocks WinRM and services.yml noted
+    # service start timeout (1053). Recycling the scheduled task reloads the updated script + NR env vars.
     - name: Restart NavalArchiveWeb-Node scheduled task with updated start-node-web.ps1
       ansible.windows.win_shell: |
         Stop-ScheduledTask -TaskName "NavalArchiveWeb-Node" -ErrorAction SilentlyContinue
