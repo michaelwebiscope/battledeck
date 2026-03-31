@@ -658,6 +658,24 @@
     refreshFleetTableFromUrl(window.location.pathname + window.location.search);
   });
 
+  // When navigating back/forward, browsers may restore the old DOM from bfcache.
+  // If an entity was deleted/updated in another tab/page, the table can look stale.
+  function isBackForwardNavigation(ev) {
+    try {
+      if (ev && ev.persisted) return true;
+      var nav = performance && performance.getEntriesByType ? performance.getEntriesByType('navigation') : [];
+      if (nav && nav[0] && nav[0].type === 'back_forward') return true;
+    } catch (_) {}
+    return false;
+  }
+  window.addEventListener('pageshow', function (e) {
+    if (!isBackForwardNavigation(e)) return;
+    var parsed = parseFleetFiltersFromUrl();
+    applyFleetFiltersToDom({ q: parsed.q, activeFilters: parsed.activeFilters });
+    renderFleetPills(readFleetFiltersFromDom());
+    refreshFleetTableFromUrl(window.location.pathname + window.location.search);
+  });
+
   document.addEventListener('click', function (e) {
     var a = e.target.closest('nav[data-dlf-pagination] a.page-link');
     if (!a) return;
