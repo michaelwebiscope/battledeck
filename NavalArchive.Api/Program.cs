@@ -8,14 +8,60 @@ using NavalArchive.Api.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
+static string RedactConnectionString(string? raw)
+{
+    if (string.IsNullOrWhiteSpace(raw)) return "(empty)";
+    var pairs = raw.Split(';', StringSplitOptions.RemoveEmptyEntries);
+    var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "Host", "Server", "Data Source", "Port", "Database", "Initial Catalog"
+    };
+    var filtered = new List<string>();
+    foreach (var p in pairs)
+    {
+        var idx = p.IndexOf('=');
+        if (idx <= 0) continue;
+        var key = p[..idx].Trim();
+        var value = p[(idx + 1)..].Trim();
+        if (allowed.Contains(key) && value.Length > 0)
+            filtered.Add($"{key}={value}");
+    }
+    return filtered.Count == 0 ? "(redacted)" : string.Join(';', filtered);
+}
+
+static string RedactRedisConfiguration(string? raw)
+{
+    if (string.IsNullOrWhiteSpace(raw)) return "(empty)";
+    var parts = raw.Split(',', StringSplitOptions.RemoveEmptyEntries)
+        .Select(p => p.Trim())
+        .Where(p => !p.StartsWith("password=", StringComparison.OrdinalIgnoreCase) &&
+                    !p.StartsWith("user=", StringComparison.OrdinalIgnoreCase) &&
+                    !p.StartsWith("username=", StringComparison.OrdinalIgnoreCase))
+        .ToList();
+    return parts.Count == 0 ? "(redacted)" : string.Join(',', parts);
+}
+
 builder.Services.AddControllers()
     .AddJsonOptions(o => o.JsonSerializerOptions.PropertyNameCaseInsensitive = true);
 builder.Services.AddHttpClient();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// Session: create on first visit, required for API access
-builder.Services.AddDistributedMemoryCache();
+// Session/cache: Redis when configured, otherwise in-memory.
+var redisConfiguration = builder.Configuration["Redis:Configuration"];
+var redisInstanceName = builder.Configuration["Redis:InstanceName"] ?? "navalarchive:";
+if (!string.IsNullOrWhiteSpace(redisConfiguration))
+{
+    builder.Services.AddStackExchangeRedisCache(options =>
+    {
+        options.Configuration = redisConfiguration;
+        options.InstanceName = redisInstanceName;
+    });
+}
+else
+{
+    builder.Services.AddDistributedMemoryCache();
+}
 builder.Services.AddSession(options =>
 {
     options.IdleTimeout = TimeSpan.FromMinutes(30);
@@ -64,17 +110,25 @@ builder.Services.AddRateLimiter(options =>
 
 var mainConn = builder.Configuration.GetConnectionString("NavalArchiveDb") ?? builder.Configuration["ConnectionStrings:NavalArchiveDb"];
 var provider = builder.Configuration["DatabaseProvider"] ?? "";
-if (!string.IsNullOrEmpty(mainConn) && (provider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase) || mainConn.Contains("Trusted_Connection", StringComparison.OrdinalIgnoreCase) || mainConn.Contains("TrustServerCertificate", StringComparison.OrdinalIgnoreCase)))
+if (!string.IsNullOrEmpty(mainConn) && (
+        provider.Equals("Postgres", StringComparison.OrdinalIgnoreCase) ||
+        provider.Equals("PostgreSQL", StringComparison.OrdinalIgnoreCase)))
+    builder.Services.AddDbContext<NavalArchiveDbContext>(o => o.UseNpgsql(mainConn));
+else if (!string.IsNullOrEmpty(mainConn) && (provider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase) || mainConn.Contains("Trusted_Connection", StringComparison.OrdinalIgnoreCase) || mainConn.Contains("TrustServerCertificate", StringComparison.OrdinalIgnoreCase)))
     builder.Services.AddDbContext<NavalArchiveDbContext>(o => o.UseSqlServer(mainConn));
 else if (!string.IsNullOrEmpty(mainConn))
     builder.Services.AddDbContext<NavalArchiveDbContext>(o => o.UseSqlite(mainConn));
 else
     builder.Services.AddDbContext<NavalArchiveDbContext>(o => o.UseSqlite("Data Source=navalarchive.db"));
 
-builder.Services.AddDbContext<LogsDbContext>(options =>
-    options.UseSqlite("Data Source=logs.db"));
+var logsConn = builder.Configuration.GetConnectionString("LogsDb") ?? "Data Source=logs.db";
+if (provider.Equals("Postgres", StringComparison.OrdinalIgnoreCase) || provider.Equals("PostgreSQL", StringComparison.OrdinalIgnoreCase))
+    builder.Services.AddDbContext<LogsDbContext>(options => options.UseNpgsql(logsConn));
+else
+    builder.Services.AddDbContext<LogsDbContext>(options => options.UseSqlite(logsConn));
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<CacheInvalidationService>();
+builder.Services.AddSingleton<DynamicListDiagnosticsService>();
 builder.Services.AddSingleton<LogsDataService>();
 builder.Services.AddSingleton<WikipediaDataFetcher>();
 builder.Services.AddSingleton<ImageSearchService>();
@@ -174,11 +228,21 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<NavalArchiveDbContext>();
     var logsDb = scope.ServiceProvider.GetRequiredService<LogsDbContext>();
+    var startupLogger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("StartupBootstrap");
+    startupLogger.LogInformation(
+        "Connection targets: provider={Provider}, mainDb={MainDb}, logsDb={LogsDb}, redis={Redis}",
+        provider,
+        RedactConnectionString(mainConn),
+        RedactConnectionString(logsConn),
+        RedactRedisConfiguration(redisConfiguration)
+    );
     db.Database.EnsureCreated();
     logsDb.Database.EnsureCreated();
+    var indexBootstrapProvider = "unknown";
     // Add VideoUrl column if missing (existing SQLite DBs)
     if (db.Database.IsSqlite())
     {
+        indexBootstrapProvider = "sqlite";
         try { db.Database.ExecuteSqlRaw("ALTER TABLE Ships ADD COLUMN VideoUrl TEXT"); } catch { /* column exists */ }
         try { db.Database.ExecuteSqlRaw("ALTER TABLE Ships ADD COLUMN ImageData BLOB"); } catch { }
         try { db.Database.ExecuteSqlRaw("ALTER TABLE Ships ADD COLUMN ImageContentType TEXT"); } catch { }
@@ -186,13 +250,48 @@ using (var scope = app.Services.CreateScope())
         try { db.Database.ExecuteSqlRaw("ALTER TABLE Captains ADD COLUMN ImageData BLOB"); } catch { }
         try { db.Database.ExecuteSqlRaw("ALTER TABLE Captains ADD COLUMN ImageContentType TEXT"); } catch { }
         try { db.Database.ExecuteSqlRaw("ALTER TABLE Captains ADD COLUMN ImageVersion INTEGER DEFAULT 0"); } catch { }
-    try { db.Database.ExecuteSqlRaw("ALTER TABLE Ships ADD COLUMN ImageManuallySet INTEGER DEFAULT 0"); } catch { }
-    try { db.Database.ExecuteSqlRaw("ALTER TABLE Captains ADD COLUMN ImageManuallySet INTEGER DEFAULT 0"); } catch { }
-    // Indexes for fast queries at scale
-    try { db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_Ships_ClassId ON Ships(ClassId)"); } catch { }
-    try { db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_Ships_CaptainId ON Ships(CaptainId)"); } catch { }
-    try { db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_Ships_YearCommissioned ON Ships(YearCommissioned)"); } catch { }
-    try { db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_Ships_Name ON Ships(Name)"); } catch { }
+        try { db.Database.ExecuteSqlRaw("ALTER TABLE Ships ADD COLUMN ImageManuallySet INTEGER DEFAULT 0"); } catch { }
+        try { db.Database.ExecuteSqlRaw("ALTER TABLE Captains ADD COLUMN ImageManuallySet INTEGER DEFAULT 0"); } catch { }
+        // Indexes for fast queries at scale (SQLite)
+        try { db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_Ships_ClassId ON Ships(ClassId)"); } catch { }
+        try { db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_Ships_CaptainId ON Ships(CaptainId)"); } catch { }
+        try { db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_Ships_YearCommissioned ON Ships(YearCommissioned)"); } catch { }
+        try { db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_Ships_Name ON Ships(Name)"); } catch { }
+        try { logsDb.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_CaptainLogs_LogDate ON CaptainLogs(LogDate)"); } catch { }
+        try { logsDb.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_CaptainLogs_ShipName ON CaptainLogs(ShipName)"); } catch { }
+        try { logsDb.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_CaptainLogs_Source ON CaptainLogs(Source)"); } catch { }
+    }
+    else if (db.Database.IsNpgsql())
+    {
+        indexBootstrapProvider = "postgres";
+        // Indexes for fast queries at scale (PostgreSQL)
+        try { db.Database.ExecuteSqlRaw(@"CREATE INDEX IF NOT EXISTS ""IX_Ships_ClassId"" ON ""Ships"" (""ClassId"")"); } catch { }
+        try { db.Database.ExecuteSqlRaw(@"CREATE INDEX IF NOT EXISTS ""IX_Ships_CaptainId"" ON ""Ships"" (""CaptainId"")"); } catch { }
+        try { db.Database.ExecuteSqlRaw(@"CREATE INDEX IF NOT EXISTS ""IX_Ships_YearCommissioned"" ON ""Ships"" (""YearCommissioned"")"); } catch { }
+        try { db.Database.ExecuteSqlRaw(@"CREATE INDEX IF NOT EXISTS ""IX_Ships_Name"" ON ""Ships"" (""Name"")"); } catch { }
+        try { logsDb.Database.ExecuteSqlRaw(@"CREATE INDEX IF NOT EXISTS ""IX_CaptainLogs_LogDate"" ON ""CaptainLogs"" (""LogDate"")"); } catch { }
+        try { logsDb.Database.ExecuteSqlRaw(@"CREATE INDEX IF NOT EXISTS ""IX_CaptainLogs_ShipName"" ON ""CaptainLogs"" (""ShipName"")"); } catch { }
+        try { logsDb.Database.ExecuteSqlRaw(@"CREATE INDEX IF NOT EXISTS ""IX_CaptainLogs_Source"" ON ""CaptainLogs"" (""Source"")"); } catch { }
+    }
+    else if (db.Database.IsSqlServer())
+    {
+        indexBootstrapProvider = "sqlserver";
+        // Indexes for fast queries at scale (SQL Server)
+        try { db.Database.ExecuteSqlRaw(@"IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Ships_ClassId' AND object_id = OBJECT_ID('Ships')) CREATE INDEX IX_Ships_ClassId ON Ships(ClassId)"); } catch { }
+        try { db.Database.ExecuteSqlRaw(@"IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Ships_CaptainId' AND object_id = OBJECT_ID('Ships')) CREATE INDEX IX_Ships_CaptainId ON Ships(CaptainId)"); } catch { }
+        try { db.Database.ExecuteSqlRaw(@"IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Ships_YearCommissioned' AND object_id = OBJECT_ID('Ships')) CREATE INDEX IX_Ships_YearCommissioned ON Ships(YearCommissioned)"); } catch { }
+        try { db.Database.ExecuteSqlRaw(@"IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Ships_Name' AND object_id = OBJECT_ID('Ships')) CREATE INDEX IX_Ships_Name ON Ships(Name)"); } catch { }
+        try { logsDb.Database.ExecuteSqlRaw(@"IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_CaptainLogs_LogDate' AND object_id = OBJECT_ID('CaptainLogs')) CREATE INDEX IX_CaptainLogs_LogDate ON CaptainLogs(LogDate)"); } catch { }
+        try { logsDb.Database.ExecuteSqlRaw(@"IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_CaptainLogs_ShipName' AND object_id = OBJECT_ID('CaptainLogs')) CREATE INDEX IX_CaptainLogs_ShipName ON CaptainLogs(ShipName)"); } catch { }
+        try { logsDb.Database.ExecuteSqlRaw(@"IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_CaptainLogs_Source' AND object_id = OBJECT_ID('CaptainLogs')) CREATE INDEX IX_CaptainLogs_Source ON CaptainLogs(Source)"); } catch { }
+    }
+
+    startupLogger.LogInformation(
+        "Index bootstrap completed. provider={Provider}, dynamicListsDbQueryMode={DbMode}, redisEnabled={RedisEnabled}",
+        indexBootstrapProvider,
+        app.Configuration.GetValue<bool>("DynamicLists:UseDatabaseQueryMode"),
+        !string.IsNullOrWhiteSpace(app.Configuration["Redis:Configuration"])
+    );
     // ImageSources table (entity for image search sources)
     try
     {
@@ -211,7 +310,7 @@ using (var scope = app.Services.CreateScope())
                     CustomConfigJson TEXT
                 )");
         }
-        else
+        else if (db.Database.IsSqlServer())
         {
             db.Database.ExecuteSqlRaw(@"
                 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'ImageSources')
@@ -225,6 +324,21 @@ using (var scope = app.Services.CreateScope())
                     Enabled BIT DEFAULT 1,
                     AuthKeyRef NVARCHAR(64),
                     CustomConfigJson NVARCHAR(MAX)
+                )");
+        }
+        else if (db.Database.IsNpgsql())
+        {
+            db.Database.ExecuteSqlRaw(@"
+                CREATE TABLE IF NOT EXISTS ""ImageSources"" (
+                    ""Id"" INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                    ""SourceId"" TEXT NOT NULL,
+                    ""Name"" TEXT NOT NULL,
+                    ""ProviderType"" TEXT NOT NULL,
+                    ""RetryCount"" INTEGER DEFAULT 2,
+                    ""SortOrder"" INTEGER DEFAULT 0,
+                    ""Enabled"" BOOLEAN DEFAULT TRUE,
+                    ""AuthKeyRef"" TEXT,
+                    ""CustomConfigJson"" TEXT
                 )");
         }
         if (!db.ImageSources.Any())
@@ -241,7 +355,6 @@ using (var scope = app.Services.CreateScope())
         }
     }
     catch { /* table exists or migration pending */ }
-    }
 }
 
 // Wikipedia sync and image populate are manual only (Admin > Image Audit > Populate) to save API calls.
@@ -264,6 +377,28 @@ app.MapGet("api/health", async (NavalArchiveDbContext db) =>
     {
         return Results.Json(new { status = "error", service = "api", db = "error", error = ex.Message }, statusCode: 503);
     }
+});
+
+app.MapGet("api/dynamic-lists/diagnostics", (IConfiguration config, DynamicListDiagnosticsService diagnostics) =>
+{
+    var provider = config["DatabaseProvider"];
+    if (string.IsNullOrWhiteSpace(provider))
+    {
+        var mainConn = config.GetConnectionString("NavalArchiveDb") ?? config["ConnectionStrings:NavalArchiveDb"] ?? "";
+        provider = mainConn.Contains("Trusted_Connection", StringComparison.OrdinalIgnoreCase) ||
+                   mainConn.Contains("TrustServerCertificate", StringComparison.OrdinalIgnoreCase)
+            ? "SqlServer"
+            : mainConn.Contains("Host=", StringComparison.OrdinalIgnoreCase)
+                ? "Postgres"
+                : "Sqlite";
+    }
+
+    var snapshot = diagnostics.Snapshot(
+        dbQueryModeEnabled: config.GetValue<bool>("DynamicLists:UseDatabaseQueryMode"),
+        redisEnabled: !string.IsNullOrWhiteSpace(config["Redis:Configuration"]),
+        databaseProvider: provider
+    );
+    return Results.Ok(snapshot);
 });
 
 app.MapControllers();

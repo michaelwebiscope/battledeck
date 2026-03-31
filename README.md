@@ -64,7 +64,27 @@ For members, cart, checkout, and cards you need the full stack (Option A).
 
 By default, data is saved to **SQLite** files (`cart.db`, `card.db`, `payment.db`, `navalarchive.db`) in each project directory. Data persists across restarts.
 
-For **SQL Server** or **MySQL**, set connection strings in `appsettings.json` and optionally `DatabaseProvider`. See [docs/DATABASE.md](docs/DATABASE.md).
+For **PostgreSQL** or **SQL Server**, set connection strings in `appsettings.json` and `DatabaseProvider`. See [docs/DATABASE.md](docs/DATABASE.md).
+
+### 5. Phase 1 Validation Gate
+
+Run all Phase 1 rollout checks in one command:
+
+```bash
+./scripts/test-phase1.sh
+```
+
+Run the same gate against local PostgreSQL (Docker):
+
+```bash
+./scripts/test-phase1-postgres.sh
+```
+
+Dynamic-list DB-mode test supports fallback-rate gating:
+
+```bash
+DLF_MAX_FALLBACK_RATE=0.30 ./scripts/test-dynamic-lists-db-mode.sh
+```
 
 ---
 

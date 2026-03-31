@@ -19,6 +19,9 @@ fail() {
   echo "FAIL: $1" >&2
   exit 1
 }
+skip() {
+  echo "SKIP: $1"
+}
 
 echo "== GET $BASE/health =="
 code=$(curl -sS -o /tmp/naval-api-health.body -w '%{http_code}' "$BASE/health" || true)
@@ -44,4 +47,26 @@ print(len(items))
 ") || fail "/api/ships JSON missing .items array"
 echo "OK ($code), items count: $count"
 
+echo "== GET $BASE/api/dynamic-lists/diagnostics =="
+code=$(curl -sS -o /tmp/naval-api-dlf-diag.body -w '%{http_code}' "$BASE/api/dynamic-lists/diagnostics" || true)
+if [[ "$code" == "404" ]]; then
+  skip "/api/dynamic-lists/diagnostics not available on running API (restart API to validate this endpoint)"
+else
+  [[ "$code" == "200" ]] || fail "/api/dynamic-lists/diagnostics expected HTTP 200, got $code"
+  python3 - <<'PY' || fail "/api/dynamic-lists/diagnostics JSON missing required fields"
+import json
+with open('/tmp/naval-api-dlf-diag.body') as f:
+    d = json.load(f)
+assert isinstance(d.get('mode'), dict), 'missing mode object'
+assert isinstance(d.get('counters'), dict), 'missing counters object'
+assert isinstance(d.get('fallbackByReason'), dict), 'missing fallbackByReason object'
+print("OK (200), diagnostics fields present")
+PY
+fi
+
 echo "All API smoke checks passed."
+
+if [[ "${INCLUDE_STARTUP_LOG_CHECKS:-false}" == "true" ]]; then
+  echo "== Startup log checks =="
+  "$ROOT/scripts/test-startup-logs.sh"
+fi

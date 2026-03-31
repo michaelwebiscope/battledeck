@@ -14,8 +14,10 @@ public sealed class DynamicListService
     private readonly NavalArchiveDbContext _db;
     private readonly LogsDbContext _logsDb;
     private readonly IMemoryCache _cache;
+    private readonly DynamicListDiagnosticsService _diagnostics;
     private readonly TimeSpan _rowsCacheTtl;
     private readonly TimeSpan _filterConfigCacheTtl;
+    private readonly bool _useDatabaseQueryMode;
 
     private const int StringRadioMaxUnique = 10;
     private const int StringNameMaxUnique = 100;
@@ -24,12 +26,14 @@ public sealed class DynamicListService
         NavalArchiveDbContext db,
         LogsDbContext logsDb,
         IMemoryCache cache,
+        DynamicListDiagnosticsService diagnostics,
         IConfiguration config
     )
     {
         _db = db;
         _logsDb = logsDb;
         _cache = cache;
+        _diagnostics = diagnostics;
         var fallbackMinutes = Math.Max(1, config.GetValue<int?>("Cache:ExpirationMinutes") ?? 10);
         _rowsCacheTtl = TimeSpan.FromSeconds(
             Math.Max(10, config.GetValue<int?>("Cache:DynamicLists:RowsSeconds") ?? fallbackMinutes * 60)
@@ -37,6 +41,7 @@ public sealed class DynamicListService
         _filterConfigCacheTtl = TimeSpan.FromSeconds(
             Math.Max(10, config.GetValue<int?>("Cache:DynamicLists:FilterConfigSeconds") ?? fallbackMinutes * 60)
         );
+        _useDatabaseQueryMode = config.GetValue<bool>("DynamicLists:UseDatabaseQueryMode");
     }
 
     public async Task<DynamicListResponseDto> GetListAsync(string entity, DynamicListQueryDto query, CancellationToken ct = default)
@@ -63,7 +68,6 @@ public sealed class DynamicListService
             });
         }
 
-        var searchedRows = ApplySearch(rows, query.Q);
         var filterConfigCacheHit = _cache.TryGetValue(filterConfigCacheKey, out List<DynamicListFilterConfigDto>? cachedFilterConfig) && cachedFilterConfig is not null;
         List<DynamicListFilterConfigDto> filterConfigAll;
         if (filterConfigCacheHit)
@@ -85,10 +89,48 @@ public sealed class DynamicListService
         var active = ParseActiveFilters(query);
         active = SanitizeActiveFilters(active, cfgByKey.Keys);
         active = StripNoopRangeFilters(active, cfgByKey);
+        var usedDatabaseSearch = false;
+        var usedDatabaseFilter = false;
+        string? dbFallbackReason = null;
+        List<Dictionary<string, object?>> pageItems;
+        int total;
 
-        var filteredRows = ApplyFilters(searchedRows, active, cfgByKey);
-        var total = filteredRows.Count;
-        var pageItems = filteredRows.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+        if (_useDatabaseQueryMode)
+        {
+            PagedRowsResult? dbPage = null;
+            try
+            {
+                dbPage = await TryLoadDbPagedRowsAsync(normalizedEntity, profile, query.Q, active, page, pageSize, ct);
+            }
+            catch (InvalidOperationException)
+            {
+                dbFallbackReason = "db_query_translation_error";
+            }
+            if (dbPage is not null)
+            {
+                usedDatabaseSearch = true;
+                usedDatabaseFilter = active.Count > 0;
+                pageItems = dbPage.Items;
+                total = dbPage.Total;
+            }
+            else
+            {
+                dbFallbackReason ??= "unsupported_filter_key_or_shape";
+                var searchedRows = ApplySearch(rows, query.Q);
+                var filteredRows = ApplyFilters(searchedRows, active, cfgByKey);
+                total = filteredRows.Count;
+                pageItems = filteredRows.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+            }
+        }
+        else
+        {
+            var searchedRows = ApplySearch(rows, query.Q);
+            var filteredRows = ApplyFilters(searchedRows, active, cfgByKey);
+            total = filteredRows.Count;
+            pageItems = filteredRows.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+        }
+
+        _diagnostics.RecordRequest(usedDatabaseSearch, usedDatabaseFilter, dbFallbackReason);
 
         return new DynamicListResponseDto
         {
@@ -103,9 +145,474 @@ public sealed class DynamicListService
                 ["entity"] = entity,
                 ["profile"] = profile,
                 ["rowsCacheHit"] = rowsCacheHit,
-                ["filterConfigCacheHit"] = filterConfigCacheHit
+                ["filterConfigCacheHit"] = filterConfigCacheHit,
+                ["usedDatabaseSearch"] = usedDatabaseSearch,
+                ["usedDatabaseFilter"] = usedDatabaseFilter,
+                ["dbFallbackReason"] = dbFallbackReason
             }
         };
+    }
+
+    private sealed class PagedRowsResult
+    {
+        public List<Dictionary<string, object?>> Items { get; init; } = [];
+        public int Total { get; init; }
+    }
+
+    private async Task<PagedRowsResult?> TryLoadDbPagedRowsAsync(
+        string entity,
+        string profile,
+        string? q,
+        JsonObject active,
+        int page,
+        int pageSize,
+        CancellationToken ct
+    )
+    {
+        return entity switch
+        {
+            "ships" or "ship" => await TryLoadShipDbPageAsync(profile, q, active, page, pageSize, ct),
+            "classes" or "class" => await TryLoadClassDbPageAsync(q, active, page, pageSize, ct),
+            "captains" or "captain" => await TryLoadCaptainDbPageAsync(q, active, page, pageSize, ct),
+            "logs" or "log" => await TryLoadLogDbPageAsync(q, active, page, pageSize, ct),
+            _ => null
+        };
+    }
+
+    private static bool TryGetStringFilter(JsonNode? node, out string value)
+    {
+        value = JsonAsString(node)?.Trim() ?? "";
+        return value.Length > 0;
+    }
+
+    private static bool TryGetRangeFilter(JsonNode? node, out double? min, out double? max)
+    {
+        min = null;
+        max = null;
+        if (node is not JsonObject range) return false;
+        if (TryJsonDouble(range["min"], out var minVal)) min = minVal;
+        if (TryJsonDouble(range["max"], out var maxVal)) max = maxVal;
+        return min.HasValue || max.HasValue;
+    }
+
+    private static bool TryGetIntFilter(JsonNode? node, out int? exact, out int? min, out int? max)
+    {
+        exact = null;
+        min = null;
+        max = null;
+        if (node is JsonObject)
+        {
+            if (!TryGetRangeFilter(node, out var dmin, out var dmax)) return false;
+            if (dmin.HasValue) min = (int)Math.Floor(dmin.Value);
+            if (dmax.HasValue) max = (int)Math.Ceiling(dmax.Value);
+            return min.HasValue || max.HasValue;
+        }
+
+        if (!TryGetStringFilter(node, out var s)) return false;
+        if (!int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id)) return false;
+        exact = id;
+        return true;
+    }
+
+    private static bool TryGetDateRangeFilter(JsonNode? node, out DateTime? from, out DateTime? to)
+    {
+        from = null;
+        to = null;
+        if (node is not JsonObject range) return false;
+        var fromRaw = JsonAsString(range["from"]);
+        var toRaw = JsonAsString(range["to"]);
+        if (!string.IsNullOrWhiteSpace(fromRaw) &&
+            DateTime.TryParse(fromRaw, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var fromDt))
+            from = fromDt;
+        if (!string.IsNullOrWhiteSpace(toRaw) &&
+            DateTime.TryParse(toRaw, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var toDt))
+            to = toDt;
+        return from.HasValue || to.HasValue;
+    }
+
+    private static string LikePattern(string value) => $"%{value.Trim().ToLowerInvariant()}%";
+
+    private async Task<PagedRowsResult?> TryLoadShipDbPageAsync(
+        string profile,
+        string? q,
+        JsonObject active,
+        int page,
+        int pageSize,
+        CancellationToken ct
+    )
+    {
+        var query = _db.Ships
+            .Include(s => s.Class)
+            .Include(s => s.Captain)
+            .AsNoTracking()
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var like = LikePattern(q);
+            query = query.Where(s =>
+                EF.Functions.Like((s.Name ?? "").ToLower(), like) ||
+                EF.Functions.Like((s.Description ?? "").ToLower(), like) ||
+                (s.Class != null && (
+                    EF.Functions.Like((s.Class.Name ?? "").ToLower(), like) ||
+                    EF.Functions.Like((s.Class.Type ?? "").ToLower(), like) ||
+                    EF.Functions.Like((s.Class.Country ?? "").ToLower(), like))) ||
+                (s.Captain != null && (
+                    EF.Functions.Like((s.Captain.Name ?? "").ToLower(), like) ||
+                    EF.Functions.Like((s.Captain.Rank ?? "").ToLower(), like))));
+        }
+
+        foreach (var kv in active)
+        {
+            var key = kv.Key.ToLowerInvariant();
+            switch (key)
+            {
+                case "name":
+                    if (!TryGetStringFilter(kv.Value, out var shipName)) return null;
+                    query = query.Where(s => EF.Functions.Like((s.Name ?? "").ToLower(), LikePattern(shipName)));
+                    break;
+                case "id":
+                    if (!TryGetIntFilter(kv.Value, out var shipId, out var shipIdMin, out var shipIdMax)) return null;
+                    if (shipId.HasValue) query = query.Where(s => s.Id == shipId.Value);
+                    if (shipIdMin.HasValue) query = query.Where(s => s.Id >= shipIdMin.Value);
+                    if (shipIdMax.HasValue) query = query.Where(s => s.Id <= shipIdMax.Value);
+                    break;
+                case "description":
+                    if (!TryGetStringFilter(kv.Value, out var desc)) return null;
+                    query = query.Where(s => EF.Functions.Like((s.Description ?? "").ToLower(), LikePattern(desc)));
+                    break;
+                case "class.id":
+                    if (!TryGetIntFilter(kv.Value, out var classId, out var classIdMin, out var classIdMax)) return null;
+                    if (classId.HasValue) query = query.Where(s => s.ClassId == classId.Value);
+                    if (classIdMin.HasValue) query = query.Where(s => s.ClassId >= classIdMin.Value);
+                    if (classIdMax.HasValue) query = query.Where(s => s.ClassId <= classIdMax.Value);
+                    break;
+                case "class.name":
+                    if (!TryGetStringFilter(kv.Value, out var className)) return null;
+                    query = query.Where(s => s.Class != null && EF.Functions.Like((s.Class.Name ?? "").ToLower(), LikePattern(className)));
+                    break;
+                case "class.type":
+                    if (!TryGetStringFilter(kv.Value, out var classType)) return null;
+                    query = query.Where(s => s.Class != null && EF.Functions.Like((s.Class.Type ?? "").ToLower(), LikePattern(classType)));
+                    break;
+                case "class.country":
+                    if (!TryGetStringFilter(kv.Value, out var classCountry)) return null;
+                    query = query.Where(s => s.Class != null && EF.Functions.Like((s.Class.Country ?? "").ToLower(), LikePattern(classCountry)));
+                    break;
+                case "captain.name":
+                    if (!TryGetStringFilter(kv.Value, out var captainName)) return null;
+                    query = query.Where(s => s.Captain != null && EF.Functions.Like((s.Captain.Name ?? "").ToLower(), LikePattern(captainName)));
+                    break;
+                case "captain.id":
+                    if (!TryGetIntFilter(kv.Value, out var captainId, out var captainIdMin, out var captainIdMax)) return null;
+                    if (captainId.HasValue) query = query.Where(s => s.CaptainId == captainId.Value);
+                    if (captainIdMin.HasValue) query = query.Where(s => s.CaptainId >= captainIdMin.Value);
+                    if (captainIdMax.HasValue) query = query.Where(s => s.CaptainId <= captainIdMax.Value);
+                    break;
+                case "captain.rank":
+                    if (!TryGetStringFilter(kv.Value, out var captainRank)) return null;
+                    query = query.Where(s => s.Captain != null && EF.Functions.Like((s.Captain.Rank ?? "").ToLower(), LikePattern(captainRank)));
+                    break;
+                case "yearcommissioned":
+                    if (!TryGetRangeFilter(kv.Value, out var minYear, out var maxYear)) return null;
+                    if (minYear.HasValue) query = query.Where(s => s.YearCommissioned >= (int)Math.Floor(minYear.Value));
+                    if (maxYear.HasValue) query = query.Where(s => s.YearCommissioned <= (int)Math.Ceiling(maxYear.Value));
+                    break;
+                default:
+                    return null;
+            }
+        }
+
+        var total = await query.CountAsync(ct);
+        var ships = await query
+            .OrderBy(s => s.Name)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(ct);
+
+        var rows = new List<Dictionary<string, object?>>(ships.Count);
+        foreach (var s in ships)
+        {
+            rows.Add(new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["id"] = s.Id,
+                ["name"] = s.Name,
+                ["description"] = s.Description,
+                ["imageUrl"] = s.ImageUrl,
+                ["imageVersion"] = s.ImageVersion,
+                ["yearCommissioned"] = s.YearCommissioned,
+                ["class"] = s.Class == null
+                    ? null
+                    : new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["id"] = s.Class.Id,
+                        ["name"] = s.Class.Name,
+                        ["type"] = s.Class.Type,
+                        ["country"] = s.Class.Country
+                    },
+                ["captain"] = s.Captain == null
+                    ? null
+                    : new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["id"] = s.Captain.Id,
+                        ["name"] = s.Captain.Name,
+                        ["rank"] = s.Captain.Rank,
+                        ["serviceYears"] = s.Captain.ServiceYears,
+                        ["imageUrl"] = s.Captain.ImageUrl,
+                        ["imageVersion"] = s.Captain.ImageVersion
+                    }
+            });
+        }
+
+        _ = profile;
+        return new PagedRowsResult { Items = rows, Total = total };
+    }
+
+    private async Task<PagedRowsResult?> TryLoadClassDbPageAsync(
+        string? q,
+        JsonObject active,
+        int page,
+        int pageSize,
+        CancellationToken ct
+    )
+    {
+        var query = _db.ShipClasses.AsNoTracking().AsQueryable();
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var like = LikePattern(q);
+            query = query.Where(c =>
+                EF.Functions.Like((c.Name ?? "").ToLower(), like) ||
+                EF.Functions.Like((c.Type ?? "").ToLower(), like) ||
+                EF.Functions.Like((c.Country ?? "").ToLower(), like));
+        }
+
+        foreach (var kv in active)
+        {
+            var key = kv.Key.ToLowerInvariant();
+            switch (key)
+            {
+                case "name":
+                    if (!TryGetStringFilter(kv.Value, out var name)) return null;
+                    query = query.Where(c => EF.Functions.Like((c.Name ?? "").ToLower(), LikePattern(name)));
+                    break;
+                case "id":
+                    if (!TryGetIntFilter(kv.Value, out var id, out var idMin, out var idMax)) return null;
+                    if (id.HasValue) query = query.Where(c => c.Id == id.Value);
+                    if (idMin.HasValue) query = query.Where(c => c.Id >= idMin.Value);
+                    if (idMax.HasValue) query = query.Where(c => c.Id <= idMax.Value);
+                    break;
+                case "type":
+                    if (!TryGetStringFilter(kv.Value, out var type)) return null;
+                    query = query.Where(c => EF.Functions.Like((c.Type ?? "").ToLower(), LikePattern(type)));
+                    break;
+                case "country":
+                    if (!TryGetStringFilter(kv.Value, out var country)) return null;
+                    query = query.Where(c => EF.Functions.Like((c.Country ?? "").ToLower(), LikePattern(country)));
+                    break;
+                case "shipcount":
+                    if (!TryGetRangeFilter(kv.Value, out var min, out var max)) return null;
+                    if (min.HasValue) query = query.Where(c => c.Ships.Count >= (int)Math.Floor(min.Value));
+                    if (max.HasValue) query = query.Where(c => c.Ships.Count <= (int)Math.Ceiling(max.Value));
+                    break;
+                default:
+                    return null;
+            }
+        }
+
+        var total = await query.CountAsync(ct);
+        var classes = await query
+            .OrderBy(c => c.Name)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(c => new
+            {
+                c.Id,
+                c.Name,
+                c.Type,
+                c.Country,
+                ShipCount = c.Ships.Count
+            })
+            .ToListAsync(ct);
+
+        var rows = classes.Select(c => new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["id"] = c.Id,
+            ["name"] = c.Name,
+            ["type"] = c.Type,
+            ["country"] = c.Country,
+            ["shipCount"] = c.ShipCount
+        }).ToList();
+
+        return new PagedRowsResult { Items = rows, Total = total };
+    }
+
+    private async Task<PagedRowsResult?> TryLoadCaptainDbPageAsync(
+        string? q,
+        JsonObject active,
+        int page,
+        int pageSize,
+        CancellationToken ct
+    )
+    {
+        var query = _db.Captains.AsNoTracking().AsQueryable();
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var like = LikePattern(q);
+            query = query.Where(c =>
+                EF.Functions.Like((c.Name ?? "").ToLower(), like) ||
+                EF.Functions.Like((c.Rank ?? "").ToLower(), like));
+        }
+
+        foreach (var kv in active)
+        {
+            var key = kv.Key.ToLowerInvariant();
+            switch (key)
+            {
+                case "name":
+                    if (!TryGetStringFilter(kv.Value, out var name)) return null;
+                    query = query.Where(c => EF.Functions.Like((c.Name ?? "").ToLower(), LikePattern(name)));
+                    break;
+                case "id":
+                    if (!TryGetIntFilter(kv.Value, out var id, out var idMin, out var idMax)) return null;
+                    if (id.HasValue) query = query.Where(c => c.Id == id.Value);
+                    if (idMin.HasValue) query = query.Where(c => c.Id >= idMin.Value);
+                    if (idMax.HasValue) query = query.Where(c => c.Id <= idMax.Value);
+                    break;
+                case "rank":
+                    if (!TryGetStringFilter(kv.Value, out var rank)) return null;
+                    query = query.Where(c => EF.Functions.Like((c.Rank ?? "").ToLower(), LikePattern(rank)));
+                    break;
+                case "serviceyears":
+                    if (!TryGetRangeFilter(kv.Value, out var minYears, out var maxYears)) return null;
+                    if (minYears.HasValue) query = query.Where(c => c.ServiceYears >= (int)Math.Floor(minYears.Value));
+                    if (maxYears.HasValue) query = query.Where(c => c.ServiceYears <= (int)Math.Ceiling(maxYears.Value));
+                    break;
+                case "shipcount":
+                    if (!TryGetRangeFilter(kv.Value, out var minShips, out var maxShips)) return null;
+                    if (minShips.HasValue) query = query.Where(c => c.Ships.Count >= (int)Math.Floor(minShips.Value));
+                    if (maxShips.HasValue) query = query.Where(c => c.Ships.Count <= (int)Math.Ceiling(maxShips.Value));
+                    break;
+                default:
+                    return null;
+            }
+        }
+
+        var total = await query.CountAsync(ct);
+        var captains = await query
+            .OrderBy(c => c.Name)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(c => new
+            {
+                c.Id,
+                c.Name,
+                c.Rank,
+                c.ServiceYears,
+                c.ImageUrl,
+                c.ImageVersion,
+                ShipCount = c.Ships.Count
+            })
+            .ToListAsync(ct);
+
+        var rows = captains.Select(c => new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["id"] = c.Id,
+            ["name"] = c.Name,
+            ["rank"] = c.Rank,
+            ["serviceYears"] = c.ServiceYears,
+            ["imageUrl"] = c.ImageUrl,
+            ["imageVersion"] = c.ImageVersion,
+            ["shipCount"] = c.ShipCount
+        }).ToList();
+
+        return new PagedRowsResult { Items = rows, Total = total };
+    }
+
+    private async Task<PagedRowsResult?> TryLoadLogDbPageAsync(
+        string? q,
+        JsonObject active,
+        int page,
+        int pageSize,
+        CancellationToken ct
+    )
+    {
+        var query = _logsDb.CaptainLogs.AsNoTracking().AsQueryable();
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var like = LikePattern(q);
+            query = query.Where(l =>
+                EF.Functions.Like((l.ShipName ?? "").ToLower(), like) ||
+                EF.Functions.Like((l.Source ?? "").ToLower(), like) ||
+                EF.Functions.Like((l.Entry ?? "").ToLower(), like));
+        }
+
+        foreach (var kv in active)
+        {
+            var key = kv.Key.ToLowerInvariant();
+            switch (key)
+            {
+                case "shipname":
+                    if (!TryGetStringFilter(kv.Value, out var shipName)) return null;
+                    query = query.Where(l => EF.Functions.Like((l.ShipName ?? "").ToLower(), LikePattern(shipName)));
+                    break;
+                case "id":
+                    if (!TryGetIntFilter(kv.Value, out var id, out var idMin, out var idMax)) return null;
+                    if (id.HasValue) query = query.Where(l => l.Id == id.Value);
+                    if (idMin.HasValue) query = query.Where(l => l.Id >= idMin.Value);
+                    if (idMax.HasValue) query = query.Where(l => l.Id <= idMax.Value);
+                    break;
+                case "source":
+                    if (!TryGetStringFilter(kv.Value, out var source)) return null;
+                    query = query.Where(l => EF.Functions.Like((l.Source ?? "").ToLower(), LikePattern(source)));
+                    break;
+                case "entry":
+                case "excerpt":
+                    if (!TryGetStringFilter(kv.Value, out var entry)) return null;
+                    query = query.Where(l => EF.Functions.Like((l.Entry ?? "").ToLower(), LikePattern(entry)));
+                    break;
+                case "logdate":
+                    if (!TryGetDateRangeFilter(kv.Value, out var from, out var to)) return null;
+                    if (from.HasValue)
+                    {
+                        var fromDate = from.Value.ToString("yyyy-MM-dd");
+                        query = query.Where(l => string.Compare(l.LogDate, fromDate, StringComparison.Ordinal) >= 0);
+                    }
+                    if (to.HasValue)
+                    {
+                        var toDate = to.Value.ToString("yyyy-MM-dd");
+                        query = query.Where(l => string.Compare(l.LogDate, toDate, StringComparison.Ordinal) <= 0);
+                    }
+                    break;
+                default:
+                    return null;
+            }
+        }
+
+        var total = await query.CountAsync(ct);
+        var logs = await query
+            .OrderByDescending(l => l.LogDate)
+            .ThenBy(l => l.ShipName)
+            .ThenBy(l => l.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(ct);
+
+        const int maxExcerptLength = 500;
+        var rows = logs.Select(l => new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["id"] = l.Id,
+            ["shipName"] = l.ShipName,
+            ["logDate"] = l.LogDate,
+            ["source"] = l.Source,
+            ["entry"] = l.Entry,
+            ["excerpt"] = string.IsNullOrEmpty(l.Entry)
+                ? ""
+                : l.Entry.Length > maxExcerptLength
+                    ? l.Entry[..maxExcerptLength] + "…"
+                    : l.Entry
+        }).ToList();
+
+        return new PagedRowsResult { Items = rows, Total = total };
     }
 
     private async Task<List<Dictionary<string, object?>>> LoadRowsAsync(string entity, string profile, CancellationToken ct)
