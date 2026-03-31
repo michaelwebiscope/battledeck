@@ -1,0 +1,23 @@
+---
+# Deploy nri-postgresql config for New Relic infrastructure agent (Windows).
+# Requires: infra agent installed (newrelic-infra.yml) and nri-postgresql MSI/package on the host.
+# Set newrelic_postgres_monitor_password via extra-vars (see terraform.tfvars.example).
+
+- name: New Relic PostgreSQL on-host integration (config + agent restart)
+  when: newrelic_postgres_monitor_password | default('') | length > 0
+  block:
+    - name: Ensure New Relic integrations.d directory exists
+      ansible.windows.win_file:
+        path: 'C:\Program Files\New Relic\newrelic-infra\integrations.d'
+        state: directory
+
+    - name: Deploy postgresql-config.yml for New Relic
+      ansible.windows.win_template:
+        src: newrelic_postgresql_config.yml.j2
+        dest: 'C:\Program Files\New Relic\newrelic-infra\integrations.d\postgresql-config.yml'
+
+    - name: Restart New Relic infrastructure agent to load PostgreSQL integration
+      ansible.windows.win_service:
+        name: newrelic-infra
+        state: restarted
+      ignore_errors: true

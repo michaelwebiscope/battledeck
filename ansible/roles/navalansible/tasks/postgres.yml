@@ -1,0 +1,118 @@
+---
+# Install PostgreSQL 16 on Windows VM and create navalarchive role.
+#
+# Chocolatey registers a service (postgresql-x64-16) pointing at
+# C:\Program Files\PostgreSQL\16\data which is not writable by initdb.
+# We stop that service, init a fresh cluster at C:\pgdata, reconfigure
+# the Chocolatey service to point there, and restart it — one service total.
+
+- name: Install PostgreSQL 16 via Chocolatey
+  chocolatey.chocolatey.win_chocolatey:
+    name: postgresql16
+    state: present
+    params: "/Password:postgres_admin"
+
+- name: Stop any existing PostgreSQL services before init
+  ansible.windows.win_shell: |
+    Get-Service | Where-Object { $_.Name -like 'postgresql*' } | ForEach-Object {
+      Stop-Service $_.Name -Force -ErrorAction SilentlyContinue
+    }
+  args:
+    executable: powershell
+
+- name: Check if C:\pgdata is already initialized
+  ansible.windows.win_stat:
+    path: C:\pgdata\PG_VERSION
+  register: pg_data_exists
+
+- name: Initialize PostgreSQL data directory at C:\pgdata
+  ansible.windows.win_shell: |
+    New-Item -ItemType Directory -Force -Path 'C:\pgdata' | Out-Null
+    $pwfile = "$env:TEMP\pgpw.txt"
+    Set-Content -Path $pwfile -Value 'postgres_admin' -NoNewline
+    & 'C:\Program Files\PostgreSQL\16\bin\initdb.exe' `
+      -D 'C:\pgdata' `
+      -U postgres `
+      --pwfile $pwfile `
+      --encoding=UTF8 `
+      -A scram-sha-256
+    Remove-Item $pwfile -Force -ErrorAction SilentlyContinue
+  args:
+    executable: powershell
+  when: not pg_data_exists.stat.exists
+
+- name: Reconfigure all PostgreSQL services to use C:\pgdata
+  # Chocolatey may register postgresql-x64-16 pointing at the unwritable
+  # Program Files path. Update every postgresql* service to use C:\pgdata.
+  ansible.windows.win_shell: |
+    Get-Service | Where-Object { $_.Name -like 'postgresql*' } | ForEach-Object {
+      $name = $_.Name
+      sc.exe config $name binPath= "`"C:\Program Files\PostgreSQL\16\bin\pg_ctl.exe`" runservice -N `"$name`" -D `"C:\pgdata`" -w" | Out-Null
+      sc.exe config $name start= auto | Out-Null
+    }
+  args:
+    executable: powershell
+
+- name: Start the first PostgreSQL service found
+  ansible.windows.win_shell: |
+    $svc = Get-Service | Where-Object { $_.Name -like 'postgresql*' } | Select-Object -First 1
+    Start-Service $svc.Name -ErrorAction Stop
+    Write-Output "Started: $($svc.Name)"
+  args:
+    executable: powershell
+  register: pg_start_result
+
+- name: Wait for PostgreSQL to accept connections
+  ansible.windows.win_shell: |
+    $retries = 12
+    for ($i = 0; $i -lt $retries; $i++) {
+      $result = & 'C:\Program Files\PostgreSQL\16\bin\pg_isready.exe' -U postgres 2>&1
+      if ($LASTEXITCODE -eq 0) { exit 0 }
+      Start-Sleep -Seconds 5
+    }
+    exit 1
+  args:
+    executable: powershell
+
+- name: Create navalarchive role
+  # Do NOT pre-create the database — EF Core's EnsureCreated() must create it
+  # so it also creates all tables in one pass. Pre-creating the DB causes
+  # EnsureCreated() to skip table creation entirely.
+  ansible.windows.win_shell: |
+    $env:PGPASSWORD = 'postgres_admin'
+    $psql = 'C:\Program Files\PostgreSQL\16\bin\psql.exe'
+
+    & $psql -U postgres -c "DO `$`$ BEGIN
+      IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'navalarchive') THEN
+        CREATE ROLE navalarchive LOGIN PASSWORD '{{ pg_app_password }}' CREATEDB;
+      END IF;
+    END `$`$;"
+
+    & $psql -U postgres -c "ALTER ROLE navalarchive PASSWORD '{{ pg_app_password }}';"
+  args:
+    executable: powershell
+
+- name: Write SQL script for New Relic monitoring role (new_relic)
+  when: newrelic_postgres_monitor_password | default('') | length > 0
+  ansible.windows.win_template:
+    src: new_relic_monitor_role.sql.j2
+    dest: C:\Windows\Temp\new_relic_monitor_role.sql
+
+- name: Apply New Relic monitoring user (new_relic) for nri-postgresql
+  when: newrelic_postgres_monitor_password | default('') | length > 0
+  ansible.windows.win_shell: |
+    $env:PGPASSWORD = 'postgres_admin'
+    & 'C:\Program Files\PostgreSQL\16\bin\psql.exe' -U postgres -v ON_ERROR_STOP=1 -f 'C:\Windows\Temp\new_relic_monitor_role.sql'
+  args:
+    executable: powershell
+
+- name: Open PostgreSQL port 5432 in Windows Firewall (localhost only)
+  community.windows.win_firewall_rule:
+    name: PostgreSQL
+    localport: 5432
+    action: allow
+    direction: in
+    protocol: tcp
+    state: present
+    enabled: true
+    remoteip: 127.0.0.1

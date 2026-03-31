@@ -1,0 +1,19 @@
+{# New Relic on-host PostgreSQL integration — https://docs.newrelic.com/docs/infrastructure/host-integrations/host-integrations-list/postgresql/postgresql-integration/ #}
+integrations:
+  - name: nri-postgresql
+    env:
+      USERNAME: new_relic
+      PASSWORD: '{{ newrelic_postgres_monitor_password }}'
+      HOSTNAME: '{{ newrelic_postgres_hostname | default("127.0.0.1") }}'
+      PORT: '{{ newrelic_postgres_port | default("5432") }}'
+      DATABASE: postgres
+      COLLECTION_LIST: "{{ newrelic_postgres_collection_list }}"
+      ENABLE_SSL: "false"
+      COLLECT_DB_LOCK_METRICS: "false"
+      COLLECT_BLOAT_METRICS: "true"
+      TIMEOUT: "10"
+    interval: 15s
+    labels:
+      env: '{{ newrelic_postgres_integration_env_label | default("demo") }}'
+      role: postgresql
+    inventory_source: config/postgresql

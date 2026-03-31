@@ -1,4 +1,7 @@
 ---
+# After the infra agent runs, optional PostgreSQL on-host monitoring (nri-postgresql) is configured
+# when newrelic_postgres_monitor_password is set. Install the PostgreSQL integration MSI on Windows if needed:
+# https://docs.newrelic.com/docs/infrastructure/host-integrations/installation/install-infrastructure-host-integrations/#install-windows
 - name: New Relic - infrastructure, logs, and .NET APM
   hosts: navalansible
   gather_facts: true
@@ -12,70 +15,13 @@
     NEW_RELIC_API_KEY: "{{ newrelic_api_key }}"
     NEW_RELIC_ACCOUNT_ID: "{{ newrelic_account_id }}"
     NEW_RELIC_REGION: "{{ newrelic_region | default('US') }}"
-    NEW_RELIC_APP_NAME: "{{ newrelic_dotnet_app_name | default('NavalArchive.Api') }}"
   tasks:
     - name: Install infrastructure, logs, and .NET APM agent
       ansible.builtin.include_role:
         name: newrelic.newrelic_install
       ignore_errors: true
 
-    # Ensure APM app name + PostgreSQL/EF datastore segments show SQL parameters (not only IIS site name).
-    - name: Configure NR .NET agent app name and datastore query parameters
-      ansible.windows.win_shell: |
-        $cfg = 'C:\ProgramData\New Relic\.NET Agent\newrelic.config'
-        if (-not (Test-Path $cfg)) {
-          Write-Output 'newrelic.config not found - agent may not be installed'
-          exit 0
-        }
-        [xml]$xml = Get-Content -LiteralPath $cfg
-        $ns = 'urn:newrelic-config'
-        $nsm = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
-        $nsm.AddNamespace('nr', $ns)
-
-        $root = $xml.DocumentElement
-        if (-not $root -or $root.NamespaceURI -ne $ns) {
-          Write-Output 'newrelic.config root namespace unexpected; skipping patch'
-          exit 0
-        }
-
-        $app = $xml.SelectSingleNode('//nr:configuration/nr:application', $nsm)
-        if (-not $app) {
-          $app = $xml.CreateElement('application', $ns)
-          $root.PrependChild($app) | Out-Null
-        }
-        $nameNode = $app.SelectSingleNode('nr:name', $nsm)
-        if (-not $nameNode) {
-          $nameNode = $xml.CreateElement('name', $ns)
-          $app.AppendChild($nameNode) | Out-Null
-        }
-        $appName = "{{ newrelic_dotnet_app_name | default('NavalArchive.Api') }}"
-        $nameNode.InnerText = $appName
-
-        $dst = $xml.SelectSingleNode('//nr:configuration/nr:datastoreTracer', $nsm)
-        if (-not $dst) {
-          $dst = $xml.CreateElement('datastoreTracer', $ns)
-          $root.AppendChild($dst) | Out-Null
-        }
-        $db = $dst.SelectSingleNode('nr:database', $nsm)
-        if (-not $db) {
-          $db = $xml.CreateElement('database', $ns)
-          $dst.AppendChild($db) | Out-Null
-        }
-        $db.SetAttribute('queryParameters', 'true')
-
-        $xml.Save($cfg)
-        Write-Output 'newrelic.config updated'
-      args:
-        executable: powershell
-
-    - name: Restart IIS to reload NR .NET agent config
-      ansible.windows.win_shell: |
-        $iisreset = if (Test-Path "$env:windir\SysNative\inetsrv\iisreset.exe") {
-          "$env:windir\SysNative\inetsrv\iisreset.exe"
-        } else {
-          "$env:windir\System32\inetsrv\iisreset.exe"
-        }
-        if (Test-Path $iisreset) { & $iisreset /restart }
-        exit 0
-      args:
-        executable: powershell
+    - name: Deploy New Relic PostgreSQL integration config (optional)
+      ansible.builtin.include_role:
+        name: navalansible
+        tasks_from: newrelic_postgresql_integration

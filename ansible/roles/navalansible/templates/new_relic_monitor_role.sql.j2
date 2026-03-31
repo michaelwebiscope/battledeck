@@ -1,0 +1,10 @@
+-- Least privilege for New Relic nri-postgresql (https://docs.newrelic.com/install/postgresql/)
+DO $do$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'new_relic') THEN
+    CREATE ROLE new_relic LOGIN;
+  END IF;
+END
+$do$;
+ALTER ROLE new_relic PASSWORD '{{ newrelic_postgres_monitor_password | replace("'", "''") }}';
+GRANT pg_monitor TO new_relic;

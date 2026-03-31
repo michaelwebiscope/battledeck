@@ -1,4 +1,7 @@
 ---
+# PostgreSQL app user password — always overridden by deploy script from terraform.tfvars pg_app_password
+pg_app_password: ""
+
 # Paths
 api_path: C:\inetpub\navalarchive-api
 web_path: C:\inetpub\navalarchive-web
@@ -89,3 +92,11 @@ otel_common_env_vars:
   - "DOTNET_ADDITIONAL_DEPS={{ otel_dotnet_auto_home }}\\AdditionalDeps"
   - "DOTNET_SHARED_STORE={{ otel_dotnet_auto_home }}\\store"
   - "DOTNET_STARTUP_HOOKS={{ otel_dotnet_auto_home }}\\net\\OpenTelemetry.AutoInstrumentation.StartupHook.dll"
+
+# New Relic PostgreSQL on-host integration (nri-postgresql).
+# Set newrelic_postgres_monitor_password to create DB user + deploy postgresql-config.yml (see newrelic-infra.yml).
+newrelic_postgres_monitor_password: ""
+newrelic_postgres_hostname: "127.0.0.1"
+newrelic_postgres_port: "5432"
+newrelic_postgres_collection_list: '["postgres", "navalarchive", "navalarchive_logs"]'
+newrelic_postgres_integration_env_label: "demo"
