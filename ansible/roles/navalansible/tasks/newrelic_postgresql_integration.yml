@@ -1,11 +1,25 @@
 ---
 # Deploy nri-postgresql config for New Relic infrastructure agent (Windows).
-# Requires: infra agent installed (newrelic-infra.yml) and nri-postgresql MSI/package on the host.
-# Set newrelic_postgres_monitor_password via extra-vars (see terraform.tfvars.example).
+# Invoked only from playbooks/newrelic-infra.yml (e.g. ./deploy-navalansible.sh -newrelic or -fullrun).
+# Requires: nri-postgresql MSI/package on the host. Set newrelic_postgres_monitor_password in tfvars.
 
-- name: New Relic PostgreSQL on-host integration (config + agent restart)
+- name: New Relic PostgreSQL on-host integration (DB user + config + agent restart)
   when: newrelic_postgres_monitor_password | default('') | length > 0
   block:
+    - name: Write SQL script for New Relic monitoring role (new_relic)
+      ansible.windows.win_template:
+        src: new_relic_monitor_role.sql.j2
+        dest: C:\Windows\Temp\new_relic_monitor_role.sql
+
+    - name: Apply New Relic monitoring user (new_relic) in PostgreSQL
+      ansible.windows.win_shell: |
+        $env:PGPASSWORD = 'postgres_admin'
+        if (!(Test-Path 'C:\Program Files\PostgreSQL\16\bin\psql.exe')) { exit 0 }
+        & 'C:\Program Files\PostgreSQL\16\bin\psql.exe' -U postgres -v ON_ERROR_STOP=1 -f 'C:\Windows\Temp\new_relic_monitor_role.sql'
+      args:
+        executable: powershell
+      ignore_errors: true
+
     - name: Ensure New Relic integrations.d directory exists
       ansible.windows.win_file:
         path: 'C:\Program Files\New Relic\newrelic-infra\integrations.d'

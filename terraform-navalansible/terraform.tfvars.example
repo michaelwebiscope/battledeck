@@ -24,6 +24,6 @@ allowed_ip           = ""  # Override if auto-detect fails
 # Dynamic lists DB-query mode (rollout flag)
 # api_dynamiclists_db_mode = "true"
 
-# New Relic PostgreSQL on-host integration (optional): creates DB user new_relic + postgresql-config.yml when set.
-# Also install nri-postgresql on the Windows VM if metrics do not appear — see newrelic-infra.yml header comment.
+# New Relic PostgreSQL on-host integration (optional): DB user new_relic + postgresql-config.yml.
+# Applied only when you run deploy with -newrelic or -fullrun (New Relic infra playbook), not on a normal site deploy.
 # newrelic_postgres_monitor_password = "generate-a-strong-password"

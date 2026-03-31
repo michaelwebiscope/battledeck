@@ -1,6 +1,7 @@
 ---
-# After the infra agent runs, optional PostgreSQL on-host monitoring (nri-postgresql) is configured
-# when newrelic_postgres_monitor_password is set. Install the PostgreSQL integration MSI on Windows if needed:
+# PostgreSQL instrumentation (new_relic user + postgresql-config.yml) runs only from this playbook —
+# e.g. ./scripts/deploy-navalansible.sh -newrelic or -fullrun (not plain site deploy).
+# When newrelic_postgres_monitor_password is set: install nri-postgresql MSI on Windows if needed:
 # https://docs.newrelic.com/docs/infrastructure/host-integrations/installation/install-infrastructure-host-integrations/#install-windows
 - name: New Relic - infrastructure, logs, and .NET APM
   hosts: navalansible

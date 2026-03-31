@@ -92,20 +92,6 @@
   args:
     executable: powershell
 
-- name: Write SQL script for New Relic monitoring role (new_relic)
-  when: newrelic_postgres_monitor_password | default('') | length > 0
-  ansible.windows.win_template:
-    src: new_relic_monitor_role.sql.j2
-    dest: C:\Windows\Temp\new_relic_monitor_role.sql
-
-- name: Apply New Relic monitoring user (new_relic) for nri-postgresql
-  when: newrelic_postgres_monitor_password | default('') | length > 0
-  ansible.windows.win_shell: |
-    $env:PGPASSWORD = 'postgres_admin'
-    & 'C:\Program Files\PostgreSQL\16\bin\psql.exe' -U postgres -v ON_ERROR_STOP=1 -f 'C:\Windows\Temp\new_relic_monitor_role.sql'
-  args:
-    executable: powershell
-
 - name: Open PostgreSQL port 5432 in Windows Firewall (localhost only)
   community.windows.win_firewall_rule:
     name: PostgreSQL

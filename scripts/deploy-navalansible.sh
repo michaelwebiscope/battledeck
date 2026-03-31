@@ -136,9 +136,11 @@ API_REDIS_CONFIGURATION=$(read_tfvar_any "api_redis_configuration")
 API_REDIS_INSTANCE_NAME=$(read_tfvar_any "api_redis_instance_name")
 API_DYNAMICLISTS_DB_MODE=$(read_tfvar_any "api_dynamiclists_db_mode")
 PG_APP_PASSWORD=$(read_tfvar_any "pg_app_password")
-NEWRELIC_POSTGRES_MONITOR_PASSWORD=$(read_tfvar_any "newrelic_postgres_monitor_password")
 
-export API_DATABASE_PROVIDER API_CONN_MAIN API_CONN_LOGS API_REDIS_CONFIGURATION API_REDIS_INSTANCE_NAME API_DYNAMICLISTS_DB_MODE PG_APP_PASSWORD NEWRELIC_POSTGRES_MONITOR_PASSWORD
+export API_DATABASE_PROVIDER API_CONN_MAIN API_CONN_LOGS API_REDIS_CONFIGURATION API_REDIS_INSTANCE_NAME API_DYNAMICLISTS_DB_MODE PG_APP_PASSWORD
+
+# newrelic_postgres_monitor_password is read only when running New Relic infra (-newrelic / -fullrun); never passed to site.yml
+NEWRELIC_POSTGRES_MONITOR_PASSWORD=$(read_tfvar_any "newrelic_postgres_monitor_password")
 
 API_EXTRAVARS_JSON=$(python3 - <<'PY'
 import json, os
@@ -150,11 +152,10 @@ def put(k, v):
 put("api_database_provider", os.environ.get("API_DATABASE_PROVIDER"))
 put("api_conn_main", os.environ.get("API_CONN_MAIN"))
 put("api_conn_logs", os.environ.get("API_CONN_LOGS"))
+put("pg_app_password", os.environ.get("PG_APP_PASSWORD"))
 put("api_redis_configuration", os.environ.get("API_REDIS_CONFIGURATION"))
 put("api_redis_instance_name", os.environ.get("API_REDIS_INSTANCE_NAME"))
 put("api_dynamiclists_db_mode", os.environ.get("API_DYNAMICLISTS_DB_MODE"))
-put("pg_app_password", os.environ.get("PG_APP_PASSWORD"))
-put("newrelic_postgres_monitor_password", os.environ.get("NEWRELIC_POSTGRES_MONITOR_PASSWORD"))
 print(json.dumps(d))
 PY
 )
@@ -216,7 +217,7 @@ if [ "$NEWRELIC_STANDALONE" = true ]; then
     -e "newrelic_account_id=$NEWRELIC_ACCOUNT_ID"
   )
   [ -n "$NEWRELIC_LICENSE_KEY" ] && NR_ARGS+=( -e "newrelic_license_key=$NEWRELIC_LICENSE_KEY" )
-  NR_PG_JSON=$(python3 -c "import json,os; v=(os.environ.get('NEWRELIC_POSTGRES_MONITOR_PASSWORD') or '').strip(); print(json.dumps({'newrelic_postgres_monitor_password': v}) if v else '{}')")
+  NR_PG_JSON=$(NEWRELIC_POSTGRES_MONITOR_PASSWORD="$NEWRELIC_POSTGRES_MONITOR_PASSWORD" python3 -c "import json,os; v=(os.environ.get('NEWRELIC_POSTGRES_MONITOR_PASSWORD') or '').strip(); print(json.dumps({'newrelic_postgres_monitor_password': v}) if v else '{}')")
   [ "$NR_PG_JSON" != "{}" ] && NR_ARGS+=( -e "$NR_PG_JSON" )
   python3 -m ansible playbook playbooks/newrelic-dotnet-java-go.yml "${NR_ARGS[@]}"
 
@@ -257,7 +258,7 @@ elif [ "$FULLRUN" = true ]; then
     -e "newrelic_account_id=$NEWRELIC_ACCOUNT_ID"
   )
   [ -n "$NEWRELIC_LICENSE_KEY" ] && NR_ARGS+=( -e "newrelic_license_key=$NEWRELIC_LICENSE_KEY" )
-  NR_PG_JSON=$(python3 -c "import json,os; v=(os.environ.get('NEWRELIC_POSTGRES_MONITOR_PASSWORD') or '').strip(); print(json.dumps({'newrelic_postgres_monitor_password': v}) if v else '{}')")
+  NR_PG_JSON=$(NEWRELIC_POSTGRES_MONITOR_PASSWORD="$NEWRELIC_POSTGRES_MONITOR_PASSWORD" python3 -c "import json,os; v=(os.environ.get('NEWRELIC_POSTGRES_MONITOR_PASSWORD') or '').strip(); print(json.dumps({'newrelic_postgres_monitor_password': v}) if v else '{}')")
   [ "$NR_PG_JSON" != "{}" ] && NR_ARGS+=( -e "$NR_PG_JSON" )
   python3 -m ansible playbook playbooks/newrelic-dotnet-java-go.yml "${NR_ARGS[@]}"
 fi
