@@ -97,7 +97,8 @@ public class GenuineLogsFetcher
                 var m = timeEntryRegex.Match(text);
                 if (m.Success)
                 {
-                    var remarks = Regex.Replace(m.Groups[2].Value.Trim(), @"\s+", " ");
+                    var remarks = HtmlEntity.DeEntitize(m.Groups[2].Value.Trim());
+                    remarks = Regex.Replace(remarks, @"\s+", " ").Trim();
                     if (IsValidLogEntry(remarks))
                         entries.Add((currentDate, remarks));
                 }
@@ -130,14 +131,32 @@ public class GenuineLogsFetcher
 
     private static bool IsValidLogEntry(string text)
     {
-        if (text.Length < 12 || text.Length > 600) return false;
-        if (text.Contains("Approved:") || text.Contains("page ")) return false;
-        var letters = text.Count(c => char.IsLetter(c));
-        var total = text.Length;
-        if (total == 0) return false;
-        if ((double)letters / total < 0.4) return false;
+        if (text.Length < 15 || text.Length > 600) return false;
+
+        // Reject HTML entity remnants (un-decoded or partially decoded)
+        if (text.Contains('&') && Regex.IsMatch(text, @"&[a-zA-Z]+;|&#\d+;")) return false;
+
+        // Reject entries with non-book characters: control chars or non-ASCII outside common punctuation
         var invalidChars = text.Count(c => c > 127 || (c < 32 && c != '\t'));
-        if ((double)invalidChars / total > 0.05) return false;
+        if ((double)invalidChars / text.Length > 0.02) return false;
+
+        // Must be mostly letters (prose text)
+        var letters = text.Count(char.IsLetter);
+        if ((double)letters / text.Length < 0.45) return false;
+
+        // Must have at least 3 words (spaces)
+        var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length < 3) return false;
+
+        // Reject entries that are mostly uppercase — header/boilerplate, not log prose
+        var upperLetters = text.Count(char.IsUpper);
+        if (letters > 0 && (double)upperLetters / letters > 0.65) return false;
+
+        // Reject known boilerplate fragments
+        if (text.Contains("Approved:") || text.Contains("page ") ||
+            text.StartsWith("SECRET") || text.StartsWith("CONFIDENTIAL") ||
+            text.Contains("forwarding of reports")) return false;
+
         return true;
     }
 
