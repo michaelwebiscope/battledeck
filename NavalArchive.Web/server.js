@@ -548,7 +548,8 @@ async function handleFromUrl(type, id, req, res) {
   if (!url) return res.status(400).json({ error: 'url required' });
   try {
     const imgRes = await axios.get(url, {
-      responseType: 'arraybuffer', timeout: 30000, validateStatus: () => true
+      responseType: 'arraybuffer', timeout: 30000, validateStatus: () => true,
+      headers: { 'User-Agent': 'NavalArchive/1.0 (demo app; https://github.com/michaelwebiscope/battledeck)' }
     });
     if (imgRes.status < 200 || imgRes.status >= 300)
       return res.status(400).json({ error: `Failed to fetch image: HTTP ${imgRes.status}` });
