@@ -21,6 +21,9 @@
         app_name: {{ newrelic_java_app_name | default('NavalArchiveImagePopulator') }}
         distributed_tracing:
           enabled: true
+        infinite_tracing:
+          trace_observer:
+            host: {{ newrelic_trace_observer_host | default('') }}
         log_level: info
         log_file_path: 'C:\ProgramData\NewRelic\java\logs'
       production:

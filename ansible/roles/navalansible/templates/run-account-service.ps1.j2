@@ -4,6 +4,7 @@ $env:DATABASE_URL = '{{ account_path }}\accounts.db'
 $env:NEW_RELIC_LICENSE_KEY = '{{ newrelic_license_key }}'
 $env:NEW_RELIC_APP_NAME = '{{ go_newrelic_account_app_name | default("NavalArchiveAccount") }}'
 $env:NEW_RELIC_DISTRIBUTED_TRACING_ENABLED = 'true'
+$env:NEW_RELIC_INFINITE_TRACING_TRACE_OBSERVER_HOST = '{{ newrelic_trace_observer_host }}'
 {% endif %}
 Set-Location '{{ account_path }}'
 & '{{ account_path }}\account-service.exe'

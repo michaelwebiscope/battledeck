@@ -25,6 +25,7 @@
             "NEW_RELIC_APP_NAME={{ newrelic_node_app_name | default('NavalArchiveWeb') }}",
             "NEW_RELIC_NO_CONFIG_FILE=true",
             "NEW_RELIC_DISTRIBUTED_TRACING_ENABLED=true",
+            "NEW_RELIC_INFINITE_TRACING_TRACE_OBSERVER_HOST={{ newrelic_trace_observer_host }}",
             "NEW_RELIC_BROWSER_MONITOR_ENABLE=true",
             "NODE_OPTIONS=-r {{ web_path }}\node_modules\newrelic\index.js"
           )
@@ -44,6 +45,7 @@
           $env:NEW_RELIC_APP_NAME = "{{ newrelic_node_app_name | default('NavalArchiveWeb') }}"
           $env:NEW_RELIC_NO_CONFIG_FILE = "true"
           $env:NEW_RELIC_DISTRIBUTED_TRACING_ENABLED = "true"
+          $env:NEW_RELIC_INFINITE_TRACING_TRACE_OBSERVER_HOST = "{{ newrelic_trace_observer_host }}"
           $env:NEW_RELIC_BROWSER_MONITOR_ENABLE = "true"
           $env:NODE_OPTIONS = "-r {{ web_path }}\node_modules\newrelic\index.js"
           Set-Location "{{ web_path }}"

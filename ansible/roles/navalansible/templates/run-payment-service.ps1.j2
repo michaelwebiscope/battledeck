@@ -8,6 +8,7 @@ $env:IDEMPOTENCY = 'db'
 $env:NEW_RELIC_LICENSE_KEY = '{{ newrelic_license_key }}'
 $env:NEW_RELIC_APP_NAME = '{{ go_newrelic_payment_app_name | default("NavalArchivePayment") }}'
 $env:NEW_RELIC_DISTRIBUTED_TRACING_ENABLED = 'true'
+$env:NEW_RELIC_INFINITE_TRACING_TRACE_OBSERVER_HOST = '{{ newrelic_trace_observer_host }}'
 {% endif %}
 Set-Location '{{ payment_path }}'
 & '{{ payment_path }}\payment-service.exe'
