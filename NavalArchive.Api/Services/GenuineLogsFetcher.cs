@@ -131,31 +131,40 @@ public class GenuineLogsFetcher
 
     private static bool IsValidLogEntry(string text)
     {
-        if (text.Length < 15 || text.Length > 600) return false;
+        if (text.Length < 20 || text.Length > 600) return false;
 
-        // Reject HTML entity remnants (un-decoded or partially decoded)
+        // Reject HTML entity remnants
         if (text.Contains('&') && Regex.IsMatch(text, @"&[a-zA-Z]+;|&#\d+;")) return false;
 
-        // Reject entries with non-book characters: control chars or non-ASCII outside common punctuation
+        // Reject non-printable / non-ASCII
         var invalidChars = text.Count(c => c > 127 || (c < 32 && c != '\t'));
         if ((double)invalidChars / text.Length > 0.02) return false;
 
-        // Must be mostly letters (prose text)
+        // Must be mostly letters (prose)
         var letters = text.Count(char.IsLetter);
-        if ((double)letters / text.Length < 0.45) return false;
+        if ((double)letters / text.Length < 0.50) return false;
 
-        // Must have at least 3 words (spaces)
+        // Must have at least 5 words
         var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (words.Length < 3) return false;
+        if (words.Length < 5) return false;
 
-        // Reject entries that are mostly uppercase — header/boilerplate, not log prose
+        // Reject navigation pipe menus ("documents | order of battle | ...")
+        if (text.Contains(" | ")) return false;
+
+        // Reject mostly-uppercase headers/boilerplate
         var upperLetters = text.Count(char.IsUpper);
-        if (letters > 0 && (double)upperLetters / letters > 0.65) return false;
+        if (letters > 0 && (double)upperLetters / letters > 0.55) return false;
 
-        // Reject known boilerplate fragments
-        if (text.Contains("Approved:") || text.Contains("page ") ||
+        // Reject lines that are just a date + attribution (e.g. "June 6, 1942 CO Marine Scout-Bombing 241.")
+        if (Regex.IsMatch(text, @"^(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\S*\s+\d")) return false;
+
+        // Reject document header lines
+        if (Regex.IsMatch(text, @"^Documents?\s*:", RegexOptions.IgnoreCase)) return false;
+
+        // Reject known boilerplate
+        if (text.Contains("Approved:") || text.Contains("forwarding of reports") ||
             text.StartsWith("SECRET") || text.StartsWith("CONFIDENTIAL") ||
-            text.Contains("forwarding of reports")) return false;
+            text.Contains("page ") || text.Contains("CinC,")) return false;
 
         return true;
     }
