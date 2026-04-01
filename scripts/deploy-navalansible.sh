@@ -221,6 +221,8 @@ if [ "$NEWRELIC_STANDALONE" = true ]; then
     -e "newrelic_account_id=$NEWRELIC_ACCOUNT_ID"
   )
   [ -n "$NEWRELIC_LICENSE_KEY" ] && NR_ARGS+=( -e "newrelic_license_key=$NEWRELIC_LICENSE_KEY" )
+  [ -n "$NEWRELIC_TRACE_OBSERVER_HOST" ] && NR_ARGS+=( -e "newrelic_trace_observer_host=$NEWRELIC_TRACE_OBSERVER_HOST" )
+  [ -n "$NEWRELIC_TRACE_OBSERVER_PORT" ] && NR_ARGS+=( -e "newrelic_trace_observer_port=$NEWRELIC_TRACE_OBSERVER_PORT" )
   NR_PG_JSON=$(NEWRELIC_POSTGRES_MONITOR_PASSWORD="$NEWRELIC_POSTGRES_MONITOR_PASSWORD" python3 -c "import json,os; v=(os.environ.get('NEWRELIC_POSTGRES_MONITOR_PASSWORD') or '').strip(); print(json.dumps({'newrelic_postgres_monitor_password': v}) if v else '{}')")
   [ "$NR_PG_JSON" != "{}" ] && NR_ARGS+=( -e "$NR_PG_JSON" )
   python3 -m ansible playbook playbooks/newrelic-dotnet-java-go.yml "${NR_ARGS[@]}"
@@ -241,6 +243,8 @@ elif [ "$NEWRELIC_APP_ONLY" = true ]; then
     -e "newrelic_account_id=$NEWRELIC_ACCOUNT_ID"
     -e "newrelic_license_key=$NEWRELIC_LICENSE_KEY"
   )
+  [ -n "$NEWRELIC_TRACE_OBSERVER_HOST" ] && NR_ARGS+=( -e "newrelic_trace_observer_host=$NEWRELIC_TRACE_OBSERVER_HOST" )
+  [ -n "$NEWRELIC_TRACE_OBSERVER_PORT" ] && NR_ARGS+=( -e "newrelic_trace_observer_port=$NEWRELIC_TRACE_OBSERVER_PORT" )
   python3 -m ansible playbook playbooks/newrelic-app.yml "${NR_ARGS[@]}"
 
 elif [ "$FULLRUN" = true ]; then
@@ -262,6 +266,8 @@ elif [ "$FULLRUN" = true ]; then
     -e "newrelic_account_id=$NEWRELIC_ACCOUNT_ID"
   )
   [ -n "$NEWRELIC_LICENSE_KEY" ] && NR_ARGS+=( -e "newrelic_license_key=$NEWRELIC_LICENSE_KEY" )
+  [ -n "$NEWRELIC_TRACE_OBSERVER_HOST" ] && NR_ARGS+=( -e "newrelic_trace_observer_host=$NEWRELIC_TRACE_OBSERVER_HOST" )
+  [ -n "$NEWRELIC_TRACE_OBSERVER_PORT" ] && NR_ARGS+=( -e "newrelic_trace_observer_port=$NEWRELIC_TRACE_OBSERVER_PORT" )
   NR_PG_JSON=$(NEWRELIC_POSTGRES_MONITOR_PASSWORD="$NEWRELIC_POSTGRES_MONITOR_PASSWORD" python3 -c "import json,os; v=(os.environ.get('NEWRELIC_POSTGRES_MONITOR_PASSWORD') or '').strip(); print(json.dumps({'newrelic_postgres_monitor_password': v}) if v else '{}')")
   [ "$NR_PG_JSON" != "{}" ] && NR_ARGS+=( -e "$NR_PG_JSON" )
   python3 -m ansible playbook playbooks/newrelic-dotnet-java-go.yml "${NR_ARGS[@]}"

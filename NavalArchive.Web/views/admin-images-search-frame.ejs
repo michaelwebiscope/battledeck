@@ -187,75 +187,79 @@
         return div;
       }
 
+      function searchWikipedia(q) {
+        fetch('/api/wikipedia/search?q=' + encodeURIComponent(q) + '&limit=12')
+          .then(function(r) { return r.json(); })
+          .then(function(pages) {
+            var list = Array.isArray(pages) ? pages : (pages && Array.isArray(pages.pages) ? pages.pages : []);
+            if (!Array.isArray(list) || list.length === 0) {
+              status.textContent = 'Error: ' + (pages && (pages.error || pages.message)) || 'Invalid response';
+              status.className = 'status error';
+              return;
+            }
+            pages = list;
+            status.textContent = pages.length + ' Wikipedia pages. Click to fetch image for that page.';
+            status.className = 'status';
+            pages.forEach(function(p) {
+              var title = p.title || p.Title || '';
+              var imageUrl = p.imageUrl || p.ImageUrl || '';
+              var div = document.createElement('div');
+              div.className = 'grid-item';
+              div.dataset.title = title;
+              var chkWrap = document.createElement('div');
+              chkWrap.className = 'chk-wrap';
+              var cb = document.createElement('input');
+              cb.type = 'checkbox';
+              cb.onclick = function(e) { e.stopPropagation(); div.classList.toggle('selected', cb.checked); };
+              chkWrap.appendChild(cb);
+              div.appendChild(chkWrap);
+              var titleEl = document.createElement('div');
+              titleEl.className = 'img-title';
+              titleEl.textContent = title || 'No title';
+              div.appendChild(titleEl);
+              if (imageUrl) {
+                var imgEl = document.createElement('img');
+                imgEl.src = imageUrl;
+                imgEl.alt = title;
+                imgEl.onerror = function() { var ph = document.createElement('div'); ph.className = 'img-placeholder'; ph.textContent = 'Failed'; imgEl.parentNode.replaceChild(ph, imgEl); };
+                div.appendChild(imgEl);
+              } else {
+                var ph = document.createElement('div');
+                ph.className = 'img-placeholder';
+                ph.textContent = 'No image';
+                div.appendChild(ph);
+              }
+              div.onclick = function(e) {
+                if (e.target.type === 'checkbox') return;
+                status.textContent = 'Fetching image for ' + title + '...';
+                fetch('/api/wikipedia/image?title=' + encodeURIComponent(title))
+                  .then(function(r) { return r.json(); })
+                  .then(function(data) {
+                    var url = data.imageUrl || data.ImageUrl;
+                    if (url) sendImageToParent(url);
+                    else { status.textContent = 'No image found for this page.'; status.className = 'status error'; }
+                  })
+                  .catch(function(e) {
+                    status.textContent = 'Error: ' + e.message;
+                    status.className = 'status error';
+                  });
+              };
+              grid.appendChild(div);
+            });
+          })
+          .catch(function(e) {
+            status.textContent = 'Error: ' + e.message;
+            status.className = 'status error';
+          });
+      }
+
       function search() {
         var q = queryInput.value.trim() || 'battleship';
         var provider = (document.getElementById('providerSelect') || {}).value || '';
         status.textContent = 'Searching...';
         grid.innerHTML = '';
         if (provider === 'Wikipedia') {
-          fetch('/api/wikipedia/search?q=' + encodeURIComponent(q) + '&limit=12')
-            .then(function(r) { return r.json(); })
-            .then(function(pages) {
-              var list = Array.isArray(pages) ? pages : (pages && Array.isArray(pages.pages) ? pages.pages : []);
-              if (!Array.isArray(list) || list.length === 0) {
-                status.textContent = 'Error: ' + (pages && (pages.error || pages.message)) || 'Invalid response';
-                status.className = 'status error';
-                return;
-              }
-              pages = list;
-              status.textContent = pages.length + ' Wikipedia pages. Click to fetch image for that page.';
-              status.className = 'status';
-              pages.forEach(function(p) {
-                var title = p.title || p.Title || '';
-                var imageUrl = p.imageUrl || p.ImageUrl || '';
-                var div = document.createElement('div');
-                div.className = 'grid-item';
-                div.dataset.title = title;
-                var chkWrap = document.createElement('div');
-                chkWrap.className = 'chk-wrap';
-                var cb = document.createElement('input');
-                cb.type = 'checkbox';
-                cb.onclick = function(e) { e.stopPropagation(); div.classList.toggle('selected', cb.checked); };
-                chkWrap.appendChild(cb);
-                div.appendChild(chkWrap);
-                var titleEl = document.createElement('div');
-                titleEl.className = 'img-title';
-                titleEl.textContent = title || 'No title';
-                div.appendChild(titleEl);
-                if (imageUrl) {
-                  var imgEl = document.createElement('img');
-                  imgEl.src = imageUrl;
-                  imgEl.alt = title;
-                  imgEl.onerror = function() { var ph = document.createElement('div'); ph.className = 'img-placeholder'; ph.textContent = 'Failed'; imgEl.parentNode.replaceChild(ph, imgEl); };
-                  div.appendChild(imgEl);
-                } else {
-                  var ph = document.createElement('div');
-                  ph.className = 'img-placeholder';
-                  ph.textContent = 'No image';
-                  div.appendChild(ph);
-                }
-                div.onclick = function(e) {
-                  if (e.target.type === 'checkbox') return;
-                  status.textContent = 'Fetching image for ' + title + '...';
-                  fetch('/api/wikipedia/image?title=' + encodeURIComponent(title))
-                    .then(function(r) { return r.json(); })
-                    .then(function(data) {
-                      var url = data.imageUrl || data.ImageUrl;
-                      if (url) sendImageToParent(url);
-                      else { status.textContent = 'No image found for this page.'; status.className = 'status error'; }
-                    })
-                    .catch(function(e) {
-                      status.textContent = 'Error: ' + e.message;
-                      status.className = 'status error';
-                    });
-                };
-                grid.appendChild(div);
-              });
-            })
-            .catch(function(e) {
-              status.textContent = 'Error: ' + e.message;
-              status.className = 'status error';
-            });
+          searchWikipedia(q);
           return;
         }
         var keys = getKeys();
@@ -269,6 +273,12 @@
             if (!Array.isArray(urls)) {
               status.textContent = 'Error: ' + (data && (data.error || data.message)) || 'Invalid response';
               status.className = 'status error';
+              return;
+            }
+            if (urls.length === 0 && !provider) {
+              status.textContent = 'No results from configured sources, searching Wikipedia...';
+              status.className = 'status';
+              searchWikipedia(q);
               return;
             }
             var source = data.source || '';

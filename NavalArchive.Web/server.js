@@ -542,6 +542,30 @@ async function proxyToApi(req, res) {
   }
 }
 
+// from-url: download image in Node, upload binary directly to .NET API (no Java dependency)
+async function handleFromUrl(type, id, req, res) {
+  const { url } = req.body || {};
+  if (!url) return res.status(400).json({ error: 'url required' });
+  try {
+    const imgRes = await axios.get(url, {
+      responseType: 'arraybuffer', timeout: 30000, validateStatus: () => true
+    });
+    if (imgRes.status < 200 || imgRes.status >= 300)
+      return res.status(400).json({ error: `Failed to fetch image: HTTP ${imgRes.status}` });
+    const ct = imgRes.headers['content-type'] || 'image/jpeg';
+    const uploadRes = await axios.post(
+      `${API_BASE}/api/images/${type}/${id}/upload`,
+      Buffer.from(imgRes.data),
+      { headers: { 'Content-Type': ct }, responseType: 'json',
+        validateStatus: () => true, maxBodyLength: Infinity, maxContentLength: Infinity }
+    );
+    res.status(uploadRes.status).json(uploadRes.data ?? {});
+  } catch (err) {
+    console.error('from-url error:', err.message);
+    res.status(502).json({ error: err.message });
+  }
+}
+
 // Explicit Java ImagePopulator routes — NR Node agent names each transaction by its route pattern
 app.post('/api/images/test-keys',                   (req, res) => proxyToJava('/test-keys', req, res));
 app.post('/api/images/search',                       (req, res) => proxyToJava('/search', req, res));
@@ -549,8 +573,8 @@ app.post('/api/images/populate',                     (req, res) => proxyToJava('
 app.post('/api/images/populate/ship/:id',            (req, res) => proxyToJava(`/populate/ship/${req.params.id}`, req, res));
 app.post('/api/images/populate/captain/:id',         (req, res) => proxyToJava(`/populate/captain/${req.params.id}`, req, res));
 app.post('/api/images/populate/wikipedia',           (req, res) => proxyToJava('/run', req, res));
-app.post('/api/images/ship/:id/from-url',            (req, res) => proxyToJava(`/set-from-url/ship/${req.params.id}`, req, res));
-app.post('/api/images/captain/:id/from-url',         (req, res) => proxyToJava(`/set-from-url/captain/${req.params.id}`, req, res));
+app.post('/api/images/ship/:id/from-url',            (req, res) => handleFromUrl('ship',    req.params.id, req, res));
+app.post('/api/images/captain/:id/from-url',         (req, res) => handleFromUrl('captain', req.params.id, req, res));
 
 // Catch-all: everything else proxies to the .NET API
 app.use('/api', proxyToApi);
