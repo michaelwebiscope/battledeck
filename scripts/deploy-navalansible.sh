@@ -136,8 +136,10 @@ API_REDIS_CONFIGURATION=$(read_tfvar_any "api_redis_configuration")
 API_REDIS_INSTANCE_NAME=$(read_tfvar_any "api_redis_instance_name")
 API_DYNAMICLISTS_DB_MODE=$(read_tfvar_any "api_dynamiclists_db_mode")
 PG_APP_PASSWORD=$(read_tfvar_any "pg_app_password")
+NEWRELIC_TRACE_OBSERVER_HOST=$(read_tfvar_any "newrelic_trace_observer_host")
+NEWRELIC_TRACE_OBSERVER_PORT=$(read_tfvar_any "newrelic_trace_observer_port")
 
-export API_DATABASE_PROVIDER API_CONN_MAIN API_CONN_LOGS API_REDIS_CONFIGURATION API_REDIS_INSTANCE_NAME API_DYNAMICLISTS_DB_MODE PG_APP_PASSWORD
+export API_DATABASE_PROVIDER API_CONN_MAIN API_CONN_LOGS API_REDIS_CONFIGURATION API_REDIS_INSTANCE_NAME API_DYNAMICLISTS_DB_MODE PG_APP_PASSWORD NEWRELIC_TRACE_OBSERVER_HOST NEWRELIC_TRACE_OBSERVER_PORT
 
 # newrelic_postgres_monitor_password is read only when running New Relic infra (-newrelic / -fullrun); never passed to site.yml
 NEWRELIC_POSTGRES_MONITOR_PASSWORD=$(read_tfvar_any "newrelic_postgres_monitor_password")
@@ -156,6 +158,8 @@ put("pg_app_password", os.environ.get("PG_APP_PASSWORD"))
 put("api_redis_configuration", os.environ.get("API_REDIS_CONFIGURATION"))
 put("api_redis_instance_name", os.environ.get("API_REDIS_INSTANCE_NAME"))
 put("api_dynamiclists_db_mode", os.environ.get("API_DYNAMICLISTS_DB_MODE"))
+put("newrelic_trace_observer_host", os.environ.get("NEWRELIC_TRACE_OBSERVER_HOST"))
+put("newrelic_trace_observer_port", os.environ.get("NEWRELIC_TRACE_OBSERVER_PORT"))
 print(json.dumps(d))
 PY
 )

@@ -2,9 +2,12 @@
 # PostgreSQL app user password — always overridden by deploy script from terraform.tfvars pg_app_password
 pg_app_password: ""
 
-# Infinite Tracing (Trace Observer) - us-east-1
-# "For language agents" endpoint: <host> (port 443)
-newrelic_trace_observer_host: "2488764c-f48e-4517-9f59-984b4399e623.aws-us-east-1.tracing.edge.nr-data.net"
+# Infinite Tracing (Trace Observer)
+# Set these via terraform.tfvars and scripts/deploy-navalansible.sh (preferred).
+# Examples:
+#   newrelic_trace_observer_host = "....tracing.edge.nr-data.net"
+#   newrelic_trace_observer_port = "443"
+newrelic_trace_observer_host: ""
 newrelic_trace_observer_port: "443"
 
 # Paths

@@ -15,3 +15,8 @@ vm_admin_username = "azureadmin"
 vm_admin_password = "YourSecurePassword123!"
 vm_size           = "Standard_B2s"
 
+# New Relic Infinite Tracing (Trace Observer) (optional)
+# Read by scripts/deploy-navalansible.sh and passed into Ansible.
+# newrelic_trace_observer_host = "2488764c-f48e-4517-9f59-984b4399e623.aws-us-east-1.tracing.edge.nr-data.net"
+# newrelic_trace_observer_port = "443"
+
