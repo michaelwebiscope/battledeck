@@ -14,10 +14,24 @@ public class LogsController : ControllerBase
     private readonly LogsDbContext _logsDb;
     private readonly LogsDataService _logsData;
 
-    public LogsController(LogsDbContext logsDb, LogsDataService logsData)
+    private readonly GenuineLogsFetcher _fetcher;
+
+    public LogsController(LogsDbContext logsDb, LogsDataService logsData, GenuineLogsFetcher fetcher)
     {
         _logsDb = logsDb;
         _logsData = logsData;
+        _fetcher = fetcher;
+    }
+
+    /// <summary>
+    /// Fetch genuine WWII logs from source documents and populate the database.
+    /// </summary>
+    [HttpPost("populate")]
+    public async Task<IActionResult> Populate(CancellationToken ct)
+    {
+        await _fetcher.FetchAndSaveAsync(_logsDb, ct);
+        var count = await _logsDb.CaptainLogs.CountAsync(ct);
+        return Ok(new { populated = count });
     }
 
     /// <summary>

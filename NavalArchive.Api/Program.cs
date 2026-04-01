@@ -132,6 +132,7 @@ builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<CacheInvalidationService>();
 builder.Services.AddSingleton<DynamicListDiagnosticsService>();
 builder.Services.AddSingleton<LogsDataService>();
+builder.Services.AddSingleton<GenuineLogsFetcher>();
 builder.Services.AddSingleton<WikipediaDataFetcher>();
 builder.Services.AddSingleton<ImageSearchService>();
 builder.Services.AddScoped<ImageStorageService>();
