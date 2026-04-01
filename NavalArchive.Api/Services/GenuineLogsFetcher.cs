@@ -24,7 +24,43 @@ public class GenuineLogsFetcher
         ("https://midway1942.com/docs/usn_doc_03.shtml", "Task Force 17", "Task Force 17 Action Report June 1942"),
         ("https://midway1942.com/docs/usn_doc_13.shtml", "NAS Midway", "NAS Midway CO Report June 1942"),
         ("https://midway1942.com/docs/usn_doc_17.shtml", "VMF-221", "Marine Fighting Squadron 221 Report June 1942"),
-        ("https://midway1942.com/docs/usn_doc_18.shtml", "VMSB-241", "Marine Scout-Bombing 241 Report June 1942")
+        ("https://midway1942.com/docs/usn_doc_18.shtml", "VMSB-241", "Marine Scout-Bombing 241 Report June 1942"),
+        // Additional Midway documents
+        ("https://midway1942.com/docs/usn_doc_01.shtml", "USS Yorktown", "USS Yorktown Deck Log June 1942"),
+        ("https://midway1942.com/docs/usn_doc_08.shtml", "USS Yorktown", "USS Yorktown Air Group Report June 1942"),
+        ("https://midway1942.com/docs/usn_doc_09.shtml", "USS Enterprise", "USS Enterprise Air Group Report June 1942"),
+        ("https://midway1942.com/docs/usn_doc_10.shtml", "USS Hornet", "USS Hornet Air Group Report June 1942"),
+        ("https://midway1942.com/docs/usn_doc_11.shtml", "Task Force 17", "Task Force 17 Screening Ships Report June 1942"),
+        ("https://midway1942.com/docs/usn_doc_14.shtml", "NAS Midway", "NAS Midway Patrol Wing Report June 1942"),
+        ("https://midway1942.com/docs/usn_doc_15.shtml", "VMF-221", "VMF-221 Pilot Report June 1942"),
+        ("https://midway1942.com/docs/usn_doc_16.shtml", "VMSB-241", "VMSB-241 Pilot Report June 1942"),
+        ("https://midway1942.com/docs/usn_doc_19.shtml", "NAS Midway", "NAS Midway Signal Log June 1942"),
+        ("https://midway1942.com/docs/usn_doc_22.shtml", "USS Hornet", "USS Hornet Bombing Squadron Report June 1942"),
+    };
+
+    // Wikipedia articles mapped to ship/unit names for log attribution
+    private static readonly (string Title, string ShipName, string LogDate)[] WikiSources =
+    {
+        ("Battle_of_Midway",              "USS Enterprise",   "1942-06-04"),
+        ("Battle_of_Leyte_Gulf",          "USS Enterprise",   "1944-10-23"),
+        ("Battle_of_the_Coral_Sea",       "USS Yorktown",     "1942-05-07"),
+        ("Battle_of_the_Atlantic",        "Task Force 16",    "1942-06-01"),
+        ("German_battleship_Bismarck",    "Bismarck",         "1941-05-24"),
+        ("Attack_on_Pearl_Harbor",        "USS Enterprise",   "1941-12-07"),
+        ("Battle_of_Guadalcanal",         "USS Hornet",       "1942-10-26"),
+        ("HMS_Hood_(51)",                 "HMS Hood",         "1941-05-24"),
+        ("Japanese_battleship_Yamato",    "Yamato",           "1945-04-07"),
+        ("Battle_of_the_Denmark_Strait",  "HMS Hood",         "1941-05-24"),
+        ("Operation_Ten-Go",              "Yamato",           "1945-04-07"),
+        ("USS_Indianapolis_(CA-35)",      "USS Indianapolis", "1945-07-30"),
+        ("Battle_of_Samar",               "Task Force 17",    "1944-10-25"),
+        ("Battle_of_the_Philippine_Sea",  "USS Enterprise",   "1944-06-19"),
+        ("Battle_of_Cape_Matapan",        "HMS Warspite",     "1941-03-28"),
+        ("Sinking_of_the_Bismarck",       "Bismarck",         "1941-05-27"),
+        ("Battle_of_the_Java_Sea",        "Task Force 16",    "1942-02-27"),
+        ("HMS_Prince_of_Wales_(53)",      "HMS Prince of Wales", "1941-12-10"),
+        ("USS_Wasp_(CV-7)",               "USS Wasp",         "1942-09-15"),
+        ("Battle_of_North_Cape",          "HMS Duke of York", "1943-12-26"),
     };
 
     public async Task FetchAndSaveAsync(LogsDbContext db, CancellationToken ct = default)
@@ -32,6 +68,7 @@ public class GenuineLogsFetcher
         var allEntries = new List<CaptainLog>();
         var entryId = 1;
 
+        // Primary source documents from midway1942.com
         foreach (var (url, shipName, source) in Sources)
         {
             try
@@ -49,11 +86,55 @@ public class GenuineLogsFetcher
                         Source = source
                     });
                 }
-                await Task.Delay(500, ct);
+                await Task.Delay(300, ct);
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Logs fetch failed {url}: {ex.Message}");
+            }
+        }
+
+        // Wikipedia: full article text split into log-style entries
+        var wikiHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        wikiHttp.DefaultRequestHeaders.Add("User-Agent", "NavalArchive/1.0 (demo app)");
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in allEntries) seen.Add(entry.Entry);
+
+        for (var i = 0; i < WikiSources.Length; i += 5)
+        {
+            var batch = WikiSources.Skip(i).Take(5).ToArray();
+            var titles = string.Join("|", batch.Select(b => b.Title));
+            var url = $"https://en.wikipedia.org/w/api.php?action=query&titles={Uri.EscapeDataString(titles)}&prop=extracts&explaintext&exchars=8000&format=json";
+            try
+            {
+                var json = await wikiHttp.GetStringAsync(url, ct);
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                var pages = doc.RootElement.GetProperty("query").GetProperty("pages");
+                foreach (var page in pages.EnumerateObject())
+                {
+                    if (page.Name == "-1") continue;
+                    var title = page.Value.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "";
+                    var extract = page.Value.TryGetProperty("extract", out var e) ? e.GetString() ?? "" : "";
+                    if (string.IsNullOrWhiteSpace(extract)) continue;
+                    var meta = batch.FirstOrDefault(b => b.Title.Replace('_', ' ').Equals(title, StringComparison.OrdinalIgnoreCase));
+                    var shipName = meta.ShipName ?? title;
+                    var logDate = meta.LogDate ?? "1942-06-04";
+                    var source = $"Wikipedia: {title.Replace('_', ' ')}";
+                    var sentences = System.Text.RegularExpressions.Regex.Split(extract, @"(?<=[.!?])\s+");
+                    foreach (var sent in sentences)
+                    {
+                        var trimmed = sent.Trim();
+                        if (IsValidLogEntry(trimmed) && seen.Add(trimmed))
+                        {
+                            allEntries.Add(new CaptainLog { Id = entryId++, ShipName = shipName, LogDate = logDate, Entry = trimmed, Source = source });
+                        }
+                    }
+                }
+                await Task.Delay(800, ct);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Wikipedia logs fetch failed: {ex.Message}");
             }
         }
 
