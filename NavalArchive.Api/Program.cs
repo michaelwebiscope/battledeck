@@ -239,7 +239,16 @@ using (var scope = app.Services.CreateScope())
         RedactRedisConfiguration(redisConfiguration)
     );
     db.Database.EnsureCreated();
-    logsDb.Database.EnsureCreated();
+    // EnsureCreated returns false (no-op) if the DB already exists (created above by main context).
+    // In that case, call CreateTables() directly so LogsDbContext tables are still created.
+    if (!logsDb.Database.EnsureCreated())
+    {
+        // DB already exists (created by main context) — create any missing tables for LogsDbContext.
+        // Use raw SQL so we don't depend on EF infrastructure internals.
+        try { logsDb.Database.ExecuteSqlRaw(@"CREATE TABLE IF NOT EXISTS ""CaptainLogs"" (""Id"" serial PRIMARY KEY, ""ShipName"" text NOT NULL, ""LogDate"" text NOT NULL, ""Entry"" text NOT NULL, ""Source"" text NOT NULL)"); } catch { }
+        try { logsDb.Database.ExecuteSqlRaw(@"CREATE INDEX IF NOT EXISTS ""IX_CaptainLogs_ShipName"" ON ""CaptainLogs"" (""ShipName"")"); } catch { }
+        try { logsDb.Database.ExecuteSqlRaw(@"CREATE INDEX IF NOT EXISTS ""IX_CaptainLogs_LogDate"" ON ""CaptainLogs"" (""LogDate"")"); } catch { }
+    }
     var indexBootstrapProvider = "unknown";
     // Add VideoUrl column if missing (existing SQLite DBs)
     if (db.Database.IsSqlite())
