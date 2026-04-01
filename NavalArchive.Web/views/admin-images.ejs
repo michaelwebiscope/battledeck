@@ -156,6 +156,8 @@
             <span class="me-2"><strong id="bulkCount">0</strong> selected</span>
             <button type="button" class="btn btn-sm btn-link text-muted p-0 me-2" id="bulkDeselectAll">Deselect all</button>
             <button type="button" class="btn btn-sm btn-modern me-2" id="bulkEditSelectedBtn">Edit selected</button>
+            <button type="button" class="btn btn-sm btn-outline-primary me-2" id="bulkPopulateBtn" title="Populate cached images for selected items using the Java ImagePopulator">Populate</button>
+            <button type="button" class="btn btn-sm btn-outline-danger me-2" id="bulkForcePopulateBtn" title="Force refresh: delete cached image first, then populate">Force populate</button>
             <input type="text" id="bulkUrlInput" class="form-control form-control-sm me-2" placeholder="Paste image URL">
             <button type="button" class="btn btn-sm btn-modern me-2" id="bulkApplyUrlBtn">Apply URL to selected</button>
             <label class="btn btn-sm btn-outline-primary me-2 mb-0" for="bulkUploadInput" style="cursor:pointer">Upload & apply</label>
@@ -993,6 +995,102 @@
       }
       next();
     };
+
+    function buildPopulateRequestBodyForEntity(entity) {
+      var collected = collectKeysFromSources();
+      var body = Object.assign({}, collected.keys);
+      if (Object.keys(collected.customKeys).length > 0) body.customKeys = collected.customKeys;
+      var searchPrefixes = <%- JSON.stringify(typeof imageSearchPrefix !== 'undefined' && imageSearchPrefix ? imageSearchPrefix : { ship: 'battleship', captain: 'captain' }) %>;
+      body.shipSearchPrefix = searchPrefixes.ship || 'battleship';
+      body.captainSearchPrefix = searchPrefixes.captain || 'captain';
+      if (imageSources && imageSources.length > 0) body.imageSources = imageSources;
+      return body;
+    }
+
+    function populateSelectedItems(opts) {
+      opts = opts || {};
+      var force = opts.force === true;
+      var items = getSelectedItems();
+      var statusEl = document.getElementById('bulkStatus');
+      if (items.length === 0) { if (statusEl) statusEl.textContent = 'Select at least one item.'; return; }
+      if (force) {
+        var okForce = confirm('Force populate will delete the current cached image(s) first, then repopulate.\n\nThis can overwrite manually-set images. Continue?');
+        if (!okForce) return;
+      }
+      var populateBtn = document.getElementById('bulkPopulateBtn');
+      var forceBtn = document.getElementById('bulkForcePopulateBtn');
+      if (populateBtn) populateBtn.disabled = true;
+      if (forceBtn) forceBtn.disabled = true;
+      if (statusEl) statusEl.textContent = (force ? 'Force populating ' : 'Populating ') + items.length + ' items...';
+      var ok = 0, failed = 0;
+      function finish() {
+        if (statusEl) statusEl.textContent = 'Done. ' + (force ? 'Force populated ' : 'Populated ') + ok + (failed ? ', failed ' + failed : '') + '.';
+        document.querySelectorAll('.edit-card.selected .entity-chk').forEach(function(c) { c.checked = false; });
+        document.querySelectorAll('.edit-card.selected').forEach(function(c) { c.classList.remove('selected'); });
+        updateBulkBar();
+        refreshAudit();
+        if (populateBtn) populateBtn.disabled = false;
+        if (forceBtn) forceBtn.disabled = false;
+      }
+      function setThumb(it) {
+        var thumb = it.card && it.card.querySelector('.edit-thumb');
+        if (thumb) thumb.src = (it.entity === 'ship' ? '/gallery/image/' : '/gallery/captain/') + it.id + '?v=' + Date.now();
+      }
+      function parseJsonMaybe(r) {
+        return r.text().then(function(t) {
+          var data = null;
+          try { data = t ? JSON.parse(t) : {}; } catch (_) { data = { raw: t }; }
+          return { ok: r.ok, status: r.status, data: data };
+        });
+      }
+      function doPopulate(it) {
+        var body = buildPopulateRequestBodyForEntity(it.entity);
+        return fetch('/api/images/populate/' + it.entity + '/' + it.id, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        }).then(parseJsonMaybe).then(function(result) {
+          if (!result.ok) throw new Error((result.data && (result.data.error || result.data.message || result.data.reason)) || ('HTTP ' + result.status));
+          var st = (result.data && (result.data.status || result.data.Status)) || 'ok';
+          if (String(st).toLowerCase() !== 'ok') throw new Error((result.data && (result.data.reason || result.data.Reason)) || 'Populate failed');
+          return result.data;
+        });
+      }
+      function doForceDelete(it) {
+        return fetch('/api/images/' + it.entity + '/' + it.id, { method: 'DELETE' })
+          .then(parseJsonMaybe)
+          .then(function(result) {
+            if (!result.ok && result.status !== 404) {
+              throw new Error((result.data && (result.data.error || result.data.message)) || ('HTTP ' + result.status));
+            }
+            return result.data;
+          });
+      }
+      function next(i) {
+        if (i >= items.length) return finish();
+        var it = items[i];
+        var label = it.name || (it.entity + ' ' + it.id);
+        if (statusEl) statusEl.textContent = (force ? 'Force populating ' : 'Populating ') + (i + 1) + '/' + items.length + ': ' + label + '...';
+        var p = force
+          ? doForceDelete(it).then(function() { return doPopulate(it); })
+          : doPopulate(it);
+        p.then(function() {
+          ok++;
+          setThumb(it);
+        }).catch(function(e) {
+          failed++;
+          if (statusEl) statusEl.textContent = 'Error on ' + label + ': ' + e.message;
+        }).finally(function() {
+          next(i + 1);
+        });
+      }
+      next(0);
+    }
+
+    var bulkPopulateBtn = document.getElementById('bulkPopulateBtn');
+    if (bulkPopulateBtn) bulkPopulateBtn.onclick = function() { populateSelectedItems({ force: false }); };
+    var bulkForcePopulateBtn = document.getElementById('bulkForcePopulateBtn');
+    if (bulkForcePopulateBtn) bulkForcePopulateBtn.onclick = function() { populateSelectedItems({ force: true }); };
 
     document.getElementById('bulkUploadInput').onchange = function() {
       var file = this.files && this.files[0];

@@ -121,11 +121,13 @@ else if (!string.IsNullOrEmpty(mainConn))
 else
     builder.Services.AddDbContext<NavalArchiveDbContext>(o => o.UseSqlite("Data Source=navalarchive.db"));
 
-var logsConn = builder.Configuration.GetConnectionString("LogsDb") ?? "Data Source=logs.db";
-if (provider.Equals("Postgres", StringComparison.OrdinalIgnoreCase) || provider.Equals("PostgreSQL", StringComparison.OrdinalIgnoreCase))
+var isPostgres = provider.Equals("Postgres", StringComparison.OrdinalIgnoreCase) || provider.Equals("PostgreSQL", StringComparison.OrdinalIgnoreCase);
+var logsConn = builder.Configuration.GetConnectionString("LogsDb")
+    ?? (isPostgres ? mainConn : "Data Source=logs.db");
+if (isPostgres)
     builder.Services.AddDbContext<LogsDbContext>(options => options.UseNpgsql(logsConn));
 else
-    builder.Services.AddDbContext<LogsDbContext>(options => options.UseSqlite(logsConn));
+    builder.Services.AddDbContext<LogsDbContext>(options => options.UseSqlite(logsConn ?? "Data Source=logs.db"));
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<CacheInvalidationService>();
 builder.Services.AddSingleton<DynamicListDiagnosticsService>();

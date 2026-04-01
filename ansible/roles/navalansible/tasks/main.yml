@@ -1,5 +1,6 @@
 ---
 - include_tasks: runtime.yml
+- include_tasks: postgres.yml
 - include_tasks: stop_services.yml
 - include_tasks: clone.yml
 - include_tasks: build.yml

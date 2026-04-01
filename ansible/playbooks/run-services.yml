@@ -1,0 +1,8 @@
+---
+- name: Create all NavalArchive Windows services
+  hosts: navalansible
+  gather_facts: true
+  tasks:
+    - ansible.builtin.include_role:
+        name: navalansible
+        tasks_from: services.yml
