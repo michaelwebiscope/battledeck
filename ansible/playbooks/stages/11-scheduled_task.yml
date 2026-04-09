@@ -1,0 +1,7 @@
+---
+- name: "Navalansible stage — scheduled tasks / health scripts"
+  hosts: navalansible
+  gather_facts: true
+  roles:
+    - role: navalansible
+      tasks_from: scheduled_task

@@ -1,0 +1,7 @@
+---
+- name: "Navalansible stage — firewall rules"
+  hosts: navalansible
+  gather_facts: true
+  roles:
+    - role: navalansible
+      tasks_from: firewall

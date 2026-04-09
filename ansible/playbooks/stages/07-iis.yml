@@ -1,0 +1,7 @@
+---
+- name: "Navalansible stage — IIS / ARR / sites"
+  hosts: navalansible
+  gather_facts: true
+  roles:
+    - role: navalansible
+      tasks_from: iis

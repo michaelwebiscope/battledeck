@@ -1,0 +1,7 @@
+---
+- name: "Navalansible stage — PostgreSQL"
+  hosts: navalansible
+  gather_facts: true
+  roles:
+    - role: navalansible
+      tasks_from: postgres

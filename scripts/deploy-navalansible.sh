@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Deploy navalansible: Ansible playbook (run terraform apply separately for first-time VM creation)
-# Usage: ./scripts/deploy-navalansible.sh [-fullrun] [-newrelic] [-newrelic-only] [-skip-services] [-go-only] [-skip-winrm-check]
+# Usage: ./scripts/deploy-navalansible.sh [-fullrun] [-newrelic] [-newrelic-only] [-skip-services] [-go-only] [-skip-winrm-check] [-monolithic]
 # Requires: ansible, pywinrm (pip install pywinrm into repo .venv or your default python3)
 
 set -e
@@ -35,6 +35,8 @@ NEWRELIC_APP_ONLY=false
 UPDATE_SERVICES=true
 GO_ONLY=false
 SKIP_WINRM_CHECK=false
+# Staged = multiple short ansible-playbook runs (new WinRM session each stage). Default on — long single sessions hang often.
+STAGED=true
 while [ $# -gt 0 ]; do
   case "$1" in
     -fullrun|--fullrun)
@@ -65,8 +67,16 @@ while [ $# -gt 0 ]; do
       SKIP_WINRM_CHECK=true
       shift
       ;;
+    -staged|--staged)
+      STAGED=true
+      shift
+      ;;
+    -monolithic|--monolithic)
+      STAGED=false
+      shift
+      ;;
     -h|--help)
-      echo "Usage: ./scripts/deploy-navalansible.sh [-fullrun] [-newrelic] [-newrelic-only] [-skip-services] [-go-only] [-skip-winrm-check]"
+      echo "Usage: ./scripts/deploy-navalansible.sh [-fullrun] [-newrelic] [-newrelic-only] [-skip-services] [-go-only] [-skip-winrm-check] [-monolithic]"
       echo "  (no NR flags)    deploy only: site.yml (or -go-only) — no observability playbooks"
       echo "  -fullrun         after site (or -go-only), run full New Relic: infra+logs+.NET → java → go → otel → node"
       echo "  -newrelic        New Relic only: same full NR stack as -fullrun, but skip site/go deploy"
@@ -75,11 +85,12 @@ while [ $# -gt 0 ]; do
       echo "  -update-services force services.yml run (default)"
       echo "  -go-only         hot-swap Go binaries only (~2 min, no full redeploy)"
       echo "  -skip-winrm-check  skip TCP pre-flight to port 5986 (use if you tunnel WinRM differently)"
+      echo "  -monolithic        single site.yml (one long WinRM session; not recommended)"
       exit 0
       ;;
     *)
       echo "Unknown argument: $1"
-      echo "Usage: ./scripts/deploy-navalansible.sh [-fullrun] [-newrelic] [-newrelic-only] [-skip-services] [-go-only] [-skip-winrm-check]"
+      echo "Usage: ./scripts/deploy-navalansible.sh [-fullrun] [-newrelic] [-newrelic-only] [-skip-services] [-go-only] [-skip-winrm-check] [-monolithic]"
       exit 1
       ;;
   esac
@@ -113,9 +124,12 @@ read_tfvar_any() {
 }
 
 echo "=== 1. Get VM IP from Terraform state ==="
-VM_IP=$(cd terraform-navalansible && terraform output -raw vm_public_ip 2>/dev/null || true)
+VM_IP="${NAVALANSIBLE_VM_IP:-}" 
 if [ -z "$VM_IP" ]; then
-  echo "ERROR: Could not get VM IP. Run 'terraform apply' in terraform-navalansible/ first."
+  VM_IP=$(cd terraform-navalansible && terraform output -raw vm_public_ip 2>/dev/null || true)
+fi
+if [ -z "$VM_IP" ]; then
+  echo "ERROR: Could not get VM IP. Set NAVALANSIBLE_VM_IP, or run 'terraform apply' in terraform-navalansible/ first."
   exit 1
 fi
 
@@ -243,8 +257,28 @@ if [ "$NEWRELIC_STANDALONE" = true ] || [ "$NEWRELIC_APP_ONLY" = true ]; then
 elif [ "$GO_ONLY" = true ]; then
   echo "=== 2. Ansible playbook (Go binaries only - ~2 min) ==="
   run_ansible playbooks/go-binaries-only.yml "${SITE_ARGS[@]}"
+elif [ "$STAGED" = true ]; then
+  echo "=== 2. Staged Ansible deploy (12 short WinRM sessions — default) ==="
+  STAGE_PLAYBOOKS=(
+    playbooks/stages/01-runtime.yml
+    playbooks/stages/02-postgres.yml
+    playbooks/stages/03-stop_services.yml
+    playbooks/stages/04-clone.yml
+    playbooks/stages/05-build.yml
+    playbooks/stages/06-deploy.yml
+    playbooks/stages/07-iis.yml
+    playbooks/stages/08-services.yml
+    playbooks/stages/09-populate.yml
+    playbooks/stages/10-firewall.yml
+    playbooks/stages/11-scheduled_task.yml
+    playbooks/stages/12-verify.yml
+  )
+  for pb in "${STAGE_PLAYBOOKS[@]}"; do
+    echo "--- $pb ---"
+    run_ansible "$pb" "${SITE_ARGS[@]}"
+  done
 else
-  echo "=== 2. Ansible playbook (deploy Naval Archive - ~45-60 min) ==="
+  echo "=== 2. Ansible playbook (single session — deploy Naval Archive - ~45-60 min) ==="
   run_ansible playbooks/site.yml "${SITE_ARGS[@]}"
 fi
 

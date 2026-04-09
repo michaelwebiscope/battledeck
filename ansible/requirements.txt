@@ -1,0 +1,4 @@
+# Pin Ansible for reproducible deploys (pip install -r ansible/requirements.txt)
+ansible-core>=2.14,<2.20
+pywinrm>=0.5
+requests-credssp>=0.1.0

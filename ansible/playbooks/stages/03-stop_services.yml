@@ -1,0 +1,7 @@
+---
+- name: "Navalansible stage — stop services (unlock files for build)"
+  hosts: navalansible
+  gather_facts: true
+  roles:
+    - role: navalansible
+      tasks_from: stop_services

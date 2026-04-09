@@ -1,0 +1,7 @@
+---
+- name: "Navalansible stage — image populate (optional long tasks)"
+  hosts: navalansible
+  gather_facts: true
+  roles:
+    - role: navalansible
+      tasks_from: populate

@@ -1,0 +1,11 @@
+---
+# Skipped automatically when update_services is false (same as site.yml).
+- name: "Navalansible stage — Windows services / scheduled tasks (heavy)"
+  hosts: navalansible
+  gather_facts: true
+  tasks:
+    - name: Include services tasks
+      ansible.builtin.include_role:
+        name: navalansible
+        tasks_from: services
+      when: update_services | default(true) | bool

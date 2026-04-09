@@ -1,0 +1,7 @@
+---
+- name: "Navalansible stage — git clone / fetch"
+  hosts: navalansible
+  gather_facts: true
+  roles:
+    - role: navalansible
+      tasks_from: clone

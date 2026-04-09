@@ -1,0 +1,56 @@
+# Optional: run the same deploy as locally, from GitHub Actions (stable Python, no laptop sleep).
+# Requires NSG to allow WinRM (5986) from the runner, OR use a self-hosted runner.
+name: Deploy navalansible
+
+on:
+  workflow_dispatch:
+    inputs:
+      vm_public_ip:
+        description: "Public IP of the VM (terraform output -raw vm_public_ip)"
+        required: true
+        type: string
+      skip_services:
+        description: "Pass -skip-services (faster repeat deploys)"
+        required: false
+        type: boolean
+        default: false
+      monolithic:
+        description: "Single site.yml instead of staged (not recommended)"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Ansible
+        run: pip install -r ansible/requirements.txt
+
+      - name: Terraform tfvars (secrets)
+        env:
+          TFVARS: ${{ secrets.NAVALANSIBLE_TERRAFORM_TFVARS }}
+        run: |
+          mkdir -p terraform-navalansible
+          if [ -z "$TFVARS" ]; then
+            echo "Set repository secret NAVALANSIBLE_TERRAFORM_TFVARS to the contents of terraform-navalansible/terraform.tfvars"
+            exit 1
+          fi
+          printf '%s\n' "$TFVARS" > terraform-navalansible/terraform.tfvars
+
+      - name: Deploy
+        env:
+          NAVALANSIBLE_VM_IP: ${{ inputs.vm_public_ip }}
+        run: |
+          set -e
+          args=""
+          if [ "${{ inputs.skip_services }}" = "true" ]; then args="$args -skip-services"; fi
+          if [ "${{ inputs.monolithic }}" = "true" ]; then args="$args -monolithic"; fi
+          ./scripts/deploy-navalansible.sh $args
