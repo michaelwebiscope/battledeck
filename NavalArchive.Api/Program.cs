@@ -160,7 +160,16 @@ app.UseForwardedHeaders(new ForwardedHeadersOptions
 
 // Session gate: blocklist, require session for API, rate limit
 app.UseRouting();
-app.UseSession();
+// Health probes must not load Redis-backed session (unreachable Redis would return 500 on /health).
+app.UseWhen(
+    context =>
+    {
+        var p = context.Request.Path.Value ?? "";
+        if (p.Equals("/health", StringComparison.OrdinalIgnoreCase)) return false;
+        if (p.Equals("/api/health", StringComparison.OrdinalIgnoreCase)) return false;
+        return true;
+    },
+    branch => branch.UseSession());
 app.UseMiddleware<SessionGateMiddleware>();
 app.UseRateLimiter();
 
