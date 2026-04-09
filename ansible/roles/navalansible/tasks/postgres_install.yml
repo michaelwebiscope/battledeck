@@ -1,0 +1,8 @@
+---
+# Heavy download — keep in its own staged playbook so WinRM reconnects after install.
+- name: Install PostgreSQL 16 via Chocolatey
+  chocolatey.chocolatey.win_chocolatey:
+    name: postgresql16
+    state: present
+    params: "/Password:postgres_admin"
+    timeout: 7200

@@ -1,0 +1,8 @@
+---
+# PostgreSQL Chocolatey install only — can sit silent 20–45+ min downloading; separate session after this.
+- name: "Navalansible stage — PostgreSQL (Chocolatey install only)"
+  hosts: navalansible
+  gather_facts: true
+  roles:
+    - role: navalansible
+      tasks_from: postgres_install

@@ -258,20 +258,21 @@ elif [ "$GO_ONLY" = true ]; then
   echo "=== 2. Ansible playbook (Go binaries only - ~2 min) ==="
   run_ansible playbooks/go-binaries-only.yml "${SITE_ARGS[@]}"
 elif [ "$STAGED" = true ]; then
-  echo "=== 2. Staged Ansible deploy (12 short WinRM sessions — default) ==="
+  echo "=== 2. Staged Ansible deploy (13 short WinRM sessions — default) ==="
   STAGE_PLAYBOOKS=(
     playbooks/stages/01-runtime.yml
-    playbooks/stages/02-postgres.yml
-    playbooks/stages/03-stop_services.yml
-    playbooks/stages/04-clone.yml
-    playbooks/stages/05-build.yml
-    playbooks/stages/06-deploy.yml
-    playbooks/stages/07-iis.yml
-    playbooks/stages/08-services.yml
-    playbooks/stages/09-populate.yml
-    playbooks/stages/10-firewall.yml
-    playbooks/stages/11-scheduled_task.yml
-    playbooks/stages/12-verify.yml
+    playbooks/stages/02-postgres-install.yml
+    playbooks/stages/03-postgres-config.yml
+    playbooks/stages/04-stop_services.yml
+    playbooks/stages/05-clone.yml
+    playbooks/stages/06-build.yml
+    playbooks/stages/07-deploy.yml
+    playbooks/stages/08-iis.yml
+    playbooks/stages/09-services.yml
+    playbooks/stages/10-populate.yml
+    playbooks/stages/11-firewall.yml
+    playbooks/stages/12-scheduled_task.yml
+    playbooks/stages/13-verify.yml
   )
   for pb in "${STAGE_PLAYBOOKS[@]}"; do
     echo "--- $pb ---"

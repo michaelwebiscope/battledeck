@@ -4,7 +4,10 @@ Each file runs as a separate ansible-playbook process, so WinRM opens a
 fresh connection per stage. Long single-session runs often hang on Azure
 Windows VMs; staging avoids one hour-long PyWinRM pipe.
 
-Order matches roles/navalansible/tasks/main.yml.
+PostgreSQL is split: 02-postgres-install (Chocolatey can look “stuck” for
+20–45+ min with no output) then 03-postgres-config (init, role, firewall).
+
+Order matches roles/navalansible/tasks/main.yml (with postgres split).
 
 To run only one stage (recovery): from ansible/
   ansible-playbook playbooks/stages/05-build.yml -e ansible_host=IP -e ...
