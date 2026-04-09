@@ -1,13 +1,30 @@
 #!/usr/bin/env bash
 # Deploy navalansible: Ansible playbook (run terraform apply separately for first-time VM creation)
-# Usage: ./scripts/deploy-navalansible.sh [-fullrun] [-newrelic] [-newrelic-only] [-skip-services] [-go-only]
-# Requires: ansible, pywinrm (pip install pywinrm)
+# Usage: ./scripts/deploy-navalansible.sh [-fullrun] [-newrelic] [-newrelic-only] [-skip-services] [-go-only] [-skip-winrm-check]
+# Requires: ansible, pywinrm (pip install pywinrm into repo .venv or your default python3)
 
 set -e
 cd "$(dirname "$0")/.."
 REPO_ROOT="$(pwd)"
 TFVARS_FILE="$REPO_ROOT/terraform-navalansible/terraform.tfvars"
 TFVARS_FALLBACK_FILE="$REPO_ROOT/terraform/terraform.tfvars"
+
+# Homebrew `python3` often points at a Python without ansible; prefer repo venv if present.
+PYTHON_FOR_ANSIBLE=""
+for _py in "$REPO_ROOT/.venv/bin/python3" "$REPO_ROOT/venv/bin/python3"; do
+  if [ -x "$_py" ] && "$_py" -c "import ansible" 2>/dev/null; then
+    PYTHON_FOR_ANSIBLE="$_py"
+    break
+  fi
+done
+if [ -z "$PYTHON_FOR_ANSIBLE" ] && command -v python3 >/dev/null 2>&1 && python3 -c "import ansible" 2>/dev/null; then
+  PYTHON_FOR_ANSIBLE="$(command -v python3)"
+fi
+if [ -z "$PYTHON_FOR_ANSIBLE" ]; then
+  echo "ERROR: ansible is not installed for any candidate Python interpreter."
+  echo "  Example: cd \"$REPO_ROOT\" && python3 -m venv .venv && . .venv/bin/activate && pip install 'ansible>=6' pywinrm"
+  exit 1
+fi
 
 # -fullrun: after main deploy (site or go-only), run full New Relic stack at the end.
 FULLRUN=false
@@ -17,6 +34,7 @@ NEWRELIC_STANDALONE=false
 NEWRELIC_APP_ONLY=false
 UPDATE_SERVICES=true
 GO_ONLY=false
+SKIP_WINRM_CHECK=false
 while [ $# -gt 0 ]; do
   case "$1" in
     -fullrun|--fullrun)
@@ -43,8 +61,12 @@ while [ $# -gt 0 ]; do
       GO_ONLY=true
       shift
       ;;
+    -skip-winrm-check|--skip-winrm-check)
+      SKIP_WINRM_CHECK=true
+      shift
+      ;;
     -h|--help)
-      echo "Usage: ./scripts/deploy-navalansible.sh [-fullrun] [-newrelic] [-newrelic-only] [-skip-services] [-go-only]"
+      echo "Usage: ./scripts/deploy-navalansible.sh [-fullrun] [-newrelic] [-newrelic-only] [-skip-services] [-go-only] [-skip-winrm-check]"
       echo "  (no NR flags)    deploy only: site.yml (or -go-only) — no observability playbooks"
       echo "  -fullrun         after site (or -go-only), run full New Relic: infra+logs+.NET → java → go → otel → node"
       echo "  -newrelic        New Relic only: same full NR stack as -fullrun, but skip site/go deploy"
@@ -52,11 +74,12 @@ while [ $# -gt 0 ]; do
       echo "  -skip-services   skip services.yml (faster repeated deploys)"
       echo "  -update-services force services.yml run (default)"
       echo "  -go-only         hot-swap Go binaries only (~2 min, no full redeploy)"
+      echo "  -skip-winrm-check  skip TCP pre-flight to port 5986 (use if you tunnel WinRM differently)"
       exit 0
       ;;
     *)
       echo "Unknown argument: $1"
-      echo "Usage: ./scripts/deploy-navalansible.sh [-fullrun] [-newrelic] [-newrelic-only] [-skip-services] [-go-only]"
+      echo "Usage: ./scripts/deploy-navalansible.sh [-fullrun] [-newrelic] [-newrelic-only] [-skip-services] [-go-only] [-skip-winrm-check]"
       exit 1
       ;;
   esac
@@ -105,6 +128,30 @@ if [ -z "$VM_ADMIN_PASSWORD" ]; then
   exit 1
 fi
 
+if [ "$SKIP_WINRM_CHECK" = false ]; then
+  echo "=== 1b. Pre-flight: WinRM TCP ($VM_IP:5986) ==="
+  if ! "$PYTHON_FOR_ANSIBLE" -c "
+import socket, sys
+host = sys.argv[1]
+port = int(sys.argv[2])
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(15)
+try:
+    s.connect((host, port))
+except OSError as e:
+    print('connect failed:', e, file=sys.stderr)
+    sys.exit(1)
+finally:
+    s.close()
+" "$VM_IP" 5986; then
+    echo "ERROR: Cannot open TCP connection to $VM_IP:5986 (HTTPS WinRM)."
+    echo "  Ensure the VM is running, terraform output vm_public_ip matches, and Azure NSG allows inbound 5986 from your IP."
+    echo "  Re-run with -skip-winrm-check only if you use a tunnel or other non-standard path."
+    exit 1
+  fi
+  echo "OK: reachable"
+fi
+
 # Read github_repo_url from terraform.tfvars for Ansible
 GITHUB_REPO_URL=$(read_tfvar_any "github_repo_url")
 [ -n "$GITHUB_REPO_URL" ] || GITHUB_REPO_URL="https://github.com/michaelwebiscope/battledeck.git"
@@ -144,7 +191,7 @@ export API_DATABASE_PROVIDER API_CONN_MAIN API_CONN_LOGS API_REDIS_CONFIGURATION
 # newrelic_postgres_monitor_password is read only when running New Relic infra (-newrelic / -fullrun); never passed to site.yml
 NEWRELIC_POSTGRES_MONITOR_PASSWORD=$(read_tfvar_any "newrelic_postgres_monitor_password")
 
-API_EXTRAVARS_JSON=$(python3 - <<'PY'
+API_EXTRAVARS_JSON=$("$PYTHON_FOR_ANSIBLE" - <<'PY'
 import json, os
 d = {}
 def put(k, v):
@@ -178,7 +225,7 @@ fi
 cd ansible
 
 run_ansible() {
-  python3 -m ansible playbook "$@"
+  "$PYTHON_FOR_ANSIBLE" -m ansible playbook "$@"
   local rc=$?
   # Exit codes: 0=ok, 2=task failed, 4=unreachable (WinRM timeout on slow compile is ok)
   # Only abort on genuine task failures (rc=2) or parse errors (rc=1). Allow rc=4 (unreachable).
@@ -223,9 +270,9 @@ if [ "$NEWRELIC_STANDALONE" = true ]; then
   [ -n "$NEWRELIC_LICENSE_KEY" ] && NR_ARGS+=( -e "newrelic_license_key=$NEWRELIC_LICENSE_KEY" )
   [ -n "$NEWRELIC_TRACE_OBSERVER_HOST" ] && NR_ARGS+=( -e "newrelic_trace_observer_host=$NEWRELIC_TRACE_OBSERVER_HOST" )
   [ -n "$NEWRELIC_TRACE_OBSERVER_PORT" ] && NR_ARGS+=( -e "newrelic_trace_observer_port=$NEWRELIC_TRACE_OBSERVER_PORT" )
-  NR_PG_JSON=$(NEWRELIC_POSTGRES_MONITOR_PASSWORD="$NEWRELIC_POSTGRES_MONITOR_PASSWORD" python3 -c "import json,os; v=(os.environ.get('NEWRELIC_POSTGRES_MONITOR_PASSWORD') or '').strip(); print(json.dumps({'newrelic_postgres_monitor_password': v}) if v else '{}')")
+  NR_PG_JSON=$(NEWRELIC_POSTGRES_MONITOR_PASSWORD="$NEWRELIC_POSTGRES_MONITOR_PASSWORD" "$PYTHON_FOR_ANSIBLE" -c "import json,os; v=(os.environ.get('NEWRELIC_POSTGRES_MONITOR_PASSWORD') or '').strip(); print(json.dumps({'newrelic_postgres_monitor_password': v}) if v else '{}')")
   [ "$NR_PG_JSON" != "{}" ] && NR_ARGS+=( -e "$NR_PG_JSON" )
-  python3 -m ansible playbook playbooks/newrelic-dotnet-java-go.yml "${NR_ARGS[@]}"
+  "$PYTHON_FOR_ANSIBLE" -m ansible playbook playbooks/newrelic-dotnet-java-go.yml "${NR_ARGS[@]}"
 
 elif [ "$NEWRELIC_APP_ONLY" = true ]; then
   echo "=== 3. New Relic app layer only (java → go → otel → node) ==="
@@ -245,7 +292,7 @@ elif [ "$NEWRELIC_APP_ONLY" = true ]; then
   )
   [ -n "$NEWRELIC_TRACE_OBSERVER_HOST" ] && NR_ARGS+=( -e "newrelic_trace_observer_host=$NEWRELIC_TRACE_OBSERVER_HOST" )
   [ -n "$NEWRELIC_TRACE_OBSERVER_PORT" ] && NR_ARGS+=( -e "newrelic_trace_observer_port=$NEWRELIC_TRACE_OBSERVER_PORT" )
-  python3 -m ansible playbook playbooks/newrelic-app.yml "${NR_ARGS[@]}"
+  "$PYTHON_FOR_ANSIBLE" -m ansible playbook playbooks/newrelic-app.yml "${NR_ARGS[@]}"
 
 elif [ "$FULLRUN" = true ]; then
   echo "=== 3. New Relic full stack (infra + logs + .NET → java → go → otel → node) ==="
@@ -268,9 +315,9 @@ elif [ "$FULLRUN" = true ]; then
   [ -n "$NEWRELIC_LICENSE_KEY" ] && NR_ARGS+=( -e "newrelic_license_key=$NEWRELIC_LICENSE_KEY" )
   [ -n "$NEWRELIC_TRACE_OBSERVER_HOST" ] && NR_ARGS+=( -e "newrelic_trace_observer_host=$NEWRELIC_TRACE_OBSERVER_HOST" )
   [ -n "$NEWRELIC_TRACE_OBSERVER_PORT" ] && NR_ARGS+=( -e "newrelic_trace_observer_port=$NEWRELIC_TRACE_OBSERVER_PORT" )
-  NR_PG_JSON=$(NEWRELIC_POSTGRES_MONITOR_PASSWORD="$NEWRELIC_POSTGRES_MONITOR_PASSWORD" python3 -c "import json,os; v=(os.environ.get('NEWRELIC_POSTGRES_MONITOR_PASSWORD') or '').strip(); print(json.dumps({'newrelic_postgres_monitor_password': v}) if v else '{}')")
+  NR_PG_JSON=$(NEWRELIC_POSTGRES_MONITOR_PASSWORD="$NEWRELIC_POSTGRES_MONITOR_PASSWORD" "$PYTHON_FOR_ANSIBLE" -c "import json,os; v=(os.environ.get('NEWRELIC_POSTGRES_MONITOR_PASSWORD') or '').strip(); print(json.dumps({'newrelic_postgres_monitor_password': v}) if v else '{}')")
   [ "$NR_PG_JSON" != "{}" ] && NR_ARGS+=( -e "$NR_PG_JSON" )
-  python3 -m ansible playbook playbooks/newrelic-dotnet-java-go.yml "${NR_ARGS[@]}"
+  "$PYTHON_FOR_ANSIBLE" -m ansible playbook playbooks/newrelic-dotnet-java-go.yml "${NR_ARGS[@]}"
 fi
 
 cd ..

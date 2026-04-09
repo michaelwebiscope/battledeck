@@ -18,21 +18,25 @@
   chocolatey.chocolatey.win_chocolatey:
     name: dotnet-8.0-sdk
     state: present
+    timeout: 7200
 
 - name: Install Node.js LTS
   chocolatey.chocolatey.win_chocolatey:
     name: nodejs-lts
     state: present
+    timeout: 7200
 
 - name: Install Java 17 (Corretto - temurin17 not in Choco 1.4)
   chocolatey.chocolatey.win_chocolatey:
     name: corretto17jdk
     state: present
+    timeout: 7200
 
 - name: Install Git
   chocolatey.chocolatey.win_chocolatey:
     name: git
     state: present
+    timeout: 3600
 
 - name: Install IIS and features
   ansible.windows.win_feature:

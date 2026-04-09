@@ -16,6 +16,7 @@ all:
           ansible_port: 5986
           ansible_winrm_scheme: https
           # Long-running publish/build/clone tasks can exceed default timeout values.
-          # Catalog.csproj self-contained publish can take 15+ min on cold builds.
-          ansible_winrm_operation_timeout_sec: 600
-          ansible_winrm_read_timeout_sec: 1200
+          # Chocolatey (nodejs-lts, dotnet SDK, JDK) on a fresh VM can take 30–60+ min; read
+          # timeout must exceed choco's own timeout or WinRM drops while choco still runs.
+          ansible_winrm_operation_timeout_sec: 1800
+          ansible_winrm_read_timeout_sec: 7200
