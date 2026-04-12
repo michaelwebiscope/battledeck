@@ -494,91 +494,65 @@ app.post('/api/captains/delete/:id', async (req, res) => {
 
 // Chain: App -> API -> Cart -> Card -> Payment (all requests go through API)
 // Proxy /api/* to API for client-side fetches (local dev; on IIS, /api/* is rewritten to API)
-//
-// Java ImagePopulator routes are declared as explicit named Express routes so the NR Node
-// agent can auto-instrument each one with its real route pattern (e.g. POST /api/images/populate/ship/:id)
-// rather than the catch-all POST /api.
-
-async function proxyToJava(javaPath, req, res) {
+app.use('/api', async (req, res) => {
   try {
-    const queryStr = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
-    const javaUrl = `${IMAGE_POPULATOR_BASE}${javaPath}${queryStr}`;
-    const headers = { 'Content-Type': 'application/json' };
-    if (req.headers['x-api-key']) headers['X-API-Key'] = req.headers['x-api-key'];
-    const opts = {
-      method: req.method,
-      url: javaUrl,
-      headers,
-      responseType: 'text',
-      transformResponse: [data => data],
-      validateStatus: () => true
-    };
-    if (req.method !== 'GET' && req.method !== 'HEAD' && req.body && Object.keys(req.body).length) opts.data = req.body;
-    const jr = await axios(opts);
-    const ct = String(jr.headers?.['content-type'] || '').toLowerCase();
-    if (ct.includes('application/json')) {
-      try { return res.status(jr.status).json(jr.data ? JSON.parse(jr.data) : {}); }
-      catch (_) { return res.status(jr.status).send(jr.data ?? ''); }
+    const qIndex = req.url.indexOf('?');
+    const pathOnly = qIndex >= 0 ? req.url.slice(0, qIndex) : req.url;
+    const queryStr = qIndex >= 0 ? req.url.slice(qIndex) : '';
+    // Hard-cut: populator workflows are Java-first (no .NET populator intermediates).
+    let javaPath = null;
+    if (/^\/images\/test-keys$/i.test(pathOnly)) javaPath = '/test-keys';
+    else if (/^\/images\/search$/i.test(pathOnly)) javaPath = '/search';
+    else if (/^\/images\/populate$/i.test(pathOnly)) javaPath = '/populate';
+    else if (/^\/images\/populate\/ship\/\d+$/i.test(pathOnly)) javaPath = pathOnly.replace(/^\/images/i, '');
+    else if (/^\/images\/populate\/captain\/\d+$/i.test(pathOnly)) javaPath = pathOnly.replace(/^\/images/i, '');
+    else if (/^\/images\/populate\/wikipedia$/i.test(pathOnly)) javaPath = '/run';
+    else if (/^\/images\/ship\/\d+\/from-url$/i.test(pathOnly)) javaPath = pathOnly.replace(/^\/images\/ship\/(\d+)\/from-url$/i, '/set-from-url/ship/$1');
+    else if (/^\/images\/captain\/\d+\/from-url$/i.test(pathOnly)) javaPath = pathOnly.replace(/^\/images\/captain\/(\d+)\/from-url$/i, '/set-from-url/captain/$1');
+
+    if (javaPath) {
+      const javaUrl = `${IMAGE_POPULATOR_BASE}${javaPath}${queryStr}`;
+      const javaHeaders = { 'Content-Type': 'application/json' };
+      if (req.headers['x-api-key']) javaHeaders['X-API-Key'] = req.headers['x-api-key'];
+      const javaOpts = {
+        method: req.method,
+        url: javaUrl,
+        headers: javaHeaders,
+        responseType: 'text',
+        transformResponse: [data => data],
+        validateStatus: () => true
+      };
+      if (req.method !== 'GET' && req.method !== 'HEAD' && req.body && Object.keys(req.body).length) javaOpts.data = req.body;
+      const jr = await axios(javaOpts);
+      const ct = String(jr.headers?.['content-type'] || '').toLowerCase();
+      if (ct.includes('application/json')) {
+        try {
+          return res.status(jr.status).json(jr.data ? JSON.parse(jr.data) : {});
+        } catch (_) {
+          return res.status(jr.status).send(jr.data ?? '');
+        }
+      }
+      return res.status(jr.status).send(jr.data ?? '');
     }
-    return res.status(jr.status).send(jr.data ?? '');
-  } catch (err) {
-    console.error('ImagePopulator proxy error:', err.message);
-    res.status(502).json({ error: 'ImagePopulator unavailable' });
-  }
-}
 
-async function proxyToApi(req, res) {
-  try {
     const url = `${API_BASE}/api${req.url}`;
-    const headers = { 'Content-Type': 'application/json' };
-    if (req.headers['x-api-key']) headers['X-API-Key'] = req.headers['x-api-key'];
-    const opts = { method: req.method, url, headers, responseType: 'json', validateStatus: () => true };
+      const headers = { 'Content-Type': 'application/json' };
+      if (req.headers['x-api-key']) headers['X-API-Key'] = req.headers['x-api-key'];
+      const opts = {
+        method: req.method,
+        url,
+        headers,
+        responseType: 'json',
+        validateStatus: () => true
+      };
     if (req.method !== 'GET' && req.method !== 'HEAD' && req.body && Object.keys(req.body).length) opts.data = req.body;
-    const r = await axios(opts);
-    res.status(r.status).json(r.data ?? {});
-  } catch (err) {
+      const r = await axios(opts);
+      res.status(r.status).json(r.data ?? {});
+    } catch (err) {
     console.error('API proxy error:', err.message);
     res.status(502).json({ error: 'API unavailable' });
-  }
-}
-
-// from-url: download image in Node, upload binary directly to .NET API (no Java dependency)
-async function handleFromUrl(type, id, req, res) {
-  const { url } = req.body || {};
-  if (!url) return res.status(400).json({ error: 'url required' });
-  try {
-    const imgRes = await axios.get(url, {
-      responseType: 'arraybuffer', timeout: 30000, validateStatus: () => true,
-      headers: { 'User-Agent': 'NavalArchive/1.0 (demo app; https://github.com/michaelwebiscope/battledeck)' }
-    });
-    if (imgRes.status < 200 || imgRes.status >= 300)
-      return res.status(400).json({ error: `Failed to fetch image: HTTP ${imgRes.status}` });
-    const ct = imgRes.headers['content-type'] || 'image/jpeg';
-    const uploadRes = await axios.post(
-      `${API_BASE}/api/images/${type}/${id}/upload`,
-      Buffer.from(imgRes.data),
-      { headers: { 'Content-Type': ct }, responseType: 'json',
-        validateStatus: () => true, maxBodyLength: Infinity, maxContentLength: Infinity }
-    );
-    res.status(uploadRes.status).json(uploadRes.data ?? {});
-  } catch (err) {
-    console.error('from-url error:', err.message);
-    res.status(502).json({ error: err.message });
-  }
-}
-
-// Explicit Java ImagePopulator routes — NR Node agent names each transaction by its route pattern
-app.post('/api/images/test-keys',                   (req, res) => proxyToJava('/test-keys', req, res));
-app.post('/api/images/search',                       (req, res) => proxyToJava('/search', req, res));
-app.post('/api/images/populate',                     (req, res) => proxyToJava('/populate', req, res));
-app.post('/api/images/populate/ship/:id',            (req, res) => proxyToJava(`/populate/ship/${req.params.id}`, req, res));
-app.post('/api/images/populate/captain/:id',         (req, res) => proxyToJava(`/populate/captain/${req.params.id}`, req, res));
-app.post('/api/images/populate/wikipedia',           (req, res) => proxyToJava('/run', req, res));
-app.post('/api/images/ship/:id/from-url',            (req, res) => handleFromUrl('ship',    req.params.id, req, res));
-app.post('/api/images/captain/:id/from-url',         (req, res) => handleFromUrl('captain', req.params.id, req, res));
-
-// Catch-all: everything else proxies to the .NET API
-app.use('/api', proxyToApi);
+    }
+});
 
 // --- Routes ---
 

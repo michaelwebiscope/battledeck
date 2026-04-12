@@ -117,13 +117,7 @@ const HTTP_GET_PATHS = [
   '/ships/1',
   '/ships/9',
   '/classes/1',
-  '/captains/1',
-  '/api/images/audit',
-  '/api/images/populate-queue',
-  '/api/accounts/me',
-  '/api/payment/methods',
-  '/payment-account',
-  '/membership'
+  '/captains/1'
 ];
 
 async function runEndpointSweep(baseURL, log) {
@@ -223,138 +217,6 @@ const FLOWS = [
       await sleep(300);
       await page.goto('/simulation', { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
     }
-  },
-  {
-    name: 'account-register-funds',
-    weight: 2,
-    run: async (page, baseURL) => {
-      const ctx = await playwrightRequest.newContext({ baseURL, ignoreHTTPSErrors: true, timeout: 15000 });
-      // Register a fresh account — response contains apiKey (shown only once)
-      const name = `SimUser_${Date.now()}_${Math.floor(Math.random() * 9999)}`;
-      const email = `${name.toLowerCase()}@sim.test`;
-      const reg = await ctx.post('/api/accounts/register', {
-        data: { name, email, tier: 'sandbox' },
-        headers: { 'Content-Type': 'application/json' }
-      }).catch(() => null);
-      const regStatus = reg?.status() ?? 'err';
-
-      let apiKey = null;
-      if (reg?.status() === 201) {
-        const body = await reg.json().catch(() => null);
-        apiKey = body?.apiKey ?? null;
-      }
-
-      let meStatus = 'skip';
-      let fundsStatus = 'skip';
-      if (apiKey) {
-        // GET /api/accounts/me with real API key
-        const me = await ctx.get('/api/accounts/me', {
-          headers: { 'X-API-Key': apiKey }
-        }).catch(() => null);
-        meStatus = me?.status() ?? 'err';
-
-        // Add funds to the new account
-        const funds = await ctx.post('/api/accounts/funds', {
-          data: { amount: 100 },
-          headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey }
-        }).catch(() => null);
-        fundsStatus = funds?.status() ?? 'err';
-      }
-
-      await ctx.dispose();
-      await page.goto('/payment-account', { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
-      await sleep(200);
-      await page.goto('/membership', { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
-      return `register=${regStatus} me=${meStatus} funds=${fundsStatus}`;
-    }
-  },
-  {
-    name: 'payment-simulate',
-    weight: 2,
-    run: async (page, baseURL) => {
-      const ctx = await playwrightRequest.newContext({ baseURL, ignoreHTTPSErrors: true, timeout: 15000 });
-
-      // Register an account first to get an API key
-      const name = `PaySim_${Date.now()}_${Math.floor(Math.random() * 9999)}`;
-      const reg = await ctx.post('/api/accounts/register', {
-        data: { name, email: `${name.toLowerCase()}@sim.test`, tier: 'sandbox' },
-        headers: { 'Content-Type': 'application/json' }
-      }).catch(() => null);
-      const apiKey = reg?.status() === 201 ? (await reg.json().catch(() => null))?.apiKey : null;
-
-      // Simulate a payment (public endpoint — no auth needed)
-      const sim = await ctx.post('/api/payments/simulate', {
-        data: {
-          amount: Math.floor(Math.random() * 200) + 10,
-          currency: 'USD',
-          description: `Traffic sim purchase ${Date.now()}`
-        },
-        headers: { 'Content-Type': 'application/json' }
-      }).catch(() => null);
-      const simStatus = sim?.status() ?? 'err';
-
-      // Check transaction status if simulate returned one
-      let statusCheck = 'skip';
-      if (sim?.status() === 200 || sim?.status() === 201) {
-        const simBody = await sim.json().catch(() => null);
-        const txId = simBody?.transactionId ?? simBody?.id ?? null;
-        if (txId) {
-          const st = await ctx.get(`/api/payment/status/${txId}`).catch(() => null);
-          statusCheck = st?.status() ?? 'err';
-        }
-      }
-
-      // List payment methods with API key (authenticated)
-      let methodsStatus = 'skip';
-      if (apiKey) {
-        const methods = await ctx.get('/api/payment/methods', {
-          headers: { 'X-API-Key': apiKey }
-        }).catch(() => null);
-        methodsStatus = methods?.status() ?? 'err';
-
-        // Payment history
-        await ctx.get('/api/payment/history', {
-          headers: { 'X-API-Key': apiKey }
-        }).catch(() => null);
-      }
-
-      await ctx.dispose();
-      await page.goto('/checkout', { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
-      await sleep(200);
-      return `simulate=${simStatus} txStatus=${statusCheck} methods=${methodsStatus}`;
-    }
-  },
-  {
-    name: 'image-populate-queue',
-    weight: 1,
-    run: async (page, baseURL) => {
-      const ctx = await playwrightRequest.newContext({ baseURL, ignoreHTTPSErrors: true, timeout: 30000 });
-      // Check what's in the populate queue (read-only — safe to call frequently)
-      const queue = await ctx.get('/api/images/populate-queue').catch(() => null);
-      const queueStatus = queue?.status() ?? 'err';
-
-      // Audit images (read-only)
-      const audit = await ctx.get('/api/images/audit').catch(() => null);
-      const auditStatus = audit?.status() ?? 'err';
-
-      // Trigger image populate only occasionally — this hits Wikipedia externally so
-      // we gate it to roughly once every 5 minutes across all workers using a time bucket.
-      let popStatus = 'skip';
-      const bucketMinute = Math.floor(Date.now() / 300000); // 5-min bucket
-      if (bucketMinute % 5 === 0) {
-        const shipId = Math.floor(Math.random() * 10) + 1;
-        const pop = await ctx.post(`/api/images/populate/ship/${shipId}`, {
-          headers: { 'Content-Type': 'application/json' }
-        }).catch(() => null);
-        popStatus = pop?.status() ?? 'err';
-        await sleep(2000); // extra breathing room after external call
-      }
-
-      await ctx.dispose();
-      await page.goto('/gallery', { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
-      await sleep(500);
-      return `queue=${queueStatus} audit=${auditStatus} populate=${popStatus}`;
-    }
   }
 ];
 
@@ -380,9 +242,9 @@ async function workerLoop({ browser, baseURL, workerId, endTime, maxSessions, lo
     const flow = pickFlow();
     const t0 = Date.now();
     try {
-      const detail = await flow.run(page, baseURL);
+      await flow.run(page);
       sessions++;
-      log(`worker ${workerId} ${flow.name} ok ${Date.now() - t0}ms${detail ? ' ' + detail : ''}`);
+      log(`worker ${workerId} ${flow.name} ok ${Date.now() - t0}ms`);
     } catch (e) {
       errors.push({ workerId, flow: flow.name, err: e.message });
       log(`worker ${workerId} ${flow.name} FAIL: ${e.message}`);

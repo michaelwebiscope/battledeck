@@ -61,21 +61,25 @@
     state: present
     arguments: /quiet
 
-- name: Check ASP.NET Core Hosting
+- name: Check ASP.NET Core Hosting Bundle (verify IIS module DLL exists)
   ansible.windows.win_stat:
-    path: C:\Program Files\IIS\Asp.Net Core Module\V2\aspnetcorev2.dll
-  register: hosting_check
+    path: 'C:\Program Files\IIS\Asp.Net Core Module\V2\aspnetcorev2.dll'
+  register: hosting_dll
 
-- name: Download ASP.NET Core Hosting
+- name: Download ASP.NET Core Hosting Bundle
   ansible.windows.win_get_url:
-    url: https://download.visualstudio.microsoft.com/download/pr/4956ec5e-8502-4454-8f28-40239428820f/e7181890eed8dfa11cefbf817c4e86b0/dotnet-hosting-8.0.11-win.exe
+    url: https://aka.ms/dotnet/8.0/dotnet-hosting-win.exe
     dest: "{{ ansible_env.TEMP }}\\hosting.exe"
-  when: not hosting_check.stat.exists
+    follow_redirects: all
+  when: not hosting_dll.stat.exists
 
-- name: Install ASP.NET Core Hosting
+- name: Install ASP.NET Core Hosting Bundle
   ansible.windows.win_shell: |
     Start-Process -FilePath "{{ ansible_env.TEMP }}\hosting.exe" -ArgumentList "/install", "/quiet", "/norestart" -Wait
-  when: not hosting_check.stat.exists
+    & iisreset /restart
+  args:
+    executable: powershell
+  when: not hosting_dll.stat.exists
 
 - name: Download ARR
   ansible.windows.win_get_url:

@@ -26,6 +26,23 @@
     - "{{ chain_paths.Shipping }}"
     - "{{ chain_paths.Notification }}"
 
+- name: Check if API dll already exists in deploy path
+  ansible.windows.win_stat:
+    path: "{{ api_path }}\\NavalArchive.Api.dll"
+  register: api_dll_exists
+
+- name: Check if chain service EXEs already exist
+  ansible.windows.win_shell: |
+    $missing = @()
+    {% for item in chain_services %}
+    if (-not (Test-Path "{{ chain_paths[item.path_key] }}\\{{ item.exe }}")) { $missing += "{{ item.path_key }}" }
+    {% endfor %}
+    if ($missing.Count -gt 0) { Write-Output "missing:$($missing -join ',')" } else { Write-Output "allpresent" }
+  args:
+    executable: powershell
+  register: chain_exe_check
+  changed_when: false
+
 - name: Stop IIS API site for build
   ansible.windows.win_shell: |
     $appcmd = if (Test-Path "$env:windir\SysNative\inetsrv\appcmd.exe") { "$env:windir\SysNative\inetsrv\appcmd.exe" } else { "$env:windir\System32\inetsrv\appcmd.exe" }
@@ -39,7 +56,7 @@
   poll: 5
   ignore_errors: true
   ignore_unreachable: true
-  when: api_changed | default(true)
+  when: api_changed | default(true) or not api_dll_exists.stat.exists
 
 - name: Stop IIS chain sites/app pools before publish (avoid locked dlls)
   ansible.windows.win_shell: |
@@ -56,7 +73,7 @@
   poll: 5
   ignore_errors: true
   ignore_unreachable: true
-  when: chain_changed | default(true)
+  when: chain_changed | default(true) or 'missing' in (chain_exe_check.stdout | default('missing'))
 
 - name: Clear API output (except logs and DB files)
   ansible.windows.win_shell: |
@@ -65,7 +82,7 @@
     }
   args:
     executable: powershell
-  when: api_changed | default(true)
+  when: api_changed | default(true) or not api_dll_exists.stat.exists
 
 - name: Publish API
   ansible.windows.win_shell: |
@@ -78,7 +95,7 @@
     }
   args:
     executable: powershell
-  when: api_changed | default(true)
+  when: api_changed | default(true) or not api_dll_exists.stat.exists
 
 - name: Publish Payment (self-contained)
   ansible.windows.win_shell: |
@@ -130,6 +147,23 @@
     executable: powershell
   when: cart_changed | default(true)
 
+- name: Check if Web server.js already exists in deploy path
+  ansible.windows.win_stat:
+    path: "{{ web_path }}\\server.js"
+  register: web_serverjs_exists
+
+- name: Check if Go/Java binaries already exist in deploy paths
+  ansible.windows.win_shell: |
+    $missing = @()
+    if (-not (Test-Path "{{ payment_path }}\payment-service.exe")) { $missing += "payment" }
+    if (-not (Test-Path "{{ account_path }}\account-service.exe")) { $missing += "account" }
+    if (-not (Test-Path "{{ image_populator_path }}\image-populator.jar")) { $missing += "imagepop" }
+    if ($missing.Count -gt 0) { Write-Output "missing:$($missing -join ',')" } else { Write-Output "allpresent" }
+  args:
+    executable: powershell
+  register: bin_check
+  changed_when: false
+
 - name: Deploy NavalArchive.Web (copy + npm install)
   ansible.windows.win_shell: |
     $webServerJs = Get-ChildItem "{{ src_path }}" -Filter "server.js" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.DirectoryName -like "*NavalArchive.Web*" } | Select-Object -First 1
@@ -144,7 +178,7 @@
     }
   args:
     executable: powershell
-  when: web_changed | default(true)
+  when: web_changed | default(true) or not web_serverjs_exists.stat.exists
 
 - name: Deploy Go payment-service binary
   ansible.windows.win_shell: |
@@ -155,7 +189,7 @@
     }
   args:
     executable: powershell
-  when: go_payment_changed | default(true)
+  when: go_payment_changed | default(true) or 'payment' in bin_check.stdout
 
 # Write PS1 here (not only in services.yml) so it survives when services.yml is skipped (-skip-services).
 # build.yml wipes payment_path during .NET PaymentSimulation publish, destroying the old PS1.
@@ -174,7 +208,7 @@
     }
   args:
     executable: powershell
-  when: go_account_changed | default(true)
+  when: go_account_changed | default(true) or 'account' in bin_check.stdout
 
 - name: Deploy ImagePopulator jar
   ansible.windows.win_shell: |
@@ -185,7 +219,7 @@
     }
   args:
     executable: powershell
-  when: image_populator_changed | default(true)
+  when: image_populator_changed | default(true) or 'imagepop' in bin_check.stdout
 
 - name: Publish chain microservices
   ansible.windows.win_shell: |
@@ -208,4 +242,4 @@
     label: "{{ item.csproj }}"
   ignore_unreachable: true
   ignore_errors: true
-  when: chain_changed | default(true)
+  when: chain_changed | default(true) or 'missing' in chain_exe_check.stdout

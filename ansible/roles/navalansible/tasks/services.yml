@@ -57,8 +57,8 @@
     timeout: 5
   register: imagepopulator_health
   until: imagepopulator_health.status_code | default(0) == 200
-  retries: 18
-  delay: 5
+  retries: 6
+  delay: 10
   failed_when: false
 
 - name: Report ImagePopulator listener health
@@ -130,15 +130,20 @@
     $port = {{ item.port }}
     $svc = "{{ item.svc }}"
     if (Test-Path "$outPath\$exe") {
+      sc.exe stop $svc 2>$null
+      Start-Sleep -Seconds 2
       sc.exe delete $svc 2>$null
+      Start-Sleep -Seconds 1
       sc.exe create $svc binPath= "$outPath\$exe --urls=http://localhost:$port"
       sc.exe config $svc start= auto
       sc.exe failure $svc reset= 86400 actions= restart/60000/restart/60000/restart/60000
-      sc.exe start $svc
+      $job = Start-Job { sc.exe start $using:svc }
+      Wait-Job $job -Timeout 10 | Out-Null
+      Remove-Job $job -Force
     }
   args:
     executable: powershell
-  async: 60
+  async: 30
   poll: 5
   loop: "{{ chain_services }}"
   loop_control:

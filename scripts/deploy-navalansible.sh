@@ -9,9 +9,9 @@ REPO_ROOT="$(pwd)"
 TFVARS_FILE="$REPO_ROOT/terraform-navalansible/terraform.tfvars"
 TFVARS_FALLBACK_FILE="$REPO_ROOT/terraform/terraform.tfvars"
 
-# Homebrew `python3` often points at a Python without ansible; prefer repo venv if present.
+# Prefer repo venv; fall back through known Python paths that have ansible installed.
 PYTHON_FOR_ANSIBLE=""
-for _py in "$REPO_ROOT/.venv/bin/python3" "$REPO_ROOT/venv/bin/python3"; do
+for _py in "$REPO_ROOT/.venv/bin/python3" "$REPO_ROOT/venv/bin/python3" "/usr/bin/python3"; do
   if [ -x "$_py" ] && "$_py" -c "import ansible" 2>/dev/null; then
     PYTHON_FOR_ANSIBLE="$_py"
     break
@@ -21,8 +21,7 @@ if [ -z "$PYTHON_FOR_ANSIBLE" ] && command -v python3 >/dev/null 2>&1 && python3
   PYTHON_FOR_ANSIBLE="$(command -v python3)"
 fi
 if [ -z "$PYTHON_FOR_ANSIBLE" ]; then
-  echo "ERROR: ansible is not installed for any candidate Python interpreter."
-  echo "  Example: cd \"$REPO_ROOT\" && python3 -m venv .venv && . .venv/bin/activate && pip install 'ansible>=6' pywinrm"
+  echo "ERROR: ansible not found. Install it: pip install 'ansible>=6' pywinrm"
   exit 1
 fi
 
@@ -35,8 +34,8 @@ NEWRELIC_APP_ONLY=false
 UPDATE_SERVICES=true
 GO_ONLY=false
 SKIP_WINRM_CHECK=false
-# Staged = multiple short ansible-playbook runs (new WinRM session each stage). Default on — long single sessions hang often.
-STAGED=true
+# Staged = multiple short ansible-playbook runs (new WinRM session each stage). Disabled — async timeouts on all tasks make single session stable.
+STAGED=false
 while [ $# -gt 0 ]; do
   case "$1" in
     -fullrun|--fullrun)
@@ -239,7 +238,7 @@ fi
 cd ansible
 
 run_ansible() {
-  "$PYTHON_FOR_ANSIBLE" -m ansible playbook "$@"
+  ANSIBLE_CALLBACKS_ENABLED=profile_tasks "$PYTHON_FOR_ANSIBLE" -m ansible playbook -v "$@"
   local rc=$?
   # Exit codes: 0=ok, 2=task failed, 4=unreachable (WinRM timeout on slow compile is ok)
   # Only abort on genuine task failures (rc=2) or parse errors (rc=1). Allow rc=4 (unreachable).
