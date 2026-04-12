@@ -7,9 +7,10 @@
   register: pg_service_info
 
 - name: Install PostgreSQL 16 via Chocolatey
-  chocolatey.chocolatey.win_chocolatey:
-    name: postgresql16
-    state: present
-    params: "/Password:postgres_admin"
-    timeout: 1200
+  ansible.windows.win_shell: |
+    $env:Path = [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User")
+    choco install postgresql16 -y --no-progress --params "/Password:postgres_admin" --timeout 600
+    if ($LASTEXITCODE -ne 0) { throw "choco install postgresql16 failed with exit code $LASTEXITCODE" }
+  args:
+    executable: powershell
   when: pg_service_info.services | length == 0

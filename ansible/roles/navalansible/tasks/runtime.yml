@@ -14,29 +14,42 @@
     executable: powershell
   register: choco_install
 
+- name: Check which Chocolatey packages are already installed
+  ansible.windows.win_shell: |
+    $installed = choco list --local-only --id-only 2>$null
+    Write-Output ($installed -join ',')
+  args:
+    executable: powershell
+  register: choco_local
+  changed_when: false
+
 - name: Install .NET 8 SDK
   chocolatey.chocolatey.win_chocolatey:
     name: dotnet-8.0-sdk
     state: present
     timeout: 7200
+  when: "'dotnet-8.0-sdk' not in choco_local.stdout"
 
 - name: Install Node.js LTS
   chocolatey.chocolatey.win_chocolatey:
     name: nodejs-lts
     state: present
     timeout: 7200
+  when: "'nodejs-lts' not in choco_local.stdout"
 
 - name: Install Java 17 (Corretto - temurin17 not in Choco 1.4)
   chocolatey.chocolatey.win_chocolatey:
     name: corretto17jdk
     state: present
     timeout: 7200
+  when: "'corretto17jdk' not in choco_local.stdout"
 
 - name: Install Git
   chocolatey.chocolatey.win_chocolatey:
     name: git
     state: present
     timeout: 3600
+  when: "'git' not in choco_local.stdout"
 
 - name: Install IIS and features
   ansible.windows.win_feature:
