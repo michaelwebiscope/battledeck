@@ -1,16 +1,30 @@
 ---
-# Heavy download — keep in its own staged playbook so WinRM reconnects after install.
-# Check via Windows Service — faster and more reliable than choco list (no network, no PATH issues).
-- name: Check if PostgreSQL service already exists
-  ansible.windows.win_service_info:
-    name: "postgresql*"
-  register: pg_service_info
+# Install PostgreSQL 16 from official ZIP binaries (no Chocolatey, no EDB installer).
+# .NET ZipFile extract: ~3.5 min vs ~10 min with Chocolatey on a 4GB VM.
+- name: Check if PostgreSQL binaries already exist
+  ansible.windows.win_stat:
+    path: 'C:\Program Files\PostgreSQL\16\bin\psql.exe'
+  register: pg_bin_exists
 
-- name: Install PostgreSQL 16 via Chocolatey
+- name: Download and extract PostgreSQL 16 ZIP binaries
   ansible.windows.win_shell: |
-    $env:Path = [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User")
-    choco install postgresql16 -y --no-progress --params "/Password:postgres_admin" --timeout 600
-    if ($LASTEXITCODE -ne 0) { throw "choco install postgresql16 failed with exit code $LASTEXITCODE" }
+    $pgDir = 'C:\Program Files\PostgreSQL\16'
+    $zip = "{{ ansible_env.TEMP }}\pg16.zip"
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    (New-Object Net.WebClient).DownloadFile('https://get.enterprisedb.com/postgresql/postgresql-16.8-1-windows-x64-binaries.zip', $zip)
+    New-Item -ItemType Directory -Force -Path $pgDir | Out-Null
+    Add-Type -Assembly System.IO.Compression.FileSystem
+    $extractDir = "{{ ansible_env.TEMP }}\pg16x"
+    if (Test-Path $extractDir) { Remove-Item $extractDir -Recurse -Force }
+    [System.IO.Compression.ZipFile]::ExtractToDirectory($zip, $extractDir)
+    Copy-Item "$extractDir\pgsql\*" -Destination $pgDir -Recurse -Force
+    Remove-Item $zip, $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+    $path = [Environment]::GetEnvironmentVariable("Path", "Machine")
+    if ($path -notlike "*PostgreSQL*") {
+      [Environment]::SetEnvironmentVariable("Path", "$path;$pgDir\bin", "Machine")
+    }
   args:
     executable: powershell
-  when: pg_service_info.services | length == 0
+  async: 600
+  poll: 15
+  when: not pg_bin_exists.stat.exists

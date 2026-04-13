@@ -29,6 +29,8 @@
     exit $LASTEXITCODE
   args:
     executable: powershell
+  async: 600
+  poll: 15
   when: not git_dir.stat.exists
 
 - name: Git fetch and detect changes (subsequent runs)

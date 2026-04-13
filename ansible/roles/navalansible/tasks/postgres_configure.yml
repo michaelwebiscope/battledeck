@@ -1,5 +1,5 @@
 ---
-# Runs after postgres_install.yml (separate WinRM session when staged).
+# Runs after postgres_install.yml. Initializes pgdata, creates service, role.
 - name: Stop any existing PostgreSQL services before init
   ansible.windows.win_shell: |
     Get-Service | Where-Object { $_.Name -like 'postgresql*' } | ForEach-Object {
@@ -29,13 +29,26 @@
     executable: powershell
   when: not pg_data_exists.stat.exists
 
-- name: Reconfigure all PostgreSQL services to use C:\pgdata
-  # Chocolatey may register postgresql-x64-16 pointing at the unwritable
-  # Program Files path. Update every postgresql* service to use C:\pgdata.
+- name: Create PostgreSQL Windows service if missing
   ansible.windows.win_shell: |
+    $svc = Get-Service | Where-Object { $_.Name -like 'postgresql*' } | Select-Object -First 1
+    if (-not $svc) {
+      $short = (New-Object -ComObject Scripting.FileSystemObject).GetFolder("C:\Program Files\PostgreSQL\16\bin").ShortPath
+      cmd /c "sc.exe create postgresql-x64-16 binPath= `"$short\pg_ctl.exe runservice -N postgresql-x64-16 -D C:\pgdata -w`" start= auto"
+      Write-Output "created"
+    } else {
+      Write-Output "exists:$($svc.Name)"
+    }
+  args:
+    executable: powershell
+  register: pg_svc_create
+
+- name: Reconfigure all PostgreSQL services to use C:\pgdata
+  ansible.windows.win_shell: |
+    $short = (New-Object -ComObject Scripting.FileSystemObject).GetFolder("C:\Program Files\PostgreSQL\16\bin").ShortPath
     Get-Service | Where-Object { $_.Name -like 'postgresql*' } | ForEach-Object {
       $name = $_.Name
-      sc.exe config $name binPath= "`"C:\Program Files\PostgreSQL\16\bin\pg_ctl.exe`" runservice -N `"$name`" -D `"C:\pgdata`" -w" | Out-Null
+      cmd /c "sc.exe config $name binPath= `"$short\pg_ctl.exe runservice -N $name -D C:\pgdata -w`""
       sc.exe config $name start= auto | Out-Null
     }
   args:
@@ -63,9 +76,6 @@
     executable: powershell
 
 - name: Create navalarchive role
-  # Do NOT pre-create the database — EF Core's EnsureCreated() must create it
-  # so it also creates all tables in one pass. Pre-creating the DB causes
-  # EnsureCreated() to skip table creation entirely.
   ansible.windows.win_shell: |
     $env:PGPASSWORD = 'postgres_admin'
     $psql = 'C:\Program Files\PostgreSQL\16\bin\psql.exe'

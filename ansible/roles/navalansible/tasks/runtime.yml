@@ -14,13 +14,19 @@
     executable: powershell
   register: choco_install
 
-- name: Check which Chocolatey packages are already installed
+- name: Check which runtimes are already present (bootstrap installs via direct download, not Chocolatey)
   ansible.windows.win_shell: |
-    $installed = choco list --local-only --id-only 2>$null
-    Write-Output ($installed -join ',')
+    $missing = @()
+    if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) { $missing += 'dotnet' }
+    if (-not (Get-Command node -ErrorAction SilentlyContinue)) { $missing += 'node' }
+    if (-not (Get-Command java -ErrorAction SilentlyContinue)) { $missing += 'java' }
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) { $missing += 'git' }
+    $iis = Get-WindowsFeature Web-Server -ErrorAction SilentlyContinue
+    if ($iis.InstallState -ne 'Installed') { $missing += 'iis' }
+    if ($missing.Count -eq 0) { Write-Output 'allpresent' } else { Write-Output "missing:$($missing -join ',')" }
   args:
     executable: powershell
-  register: choco_local
+  register: runtime_check
   changed_when: false
 
 - name: Install .NET 8 SDK
@@ -28,28 +34,28 @@
     name: dotnet-8.0-sdk
     state: present
     timeout: 7200
-  when: "'dotnet-8.0-sdk' not in choco_local.stdout"
+  when: "'dotnet' in runtime_check.stdout"
 
 - name: Install Node.js LTS
   chocolatey.chocolatey.win_chocolatey:
     name: nodejs-lts
     state: present
     timeout: 7200
-  when: "'nodejs-lts' not in choco_local.stdout"
+  when: "'node' in runtime_check.stdout"
 
 - name: Install Java 17 (Corretto - temurin17 not in Choco 1.4)
   chocolatey.chocolatey.win_chocolatey:
     name: corretto17jdk
     state: present
     timeout: 7200
-  when: "'corretto17jdk' not in choco_local.stdout"
+  when: "'java' in runtime_check.stdout"
 
 - name: Install Git
   chocolatey.chocolatey.win_chocolatey:
     name: git
     state: present
     timeout: 3600
-  when: "'git' not in choco_local.stdout"
+  when: "'git' in runtime_check.stdout"
 
 - name: Install IIS and features
   ansible.windows.win_feature:
@@ -61,6 +67,7 @@
     - Web-Asp-Net45
     - Web-WebSockets
     - Web-Scripting-Tools
+  when: "'iis' in runtime_check.stdout"
 
 - name: Download URL Rewrite
   ansible.windows.win_get_url:
