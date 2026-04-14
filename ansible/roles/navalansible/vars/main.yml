@@ -70,11 +70,11 @@ iis_hosted_service_names:
   - NavalArchiveBasket
 
 # OpenTelemetry (.NET auto-instrumentation) defaults for non-IIS services
-# Send OTLP directly to New Relic; requires api-key header via OTEL_EXPORTER_OTLP_HEADERS
-# US: https://otlp.nr-data.net | EU: https://otlp.eu01.nr-data.net
-#
-# Infinite Tracing: send OTLP to the Trace Observer (port 443).
-otel_exporter_otlp_endpoint: "https://{{ newrelic_trace_observer_host }}"
+# Metrics and logs always go to standard NR OTLP ingest (otlp.nr-data.net).
+# Traces go to Trace Observer when newrelic_trace_observer_host is set (per-signal override),
+# otherwise fall back to the same standard endpoint.
+otel_exporter_otlp_endpoint: "https://otlp.nr-data.net"
+otel_exporter_otlp_traces_endpoint: "{% if newrelic_trace_observer_host is defined and newrelic_trace_observer_host | length > 0 %}https://{{ newrelic_trace_observer_host }}{% else %}https://otlp.nr-data.net{% endif %}"
 otel_exporter_otlp_protocol: http/protobuf
 otel_dotnet_auto_home: C:\Program Files\OpenTelemetry .NET AutoInstrumentation
 # Pin to v1.9.0 — last release using DiagnosticSource 8.x (compatible with self-contained .NET 8 apps)
@@ -86,6 +86,7 @@ otel_dotnet_auto_version: "1.9.0"
 otel_common_env_vars:
   - "OTEL_DOTNET_AUTO_HOME={{ otel_dotnet_auto_home }}"
   - "OTEL_EXPORTER_OTLP_ENDPOINT={{ otel_exporter_otlp_endpoint }}"
+  - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT={{ otel_exporter_otlp_traces_endpoint }}"
   - "OTEL_EXPORTER_OTLP_PROTOCOL={{ otel_exporter_otlp_protocol }}"
   - "OTEL_TRACES_EXPORTER=otlp"
   - "OTEL_METRICS_EXPORTER=otlp"
