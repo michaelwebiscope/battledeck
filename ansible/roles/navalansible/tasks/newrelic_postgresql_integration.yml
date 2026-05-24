@@ -6,6 +6,32 @@
 - name: New Relic PostgreSQL on-host integration (DB user + config + agent restart)
   when: newrelic_postgres_monitor_password | default('') | length > 0
   block:
+    - name: Detect nri-postgresql integration binary
+      ansible.windows.win_shell: |
+        $candidates = @(
+          'C:\Program Files\New Relic\newrelic-infra\newrelic-integrations\nri-postgresql\nri-postgresql.exe',
+          'C:\Program Files\New Relic\newrelic-infra\integrations\nri-postgresql\nri-postgresql.exe'
+        )
+        foreach ($p in $candidates) { if (Test-Path $p) { Write-Output $p; exit 0 } }
+        exit 1
+      register: nri_postgresql_binary
+      failed_when: false
+      changed_when: false
+
+    - name: Install nri-postgresql MSI (Windows amd64)
+      when: nri_postgresql_binary.rc != 0
+      block:
+        - name: Download nri-postgresql MSI
+          ansible.windows.win_get_url:
+            url: "{{ newrelic_postgresql_msi_url | default('https://github.com/newrelic/nri-postgresql/releases/download/v2.28.0/nri-postgresql-amd64.2.28.0.msi') }}"
+            dest: C:\Windows\Temp\nri-postgresql-amd64.msi
+
+        - name: Run nri-postgresql MSI installer
+          ansible.windows.win_package:
+            path: C:\Windows\Temp\nri-postgresql-amd64.msi
+            state: present
+            arguments: /qn
+
     - name: Write SQL script for New Relic monitoring role (new_relic)
       ansible.windows.win_template:
         src: new_relic_monitor_role.sql.j2

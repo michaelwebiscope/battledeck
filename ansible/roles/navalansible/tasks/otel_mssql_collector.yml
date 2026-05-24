@@ -1,0 +1,112 @@
+---
+# OpenTelemetry Collector Contrib with sqlserver receiver → New Relic OTLP.
+# Complements nri-mssql (OHI). Uses the same new_relic SQL login.
+# Requires: newrelic_license_key, newrelic_mssql_monitor_password, newrelic_mssql_port.
+
+- name: OpenTelemetry SQL Server collector (contrib sqlserver receiver)
+  when:
+    - newrelic_mssql_otel_enabled | default(true) | bool
+    - newrelic_mssql_monitor_password | default('') | length > 0
+    - newrelic_license_key | default('') | length > 0
+  block:
+    - name: Ensure New Relic MSSQL integration is configured (login + port)
+      ansible.builtin.include_role:
+        name: navalansible
+        tasks_from: newrelic_mssql_integration
+
+    - name: Grant OTel sqlserver receiver permissions to new_relic login
+      ansible.windows.win_shell: |
+        $sqlcmd = Get-ChildItem 'C:\Program Files\Microsoft SQL Server' -Recurse -Filter sqlcmd.exe -ErrorAction SilentlyContinue |
+          Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+        if (-not $sqlcmd) { throw 'sqlcmd.exe not found' }
+        $server = 'localhost\{{ mssql_instance_name | default("SQLEXPRESS") }}'
+        & $sqlcmd -S $server -U sa -C -Q "GRANT VIEW ANY DATABASE TO [new_relic]; GRANT VIEW SERVER PERFORMANCE STATE TO [new_relic];" 2>&1
+      args:
+        executable: powershell
+      environment:
+        SQLCMDPASSWORD: "{{ mssql_sa_password }}"
+      register: otel_mssql_grants
+      changed_when: false
+      failed_when: false
+
+    - name: Create OpenTelemetry Collector install directory
+      ansible.windows.win_file:
+        path: '{{ otelcol_install_dir }}'
+        state: directory
+
+    - name: Check installed otelcol-contrib version
+      ansible.windows.win_shell: |
+        $exe = '{{ otelcol_install_dir }}\otelcol-contrib.exe'
+        if (-not (Test-Path $exe)) { Write-Output 'not_installed'; exit 0 }
+        & $exe --version 2>&1 | Select-Object -First 1
+      args:
+        executable: powershell
+      register: otelcol_current_version
+      changed_when: false
+
+    - name: Download otelcol-contrib Windows archive
+      ansible.windows.win_get_url:
+        url: "{{ otelcol_contrib_download_url | default('https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v' ~ otelcol_contrib_version ~ '/otelcol-contrib_' ~ otelcol_contrib_version ~ '_windows_amd64.tar.gz') }}"
+        dest: C:\Windows\Temp\otelcol-contrib_windows_amd64.tar.gz
+      when: >
+        otelcol_current_version.stdout | trim == 'not_installed'
+        or otelcol_contrib_version not in (otelcol_current_version.stdout | default(''))
+
+    - name: Extract otelcol-contrib binary
+      ansible.windows.win_shell: |
+        tar -xzf C:\Windows\Temp\otelcol-contrib_windows_amd64.tar.gz -C '{{ otelcol_install_dir }}'
+        $exe = Get-ChildItem '{{ otelcol_install_dir }}' -Recurse -Filter otelcol-contrib.exe -ErrorAction SilentlyContinue |
+          Select-Object -First 1 -ExpandProperty FullName
+        if (-not $exe) { throw 'otelcol-contrib.exe not found after extract' }
+        if ($exe -ne '{{ otelcol_install_dir }}\otelcol-contrib.exe') {
+          Move-Item -Force $exe '{{ otelcol_install_dir }}\otelcol-contrib.exe'
+        }
+      args:
+        executable: powershell
+      when: >
+        otelcol_current_version.stdout | trim == 'not_installed'
+        or otelcol_contrib_version not in (otelcol_current_version.stdout | default(''))
+
+    - name: Deploy otelcol-contrib MSSQL config
+      ansible.windows.win_template:
+        src: otelcol_mssql_config.yaml.j2
+        dest: '{{ otelcol_install_dir }}\config-mssql.yaml'
+
+    - name: Validate otelcol-contrib MSSQL config
+      ansible.windows.win_shell: |
+        & '{{ otelcol_install_dir }}\otelcol-contrib.exe' validate --config '{{ otelcol_install_dir }}\config-mssql.yaml'
+      args:
+        executable: powershell
+      register: otelcol_validate
+      changed_when: false
+
+    - name: Install or update otelcol-contrib Windows service
+      ansible.windows.win_shell: |
+        $svc = '{{ otelcol_mssql_service_name }}'
+        $dir = '{{ otelcol_install_dir }}'
+        $exe = Join-Path $dir 'otelcol-contrib.exe'
+        $cfg = Join-Path $dir 'config-mssql.yaml'
+        if (-not (Test-Path $exe)) { throw "Missing $exe" }
+        if (-not (Test-Path $cfg)) { throw "Missing $cfg" }
+        $existing = Get-Service -Name $svc -ErrorAction SilentlyContinue
+        if ($existing) {
+          Stop-Service -Name $svc -Force -ErrorAction SilentlyContinue
+          sc.exe delete $svc | Out-Null
+          Start-Sleep -Seconds 2
+        }
+        $binPath = "`"$exe`" --config `"$cfg`""
+        New-Service -Name $svc -BinaryPathName $binPath -DisplayName 'OpenTelemetry SQL Server Collector' -StartupType Automatic | Out-Null
+        sc.exe failure $svc reset= 86400 actions= restart/60000/restart/60000/restart/60000 | Out-Null
+        Start-Service -Name $svc
+        Start-Sleep -Seconds 2
+        (Get-Service -Name $svc).Status
+      args:
+        executable: powershell
+      register: otelcol_service
+      changed_when: true
+
+    - name: Report OpenTelemetry MSSQL collector status
+      ansible.builtin.debug:
+        msg: >-
+          otelcol-contrib sqlserver receiver deployed (port={{ newrelic_mssql_port }},
+          service={{ otelcol_mssql_service_name }}, status={{ otelcol_service.stdout | trim }})

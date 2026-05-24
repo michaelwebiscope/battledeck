@@ -1,0 +1,28 @@
+---
+# Stop and disable PostgreSQL (legacy) after migration to SQL Server.
+- name: List PostgreSQL Windows services
+  ansible.windows.win_shell: |
+    Get-Service | Where-Object { $_.Name -like 'postgresql*' } | ForEach-Object { $_.Name }
+  args:
+    executable: powershell
+  register: postgres_services
+  changed_when: false
+
+- name: Stop and disable PostgreSQL services
+  ansible.windows.win_service:
+    name: "{{ item }}"
+    state: stopped
+    start_mode: disabled
+  loop: "{{ postgres_services.stdout_lines | default([]) | select('match', '.+') | list }}"
+  when: postgres_services.stdout_lines | default([]) | length > 0
+
+- name: Remove New Relic PostgreSQL integration config
+  ansible.windows.win_file:
+    path: 'C:\Program Files\New Relic\newrelic-infra\integrations.d\postgresql-config.yml'
+    state: absent
+
+- name: Report PostgreSQL stop result
+  ansible.builtin.debug:
+    msg: >-
+      PostgreSQL services stopped/disabled:
+      {{ postgres_services.stdout_lines | default(['(none found)']) | join(', ') }}

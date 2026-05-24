@@ -1,0 +1,43 @@
+---
+# Hotfix: image search returns empty because Node bypassed API and omitted ImageSources.
+- hosts: navalansible
+  gather_facts: no
+  vars:
+    repo_root: "{{ playbook_dir }}/../.."
+    web_path: C:\inetpub\navalarchive-web
+  tasks:
+    - name: Deploy fixed server.js
+      ansible.windows.win_copy:
+        src: "{{ repo_root }}/NavalArchive.Web/server.js"
+        dest: "{{ web_path }}\\server.js"
+
+    - name: Deploy fixed admin-images.ejs
+      ansible.windows.win_copy:
+        src: "{{ repo_root }}/NavalArchive.Web/views/admin-images.ejs"
+        dest: "{{ web_path }}\\views\\admin-images.ejs"
+
+    - name: Deploy fixed admin-images-search-frame.ejs
+      ansible.windows.win_copy:
+        src: "{{ repo_root }}/NavalArchive.Web/views/admin-images-search-frame.ejs"
+        dest: "{{ web_path }}\\views\\admin-images-search-frame.ejs"
+
+    - name: Restart Node web process
+      ansible.windows.win_shell: |
+        Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue |
+          ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
+        Start-Sleep -Seconds 2
+        Start-ScheduledTask -TaskName "NavalArchiveWeb-Node" -ErrorAction SilentlyContinue
+      args:
+        executable: powershell
+      async: 60
+      poll: 10
+
+    - name: Wait for web health
+      ansible.windows.win_uri:
+        url: http://localhost:3000/
+        method: GET
+        status_code: [200, 301, 302, 404]
+      register: web_health
+      until: web_health.status_code is defined
+      retries: 12
+      delay: 5

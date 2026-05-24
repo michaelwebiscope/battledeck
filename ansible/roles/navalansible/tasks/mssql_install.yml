@@ -1,0 +1,87 @@
+---
+# Install SQL Server Express (SQLEXPRESS) using Microsoft's SSEI bootstrapper + setup.exe.
+- name: Check if SQL Server Express is installed
+  ansible.windows.win_shell: |
+    if (Get-Service -Name 'MSSQL$SQLEXPRESS' -ErrorAction SilentlyContinue) { exit 0 }
+    $engine = Get-ChildItem 'C:\Program Files\Microsoft SQL Server' -Recurse -Filter sqlservr.exe -ErrorAction SilentlyContinue |
+      Where-Object { $_.FullName -match 'SQLEXPRESS' } |
+      Select-Object -First 1
+    if ($engine) { exit 0 }
+    exit 1
+  args:
+    executable: powershell
+  register: mssql_installed
+  failed_when: false
+  changed_when: false
+
+- name: Fail when SQL Server install required but mssql_sa_password is missing
+  ansible.builtin.fail:
+    msg: "Set mssql_sa_password in terraform.tfvars (SA password for SQL Server Express install)."
+  when:
+    - mssql_installed.rc != 0
+    - mssql_sa_password | default('') | length == 0
+
+- name: Download SQL Server Express bootstrapper
+  ansible.windows.win_get_url:
+    url: https://go.microsoft.com/fwlink/?linkid=2216019
+    dest: C:\Windows\Temp\SQL2022-SSEI-Expr.exe
+  when: mssql_installed.rc != 0
+
+- name: Download SQL Server Express install media
+  ansible.windows.win_shell: |
+    $media = 'C:/SqlInstall2022'
+    New-Item -ItemType Directory -Force -Path 'C:\SqlInstall2022' | Out-Null
+    $argList = "/ACTION=Download /MEDIAPATH=$media /MEDIATYPE=Core /QUIET"
+    $p = Start-Process -FilePath 'C:\Windows\Temp\SQL2022-SSEI-Expr.exe' -ArgumentList $argList -Wait -PassThru -NoNewWindow
+    if ($p.ExitCode -ne 0) { throw "SQL media download failed with exit code $($p.ExitCode)" }
+  args:
+    executable: powershell
+  async: 3600
+  poll: 30
+  when: mssql_installed.rc != 0
+
+- name: Extract SQL Server Express setup files
+  ansible.windows.win_shell: |
+    if (-not (Test-Path 'C:\SqlInstall2022\SQLEXPR\setup.exe')) {
+      New-Item -ItemType Directory -Force -Path 'C:\SqlInstall2022\SQLEXPR' | Out-Null
+      $argList = "/q /x:C:/SqlInstall2022/SQLEXPR"
+      $p = Start-Process -FilePath 'C:\SqlInstall2022\SQLEXPR_x64_ENU.exe' -ArgumentList $argList -Wait -PassThru -NoNewWindow
+      if ($p.ExitCode -ne 0) { throw "SQLEXPR extract failed with exit code $($p.ExitCode)" }
+    }
+  args:
+    executable: powershell
+  async: 1800
+  poll: 15
+  when: mssql_installed.rc != 0
+
+- name: Run SQL Server Express setup.exe (silent, skip Windows Update check)
+  ansible.windows.win_shell: |
+    $setup = 'C:\SqlInstall2022\SQLEXPR\setup.exe'
+    if (-not (Test-Path $setup)) {
+      $setupObj = Get-ChildItem 'C:\SqlInstall2022' -Recurse -Filter setup.exe -ErrorAction SilentlyContinue |
+        Sort-Object FullName -Descending |
+        Select-Object -First 1
+      if (-not $setupObj) { throw 'setup.exe not found under C:\SqlInstall2022 after media download/extract' }
+      $setup = $setupObj.FullName
+    }
+    $sa = '{{ mssql_sa_password }}'
+    $argList = @(
+      '/Q',
+      '/ACTION=Install',
+      '/IACCEPTSQLSERVERLICENSETERMS=true',
+      '/FEATURES=SQLENGINE',
+      '/INSTANCENAME=SQLEXPRESS',
+      '/SECURITYMODE=SQL',
+      "/SAPWD=$sa",
+      '/TCPENABLED=1',
+      '/UpdateEnabled=False',
+      '/UseMicrosoftUpdate=0',
+      '/SQLSYSADMINACCOUNTS=BUILTIN\Administrators'
+    ) -join ' '
+    $p = Start-Process -FilePath $setup -ArgumentList $argList -Wait -PassThru -NoNewWindow
+    if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { throw "SQL Server install failed with exit code $($p.ExitCode)" }
+  args:
+    executable: powershell
+  async: 3600
+  poll: 30
+  when: mssql_installed.rc != 0

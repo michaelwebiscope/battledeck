@@ -1,0 +1,13 @@
+---
+- name: Deploy API web.config (connection strings / provider)
+  ansible.windows.win_template:
+    src: webconfig_api.j2
+    dest: "{{ api_path }}\\web.config"
+
+- name: Recycle NavalArchive-API app pool
+  ansible.windows.win_shell: |
+    $appcmd = if (Test-Path "$env:windir\SysNative\inetsrv\appcmd.exe") { "$env:windir\SysNative\inetsrv\appcmd.exe" } else { "$env:windir\System32\inetsrv\appcmd.exe" }
+    & $appcmd recycle apppool /apppool.name:NavalArchive-API
+    Start-Sleep -Seconds 8
+  args:
+    executable: powershell

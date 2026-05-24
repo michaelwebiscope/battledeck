@@ -16,13 +16,30 @@
     NEW_RELIC_API_KEY: "{{ newrelic_api_key }}"
     NEW_RELIC_ACCOUNT_ID: "{{ newrelic_account_id }}"
     NEW_RELIC_REGION: "{{ newrelic_region | default('US') }}"
+    NEW_RELIC_LICENSE_KEY: "{{ newrelic_license_key | default('') }}"
   tasks:
     - name: Install infrastructure, logs, and .NET APM agent
       ansible.builtin.include_role:
         name: newrelic.newrelic_install
       ignore_errors: true
 
-    - name: Deploy New Relic PostgreSQL integration config (optional)
+    - name: Deploy New Relic PostgreSQL integration config (optional, legacy)
       ansible.builtin.include_role:
         name: navalansible
         tasks_from: newrelic_postgresql_integration
+      when: newrelic_postgres_monitor_password | default('') | length > 0
+
+    - name: Deploy New Relic Microsoft SQL Server integration config (optional)
+      ansible.builtin.include_role:
+        name: navalansible
+        tasks_from: newrelic_mssql_integration
+      when: newrelic_mssql_monitor_password | default('') | length > 0
+
+    - name: Deploy OpenTelemetry SQL Server collector (optional)
+      ansible.builtin.include_role:
+        name: navalansible
+        tasks_from: otel_mssql_collector
+      when:
+        - newrelic_mssql_monitor_password | default('') | length > 0
+        - newrelic_license_key | default('') | length > 0
+        - newrelic_mssql_otel_enabled | default(true) | bool

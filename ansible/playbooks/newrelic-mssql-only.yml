@@ -1,0 +1,18 @@
+---
+# Microsoft SQL Server on-host DB monitoring (nri-mssql + new_relic login + mssql-config.yml).
+# Requires: newrelic-infra running, SQL Server Express on the VM.
+#
+# Usage (from repo root):
+#   cd ansible && ../.venv/bin/python3 -m ansible playbook playbooks/newrelic-mssql-only.yml \
+#     -e @/tmp/nr-mssql-vars.json
+#
+# JSON should include: ansible_host, vm_admin_password, mssql_sa_password,
+# newrelic_mssql_monitor_password, and optionally newrelic_mssql_port.
+
+- name: New Relic Microsoft SQL Server DB monitoring
+  hosts: navalansible
+  gather_facts: true
+  tasks:
+    - ansible.builtin.import_role:
+        name: navalansible
+        tasks_from: newrelic_mssql_integration

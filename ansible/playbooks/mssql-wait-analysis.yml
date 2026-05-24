@@ -1,0 +1,45 @@
+---
+# Apply Query Store wait-stats settings and generate load so DB360 Wait Time Analysis receives data.
+- name: Enable MSSQL wait time analysis (DB360)
+  hosts: navalansible
+  gather_facts: true
+  vars:
+    newrelic_mssql_query_store_reset: true
+  tasks:
+    - ansible.builtin.import_role:
+        name: navalansible
+        tasks_from: newrelic_mssql_integration
+
+    - name: Generate SQL workload to populate Query Store wait stats
+      ansible.windows.win_shell: |
+        $sqlcmd = Get-ChildItem 'C:\Program Files\Microsoft SQL Server' -Recurse -Filter sqlcmd.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+        $appPass = '{{ pg_app_password | default("nqaOO6c5jhZNstXHpY2ITijJ") }}'
+        1..30 | ForEach-Object {
+          & $sqlcmd.FullName -S 'localhost\SQLEXPRESS' -U navalarchive -P $appPass -C -Q "SELECT COUNT(*) FROM navalarchive.dbo.Ships WHERE Name LIKE 'A$_%' OR Description LIKE '%ship%'" -h -1 -W 2>$null
+          & $sqlcmd.FullName -S 'localhost\SQLEXPRESS' -U navalarchive -P $appPass -C -Q "SELECT TOP 100 Id, Name FROM navalarchive.dbo.Ships ORDER BY Id DESC" -h -1 -W 2>$null
+          Start-Sleep -Seconds 2
+        }
+        Start-Sleep -Seconds 90
+        Write-Output 'workload complete'
+      args:
+        executable: powershell
+      changed_when: false
+
+    - name: Verify wait stats rows and restart NR agent
+      ansible.windows.win_shell: |
+        $sqlcmd = Get-ChildItem 'C:\Program Files\Microsoft SQL Server' -Recurse -Filter sqlcmd.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+        Write-Output '=== query store status ==='
+        & $sqlcmd.FullName -S 'localhost\SQLEXPRESS' -U sa -C -Q "SELECT name, is_query_store_on FROM sys.databases WHERE name IN ('navalarchive','navalarchive_logs')" -W
+        & $sqlcmd.FullName -S 'localhost\SQLEXPRESS' -U sa -C -Q "USE navalarchive; SELECT actual_state_desc, wait_stats_capture_mode_desc FROM sys.database_query_store_options; USE navalarchive_logs; SELECT actual_state_desc, wait_stats_capture_mode_desc FROM sys.database_query_store_options;" -W
+        Write-Output '=== wait stat counts ==='
+        & $sqlcmd.FullName -S 'localhost\SQLEXPRESS' -U sa -C -Q "USE navalarchive; SELECT COUNT(*) AS navalarchive_waits FROM sys.query_store_wait_stats; USE navalarchive_logs; SELECT COUNT(*) AS navalarchive_logs_waits FROM sys.query_store_wait_stats;" -W -h -1
+        Restart-Service newrelic-infra -Force
+      args:
+        executable: powershell
+      environment:
+        SQLCMDPASSWORD: "{{ mssql_sa_password }}"
+      register: wait_verify
+      changed_when: true
+
+    - ansible.builtin.debug:
+        var: wait_verify.stdout_lines

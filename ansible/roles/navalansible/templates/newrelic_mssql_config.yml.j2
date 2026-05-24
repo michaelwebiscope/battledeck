@@ -1,0 +1,32 @@
+{# New Relic on-host Microsoft SQL Server integration — https://docs.newrelic.com/docs/infrastructure/host-integrations/host-integrations-list/microsoft-sql/ #}
+{# Use VM hostname (not 127.0.0.1) so NR links MSSQL entities to the Infrastructure HOST. #}
+{# endpoint label maps APM/uninstrumented DB nodes to this instance (see db-entity-tags doc). #}
+integrations:
+  - name: nri-mssql
+    env:
+      HOSTNAME: '{{ newrelic_mssql_hostname | default(ansible_hostname) }}'
+      PORT: '{{ newrelic_mssql_port }}'
+      USERNAME: new_relic
+      PASSWORD: '{{ newrelic_mssql_monitor_password }}'
+      ENABLE_SSL: "false"
+      TRUST_SERVER_CERTIFICATE: "true"
+      TIMEOUT: "30"
+      ENABLE_BUFFER_METRICS: "true"
+      ENABLE_DATABASE_RESERVE_METRICS: "true"
+{% if newrelic_mssql_query_monitoring | default(true) | bool %}
+      ENABLE_QUERY_MONITORING: "true"
+{% if newrelic_mssql_query_monitoring_dmv_only | default(false) | bool %}
+      QUERY_MONITORING_DISABLE_HISTORICAL_INFORMATION: "true"
+{% endif %}
+      QUERY_MONITORING_FETCH_INTERVAL: "{{ newrelic_mssql_query_monitoring_fetch_interval_seconds | default('15') }}"
+      QUERY_MONITORING_RESPONSE_TIME_THRESHOLD: "{{ newrelic_mssql_query_monitoring_response_time_ms | default('1') }}"
+      QUERY_MONITORING_COUNT_THRESHOLD: "{{ newrelic_mssql_query_monitoring_count_threshold | default('20') }}"
+{% endif %}
+    interval: 15s
+    labels:
+      env: '{{ newrelic_mssql_integration_env_label | default("demo") }}'
+      role: mssql
+      instance: '{{ mssql_instance_name | default("SQLEXPRESS") }}'
+      host: '{{ ansible_hostname }}'
+      endpoint: '{{ newrelic_mssql_endpoint | default(ansible_hostname) }}'
+    inventory_source: config/mssql

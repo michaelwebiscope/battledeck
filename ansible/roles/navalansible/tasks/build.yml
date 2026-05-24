@@ -97,6 +97,17 @@
     executable: powershell
   when: api_changed | default(true) or not api_dll_exists.stat.exists
 
+- name: Start IIS API site after publish
+  ansible.windows.win_shell: |
+    $appcmd = if (Test-Path "$env:windir\SysNative\inetsrv\appcmd.exe") { "$env:windir\SysNative\inetsrv\appcmd.exe" } else { "$env:windir\System32\inetsrv\appcmd.exe" }
+    if (Test-Path $appcmd) {
+      & $appcmd start apppool NavalArchive-API 2>$null
+      & $appcmd start site NavalArchive-API 2>$null
+    }
+  args:
+    executable: powershell
+  when: api_changed | default(true) or not api_dll_exists.stat.exists
+
 - name: Publish Payment (self-contained)
   ansible.windows.win_shell: |
     $csproj = Get-ChildItem "{{ src_path }}" -Filter "NavalArchive.PaymentSimulation.csproj" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1

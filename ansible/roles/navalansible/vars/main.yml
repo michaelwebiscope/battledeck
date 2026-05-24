@@ -1,5 +1,9 @@
 ---
-# PostgreSQL app user password — always overridden by deploy script from terraform.tfvars pg_app_password
+# SQL Server (Express) SA password — used only during install/bootstrap
+mssql_sa_password: ""
+mssql_instance_name: "SQLEXPRESS"
+
+# App DB login password — overridden by deploy script from terraform.tfvars pg_app_password
 pg_app_password: ""
 
 # Infinite Tracing (Trace Observer)
@@ -111,3 +115,25 @@ newrelic_postgres_hostname: "127.0.0.1"
 newrelic_postgres_port: "5432"
 newrelic_postgres_collection_list: '["postgres", "navalarchive", "navalarchive_logs"]'
 newrelic_postgres_integration_env_label: "demo"
+
+# New Relic Microsoft SQL Server on-host integration (nri-mssql).
+# Set newrelic_mssql_monitor_password to create login new_relic + deploy mssql-config.yml.
+newrelic_mssql_monitor_password: ""
+newrelic_mssql_hostname: ""
+newrelic_mssql_endpoint: ""
+newrelic_mssql_port: ""
+newrelic_mssql_integration_env_label: "demo"
+newrelic_mssql_query_monitoring: true
+newrelic_mssql_query_monitoring_dmv_only: false
+newrelic_mssql_query_monitoring_fetch_interval_seconds: "15"
+newrelic_mssql_query_monitoring_response_time_ms: "1"
+newrelic_mssql_query_monitoring_count_threshold: "20"
+newrelic_mssql_query_store_databases:
+  - navalarchive
+  - navalarchive_logs
+
+# OpenTelemetry Collector Contrib sqlserver receiver → New Relic OTLP (see otel_mssql_collector.yml).
+newrelic_mssql_otel_enabled: true
+otelcol_contrib_version: "0.152.0"
+otelcol_install_dir: 'C:\Program Files\OpenTelemetry Collector'
+otelcol_mssql_service_name: otelcol-contrib-mssql

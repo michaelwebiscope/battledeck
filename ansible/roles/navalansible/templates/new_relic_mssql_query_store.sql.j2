@@ -1,0 +1,23 @@
+-- Enable Query Store wait stats capture for DB360 Wait Time Analysis (MSSQLWaitTimeAnalysis).
+{% for db in newrelic_mssql_query_store_databases | default(['navalarchive', 'navalarchive_logs']) %}
+IF DB_ID(N'{{ db }}') IS NOT NULL
+BEGIN
+{% if newrelic_mssql_query_store_reset | default(false) | bool %}
+  ALTER DATABASE [{{ db }}] SET QUERY_STORE CLEAR ALL;
+  ALTER DATABASE [{{ db }}] SET QUERY_STORE = OFF;
+{% elif newrelic_mssql_query_store_enable_if_disabled | default(true) | bool %}
+  IF (SELECT is_query_store_on FROM sys.databases WHERE name = N'{{ db }}') = 0
+    ALTER DATABASE [{{ db }}] SET QUERY_STORE = OFF;
+{% endif %}
+  ALTER DATABASE [{{ db }}] SET QUERY_STORE = ON;
+  ALTER DATABASE [{{ db }}] SET QUERY_STORE (
+    OPERATION_MODE = READ_WRITE,
+    QUERY_CAPTURE_MODE = ALL,
+    WAIT_STATS_CAPTURE_MODE = ON,
+    CLEANUP_POLICY = (STALE_QUERY_THRESHOLD_DAYS = 30),
+    MAX_STORAGE_SIZE_MB = 512,
+    INTERVAL_LENGTH_MINUTES = 1
+  );
+END
+GO
+{% endfor %}

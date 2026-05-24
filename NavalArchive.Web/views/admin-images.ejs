@@ -388,6 +388,9 @@
           renderImageSourcesList();
         };
       });
+      list.querySelectorAll('.source-key-input').forEach(function(inp) {
+        inp.addEventListener('input', persistImageKeys);
+      });
       list.querySelectorAll('li').forEach(function(li, idx) {
         li.ondragstart = function(e) { e.dataTransfer.setData('text/plain', idx); };
         li.ondragover = function(e) { e.preventDefault(); li.classList.add('border-primary'); };
@@ -650,6 +653,7 @@
       var collected = collectKeysFromSources();
       var body = Object.assign({}, collected.keys);
       if (Object.keys(collected.customKeys).length > 0) body.customKeys = collected.customKeys;
+      if (imageSources && imageSources.length > 0) body.imageSources = imageSources;
       showTerminal('[Test Keys] ' + new Date().toISOString() + '\n[Test Keys] Validating API keys...', true);
       fetch('/admin/images/test-keys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
         .then(function(r) { return r.json(); })
@@ -1131,11 +1135,17 @@
       updateBulkBar();
     };
 
-    function openSearchFrame(url) {
+    function persistImageKeys() {
+      var collected = collectKeysFromSources();
+      sessionStorage.setItem('adminImageKeys', JSON.stringify(Object.assign({}, collected.keys, collected.customKeys)));
+    }
+
+    function openSearchFrame(url, keys) {
       editSearchFrame.src = url;
       editSearchFrame.onload = function() {
         try {
           editSearchFrame.contentWindow.postMessage({ type: 'imageSources', sources: imageSources }, '*');
+          if (keys) editSearchFrame.contentWindow.postMessage({ type: 'imageKeys', keys: keys }, '*');
         } catch (e) { /* cross-origin */ }
       };
     }
@@ -1155,7 +1165,7 @@
       var searchPrefixes = <%- JSON.stringify(typeof imageSearchPrefix !== 'undefined' && imageSearchPrefix ? imageSearchPrefix : { ship: 'battleship', captain: 'captain' }) %>;
       var prefix = searchPrefixes[first.entity] || (first.entity === 'ship' ? 'battleship' : 'captain');
       var q = encodeURIComponent(first.name + ' ' + prefix);
-      openSearchFrame('/admin/images/search-frame?entity=' + first.entity + '&id=' + first.id + '&q=' + q);
+      openSearchFrame('/admin/images/search-frame?entity=' + first.entity + '&id=' + first.id + '&q=' + q, keys);
       new bootstrap.Modal(editModal).show();
     };
 
@@ -1253,7 +1263,7 @@
       var searchPrefixes = <%- JSON.stringify(typeof imageSearchPrefix !== 'undefined' && imageSearchPrefix ? imageSearchPrefix : { ship: 'battleship', captain: 'captain' }) %>;
       var prefix = searchPrefixes[currentEdit.entity] || (currentEdit.entity === 'ship' ? 'battleship' : 'captain');
       var q = encodeURIComponent(currentEdit.name + ' ' + prefix);
-      openSearchFrame('/admin/images/search-frame?entity=' + currentEdit.entity + '&id=' + currentEdit.id + '&q=' + q);
+      openSearchFrame('/admin/images/search-frame?entity=' + currentEdit.entity + '&id=' + currentEdit.id + '&q=' + q, keys);
       editImagePane.style.display = 'none';
       editSearchPane.style.display = 'block';
     };

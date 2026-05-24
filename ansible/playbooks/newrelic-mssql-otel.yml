@@ -1,0 +1,16 @@
+---
+# OpenTelemetry Collector Contrib (sqlserver receiver) → New Relic OTLP for MSSQL.
+#
+# Usage:
+#   cd ansible && ../.venv/bin/python3 -m ansible playbook playbooks/newrelic-mssql-otel.yml \
+#     -e @/tmp/nr-mssql-vars.json \
+#     -e "newrelic_license_key=..." \
+#     -e "mssql_sa_password=..."
+
+- name: OpenTelemetry SQL Server monitoring (contrib sqlserver receiver)
+  hosts: navalansible
+  gather_facts: true
+  tasks:
+    - ansible.builtin.import_role:
+        name: navalansible
+        tasks_from: otel_mssql_collector

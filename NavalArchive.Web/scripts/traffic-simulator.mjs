@@ -84,7 +84,7 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-/** Paths hit with Playwright request API (fast). */
+/** Base paths hit with Playwright request API (fast). */
 const HTTP_GET_PATHS = [
   '/health',
   '/api/entity-types',
@@ -113,21 +113,95 @@ const HTTP_GET_PATHS = [
   '/verify-member',
   '/membership',
   '/discover',
-  '/fleet/search?q=war',
-  '/ships/1',
-  '/ships/9',
-  '/classes/1',
-  '/captains/1'
+  '/fleet/search?q=war'
 ];
 
-async function runEndpointSweep(baseURL, log) {
+async function fetchAllShipIds(ctx, log) {
+  const pageSize = 500;
+  const ids = [];
+  let page = 1;
+  let total = Number.MAX_SAFE_INTEGER;
+
+  while (ids.length < total) {
+    const res = await ctx.get(`/api/ships?page=${page}&pageSize=${pageSize}`);
+    if (!res.ok()) break;
+    const data = await res.json();
+    const items = Array.isArray(data?.items) ? data.items : [];
+    const pageIds = items.map((x) => x?.id).filter((x) => Number.isInteger(x));
+    ids.push(...pageIds);
+    if (!Number.isInteger(data?.total)) break;
+    total = data.total;
+    if (items.length === 0) break;
+    page++;
+    if (page > 200) {
+      log('Ship preload stopped at 200 pages (safety cap).');
+      break;
+    }
+  }
+  return [...new Set(ids)];
+}
+
+async function fetchFlatIds(ctx, path) {
+  const res = await ctx.get(path);
+  if (!res.ok()) return [];
+  const data = await res.json();
+  if (!Array.isArray(data)) return [];
+  return [...new Set(data.map((x) => x?.id).filter((x) => Number.isInteger(x)))];
+}
+
+async function loadEntityPool(baseURL, log) {
+  const ctx = await playwrightRequest.newContext({
+    baseURL,
+    ignoreHTTPSErrors: true,
+    timeout: 30000
+  });
+  try {
+    const [ships, classes, captains] = await Promise.all([
+      fetchAllShipIds(ctx, log),
+      fetchFlatIds(ctx, '/api/classes'),
+      fetchFlatIds(ctx, '/api/captains')
+    ]);
+    log(`Entity pool loaded: ships=${ships.length}, classes=${classes.length}, captains=${captains.length}`);
+    return { ships, classes, captains };
+  } finally {
+    await ctx.dispose();
+  }
+}
+
+function createEntityPicker(pool) {
+  const cursor = { ships: 0, classes: 0, captains: 0 };
+  function nextPath(type, fallbackPath) {
+    const ids = pool[type];
+    if (!Array.isArray(ids) || ids.length === 0) return fallbackPath;
+    const idx = cursor[type] % ids.length;
+    cursor[type]++;
+    const id = ids[idx];
+    if (type === 'ships') return `/ships/${id}`;
+    if (type === 'classes') return `/classes/${id}`;
+    if (type === 'captains') return `/captains/${id}`;
+    return fallbackPath;
+  }
+  return {
+    nextShipPath: () => nextPath('ships', '/ships/9'),
+    nextClassPath: () => nextPath('classes', '/classes'),
+    nextCaptainPath: () => nextPath('captains', '/captains')
+  };
+}
+
+async function runEndpointSweep(baseURL, log, entityPicker) {
   const ctx = await playwrightRequest.newContext({
     baseURL,
     ignoreHTTPSErrors: true,
     timeout: 30000
   });
   const results = { ok: 0, fail: 0, detail: [] };
-  for (const path of HTTP_GET_PATHS) {
+  const paths = [
+    ...HTTP_GET_PATHS,
+    entityPicker.nextShipPath(),
+    entityPicker.nextClassPath(),
+    entityPicker.nextCaptainPath()
+  ];
+  for (const path of paths) {
     try {
       const res = await ctx.get(path);
       const ok = res.ok() || res.status() === 302 || res.status() === 301;
@@ -153,7 +227,7 @@ const FLOWS = [
   {
     name: 'home->fleet->ship',
     weight: 3,
-    run: async (page) => {
+    run: async (page, entityPicker) => {
       await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 60000 });
       await sleep(200 + Math.random() * 400);
       await page.goto('/fleet', { waitUntil: 'domcontentloaded', timeout: 60000 });
@@ -162,47 +236,56 @@ const FLOWS = [
       if ((await link.count()) > 0) {
         await Promise.all([page.waitForNavigation({ timeout: 60000 }).catch(() => {}), link.click()]);
       } else {
-        await page.goto('/ships/9', { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+        await page
+          .goto(entityPicker.nextShipPath(), { waitUntil: 'domcontentloaded', timeout: 60000 })
+          .catch(() => {});
       }
     }
   },
   {
     name: 'explore-mix',
     weight: 2,
-    run: async (page) => {
+    run: async (page, entityPicker) => {
       const paths = ['/timeline', '/stats', '/gallery', '/classes', '/captains'];
       await page.goto(paths[Math.floor(Math.random() * paths.length)], {
         waitUntil: 'domcontentloaded',
         timeout: 60000
       });
       await sleep(300 + Math.random() * 500);
+      await page.goto(entityPicker.nextClassPath(), { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+      await sleep(150 + Math.random() * 300);
       await page.goto('/compare', { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
     }
   },
   {
     name: 'trace',
     weight: 1,
-    run: async (page) => {
+    run: async (page, entityPicker) => {
       await page.goto('/trace', { waitUntil: 'domcontentloaded', timeout: 60000 });
       await sleep(500);
+      await page.goto(entityPicker.nextCaptainPath(), { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
     }
   },
   {
     name: 'support-pages',
     weight: 2,
-    run: async (page) => {
+    run: async (page, entityPicker) => {
       await page.goto('/donate', { waitUntil: 'domcontentloaded', timeout: 60000 });
       await sleep(200);
       await page.goto('/login', { waitUntil: 'domcontentloaded', timeout: 60000 });
       await sleep(200);
       await page.goto('/members', { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await sleep(150 + Math.random() * 300);
+      await page.goto(entityPicker.nextCaptainPath(), { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
     }
   },
   {
     name: 'commerce-path',
     weight: 1,
-    run: async (page) => {
+    run: async (page, entityPicker) => {
       await page.goto('/fleet', { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await sleep(200);
+      await page.goto(entityPicker.nextShipPath(), { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
       await sleep(200);
       await page.goto('/cart', { waitUntil: 'domcontentloaded', timeout: 60000 });
       await sleep(200);
@@ -212,10 +295,12 @@ const FLOWS = [
   {
     name: 'logs-simulation',
     weight: 1,
-    run: async (page) => {
+    run: async (page, entityPicker) => {
       await page.goto('/logs', { waitUntil: 'domcontentloaded', timeout: 60000 });
       await sleep(300);
       await page.goto('/simulation', { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+      await sleep(150 + Math.random() * 300);
+      await page.goto(entityPicker.nextClassPath(), { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
     }
   }
 ];
@@ -230,7 +315,7 @@ function pickFlow() {
   return FLOWS[0];
 }
 
-async function workerLoop({ browser, baseURL, workerId, endTime, maxSessions, log, errors }) {
+async function workerLoop({ browser, baseURL, workerId, endTime, maxSessions, log, errors, entityPicker }) {
   let sessions = 0;
   while (sessions < maxSessions && Date.now() < endTime) {
     const context = await browser.newContext({
@@ -242,7 +327,7 @@ async function workerLoop({ browser, baseURL, workerId, endTime, maxSessions, lo
     const flow = pickFlow();
     const t0 = Date.now();
     try {
-      await flow.run(page);
+      await flow.run(page, entityPicker);
       sessions++;
       log(`worker ${workerId} ${flow.name} ok ${Date.now() - t0}ms`);
     } catch (e) {
@@ -274,10 +359,12 @@ async function main() {
   const log = (...a) => console.log(new Date().toISOString(), ...a);
 
   log(`Target ${baseUrl} | parallel=${opts.parallel} duration=${opts.durationSec}s`);
+  const entityPool = await loadEntityPool(baseUrl, log);
+  const entityPicker = createEntityPicker(entityPool);
 
   if (opts.sweep) {
     log('--- HTTP endpoint sweep ---');
-    await runEndpointSweep(baseUrl, log);
+    await runEndpointSweep(baseUrl, log, entityPicker);
   }
 
   const browser = await chromium.launch({ headless: opts.headless });
@@ -303,7 +390,8 @@ async function main() {
       endTime,
       maxSessions,
       log,
-      errors
+      errors,
+      entityPicker
     });
   });
 

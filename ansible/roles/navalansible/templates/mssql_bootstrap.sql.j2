@@ -1,0 +1,23 @@
+IF DB_ID(N'navalarchive') IS NULL CREATE DATABASE [navalarchive];
+GO
+IF DB_ID(N'navalarchive_logs') IS NULL CREATE DATABASE [navalarchive_logs];
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = N'navalarchive')
+  CREATE LOGIN [navalarchive] WITH PASSWORD = N'{{ pg_app_password }}', CHECK_POLICY = OFF;
+ELSE
+  ALTER LOGIN [navalarchive] WITH PASSWORD = N'{{ pg_app_password }}', CHECK_POLICY = OFF;
+GO
+USE [navalarchive];
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'navalarchive')
+  CREATE USER [navalarchive] FOR LOGIN [navalarchive];
+GO
+IF IS_ROLEMEMBER('db_owner', 'navalarchive') <> 1 ALTER ROLE db_owner ADD MEMBER [navalarchive];
+GO
+USE [navalarchive_logs];
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'navalarchive')
+  CREATE USER [navalarchive] FOR LOGIN [navalarchive];
+GO
+IF IS_ROLEMEMBER('db_owner', 'navalarchive') <> 1 ALTER ROLE db_owner ADD MEMBER [navalarchive];
+GO

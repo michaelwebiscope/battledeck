@@ -196,13 +196,16 @@ API_REDIS_CONFIGURATION=$(read_tfvar_any "api_redis_configuration")
 API_REDIS_INSTANCE_NAME=$(read_tfvar_any "api_redis_instance_name")
 API_DYNAMICLISTS_DB_MODE=$(read_tfvar_any "api_dynamiclists_db_mode")
 PG_APP_PASSWORD=$(read_tfvar_any "pg_app_password")
+MSSQL_SA_PASSWORD=$(read_tfvar_any "mssql_sa_password")
 NEWRELIC_TRACE_OBSERVER_HOST=$(read_tfvar_any "newrelic_trace_observer_host")
 NEWRELIC_TRACE_OBSERVER_PORT=$(read_tfvar_any "newrelic_trace_observer_port")
 
-export API_DATABASE_PROVIDER API_CONN_MAIN API_CONN_LOGS API_REDIS_CONFIGURATION API_REDIS_INSTANCE_NAME API_DYNAMICLISTS_DB_MODE PG_APP_PASSWORD NEWRELIC_TRACE_OBSERVER_HOST NEWRELIC_TRACE_OBSERVER_PORT
+export API_DATABASE_PROVIDER API_CONN_MAIN API_CONN_LOGS API_REDIS_CONFIGURATION API_REDIS_INSTANCE_NAME API_DYNAMICLISTS_DB_MODE PG_APP_PASSWORD MSSQL_SA_PASSWORD NEWRELIC_TRACE_OBSERVER_HOST NEWRELIC_TRACE_OBSERVER_PORT
 
 # newrelic_postgres_monitor_password is read only when running New Relic infra (-newrelic / -fullrun); never passed to site.yml
 NEWRELIC_POSTGRES_MONITOR_PASSWORD=$(read_tfvar_any "newrelic_postgres_monitor_password")
+NEWRELIC_MSSQL_MONITOR_PASSWORD=$(read_tfvar_any "newrelic_mssql_monitor_password")
+NEWRELIC_MSSQL_PORT=$(read_tfvar_any "newrelic_mssql_port")
 
 API_EXTRAVARS_JSON=$("$PYTHON_FOR_ANSIBLE" - <<'PY'
 import json, os
@@ -215,6 +218,7 @@ put("api_database_provider", os.environ.get("API_DATABASE_PROVIDER"))
 put("api_conn_main", os.environ.get("API_CONN_MAIN"))
 put("api_conn_logs", os.environ.get("API_CONN_LOGS"))
 put("pg_app_password", os.environ.get("PG_APP_PASSWORD"))
+put("mssql_sa_password", os.environ.get("MSSQL_SA_PASSWORD"))
 put("api_redis_configuration", os.environ.get("API_REDIS_CONFIGURATION"))
 put("api_redis_instance_name", os.environ.get("API_REDIS_INSTANCE_NAME"))
 put("api_dynamiclists_db_mode", os.environ.get("API_DYNAMICLISTS_DB_MODE"))
@@ -306,6 +310,15 @@ if [ "$NEWRELIC_STANDALONE" = true ]; then
   [ -n "$NEWRELIC_TRACE_OBSERVER_PORT" ] && NR_ARGS+=( -e "newrelic_trace_observer_port=$NEWRELIC_TRACE_OBSERVER_PORT" )
   NR_PG_JSON=$(NEWRELIC_POSTGRES_MONITOR_PASSWORD="$NEWRELIC_POSTGRES_MONITOR_PASSWORD" "$PYTHON_FOR_ANSIBLE" -c "import json,os; v=(os.environ.get('NEWRELIC_POSTGRES_MONITOR_PASSWORD') or '').strip(); print(json.dumps({'newrelic_postgres_monitor_password': v}) if v else '{}')")
   [ "$NR_PG_JSON" != "{}" ] && NR_ARGS+=( -e "$NR_PG_JSON" )
+  NR_MSSQL_JSON=$("$PYTHON_FOR_ANSIBLE" -c "import json,os; d={};
+v=(os.environ.get('NEWRELIC_MSSQL_MONITOR_PASSWORD') or '').strip()
+if v: d['newrelic_mssql_monitor_password']=v
+p=(os.environ.get('NEWRELIC_MSSQL_PORT') or '').strip()
+if p: d['newrelic_mssql_port']=p
+sa=(os.environ.get('MSSQL_SA_PASSWORD') or '').strip()
+if sa: d['mssql_sa_password']=sa
+print(json.dumps(d))" NEWRELIC_MSSQL_MONITOR_PASSWORD="$NEWRELIC_MSSQL_MONITOR_PASSWORD" NEWRELIC_MSSQL_PORT="$NEWRELIC_MSSQL_PORT" MSSQL_SA_PASSWORD="$MSSQL_SA_PASSWORD")
+  [ "$NR_MSSQL_JSON" != "{}" ] && NR_ARGS+=( -e "$NR_MSSQL_JSON" )
   "$PYTHON_FOR_ANSIBLE" -m ansible playbook playbooks/newrelic-dotnet-java-go.yml "${NR_ARGS[@]}"
 
 elif [ "$NEWRELIC_APP_ONLY" = true ]; then
@@ -351,6 +364,15 @@ elif [ "$FULLRUN" = true ]; then
   [ -n "$NEWRELIC_TRACE_OBSERVER_PORT" ] && NR_ARGS+=( -e "newrelic_trace_observer_port=$NEWRELIC_TRACE_OBSERVER_PORT" )
   NR_PG_JSON=$(NEWRELIC_POSTGRES_MONITOR_PASSWORD="$NEWRELIC_POSTGRES_MONITOR_PASSWORD" "$PYTHON_FOR_ANSIBLE" -c "import json,os; v=(os.environ.get('NEWRELIC_POSTGRES_MONITOR_PASSWORD') or '').strip(); print(json.dumps({'newrelic_postgres_monitor_password': v}) if v else '{}')")
   [ "$NR_PG_JSON" != "{}" ] && NR_ARGS+=( -e "$NR_PG_JSON" )
+  NR_MSSQL_JSON=$("$PYTHON_FOR_ANSIBLE" -c "import json,os; d={};
+v=(os.environ.get('NEWRELIC_MSSQL_MONITOR_PASSWORD') or '').strip()
+if v: d['newrelic_mssql_monitor_password']=v
+p=(os.environ.get('NEWRELIC_MSSQL_PORT') or '').strip()
+if p: d['newrelic_mssql_port']=p
+sa=(os.environ.get('MSSQL_SA_PASSWORD') or '').strip()
+if sa: d['mssql_sa_password']=sa
+print(json.dumps(d))" NEWRELIC_MSSQL_MONITOR_PASSWORD="$NEWRELIC_MSSQL_MONITOR_PASSWORD" NEWRELIC_MSSQL_PORT="$NEWRELIC_MSSQL_PORT" MSSQL_SA_PASSWORD="$MSSQL_SA_PASSWORD")
+  [ "$NR_MSSQL_JSON" != "{}" ] && NR_ARGS+=( -e "$NR_MSSQL_JSON" )
   "$PYTHON_FOR_ANSIBLE" -m ansible playbook playbooks/newrelic-dotnet-java-go.yml "${NR_ARGS[@]}"
 fi
 

@@ -1,0 +1,41 @@
+-- New Relic nri-mssql monitoring login + Query Performance Monitoring (QPM) permissions.
+-- https://github.com/newrelic/nri-mssql
+USE master;
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = N'new_relic')
+  CREATE LOGIN [new_relic] WITH PASSWORD = N'{{ newrelic_mssql_monitor_password | replace("'", "''") }}', CHECK_POLICY = OFF;
+ELSE
+  ALTER LOGIN [new_relic] WITH PASSWORD = N'{{ newrelic_mssql_monitor_password | replace("'", "''") }}', CHECK_POLICY = OFF;
+GO
+GRANT CONNECT SQL TO [new_relic];
+GRANT VIEW SERVER STATE TO [new_relic];
+GRANT VIEW ANY DEFINITION TO [new_relic];
+GRANT VIEW ANY DATABASE TO [new_relic];
+{% if newrelic_mssql_otel_enabled | default(true) | bool %}
+GRANT VIEW SERVER PERFORMANCE STATE TO [new_relic];
+{% endif %}
+GO
+DECLARE @name NVARCHAR(128);
+DECLARE db_cursor CURSOR FOR
+  SELECT name FROM sys.databases
+  WHERE name NOT IN ('master', 'msdb', 'tempdb', 'model')
+    AND state_desc = 'ONLINE';
+OPEN db_cursor;
+FETCH NEXT FROM db_cursor INTO @name;
+WHILE @@FETCH_STATUS = 0
+BEGIN
+  EXEC(N'
+    USE [' + @name + N'];
+    IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N''new_relic'')
+      CREATE USER [new_relic] FOR LOGIN [new_relic];
+    GRANT VIEW DATABASE STATE TO [new_relic];
+  ');
+  FETCH NEXT FROM db_cursor INTO @name;
+END
+CLOSE db_cursor;
+DEALLOCATE db_cursor;
+GO
+{% if newrelic_mssql_query_monitoring | default(true) | bool %}
+-- Enable Query Store + wait stats for DB360 Wait Time Analysis.
+{% include 'new_relic_mssql_query_store.sql.j2' %}
+{% endif %}

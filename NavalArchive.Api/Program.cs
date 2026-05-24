@@ -122,10 +122,23 @@ else
     builder.Services.AddDbContext<NavalArchiveDbContext>(o => o.UseSqlite("Data Source=navalarchive.db"));
 
 var isPostgres = provider.Equals("Postgres", StringComparison.OrdinalIgnoreCase) || provider.Equals("PostgreSQL", StringComparison.OrdinalIgnoreCase);
-var logsConn = builder.Configuration.GetConnectionString("LogsDb")
-    ?? (isPostgres ? mainConn : "Data Source=logs.db");
+var isSqlServer = provider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase) ||
+    (!string.IsNullOrEmpty(mainConn) && (mainConn.Contains("Trusted_Connection", StringComparison.OrdinalIgnoreCase) ||
+     mainConn.Contains("TrustServerCertificate", StringComparison.OrdinalIgnoreCase)));
+var logsConn = builder.Configuration.GetConnectionString("LogsDb");
+if (string.IsNullOrEmpty(logsConn))
+{
+    if (isPostgres)
+        logsConn = mainConn;
+    else if (isSqlServer)
+        logsConn = "Data Source=logs.db";
+    else
+        logsConn = "Data Source=logs.db";
+}
 if (isPostgres)
     builder.Services.AddDbContext<LogsDbContext>(options => options.UseNpgsql(logsConn));
+else if (isSqlServer && !string.IsNullOrEmpty(logsConn) && !logsConn.Contains("Data Source=", StringComparison.OrdinalIgnoreCase))
+    builder.Services.AddDbContext<LogsDbContext>(options => options.UseSqlServer(logsConn));
 else
     builder.Services.AddDbContext<LogsDbContext>(options => options.UseSqlite(logsConn ?? "Data Source=logs.db"));
 builder.Services.AddMemoryCache();
@@ -249,12 +262,9 @@ using (var scope = app.Services.CreateScope())
         RedactRedisConfiguration(redisConfiguration)
     );
     db.Database.EnsureCreated();
-    // EnsureCreated returns false (no-op) if the DB already exists (created above by main context).
-    // In that case, call CreateTables() directly so LogsDbContext tables are still created.
-    if (!logsDb.Database.EnsureCreated())
+    if (!logsDb.Database.EnsureCreated() && logsDb.Database.IsNpgsql())
     {
-        // DB already exists (created by main context) — create any missing tables for LogsDbContext.
-        // Use raw SQL so we don't depend on EF infrastructure internals.
+        // Shared Postgres DB: main context may have created the database first.
         try { logsDb.Database.ExecuteSqlRaw(@"CREATE TABLE IF NOT EXISTS ""CaptainLogs"" (""Id"" serial PRIMARY KEY, ""ShipName"" text NOT NULL, ""LogDate"" text NOT NULL, ""Entry"" text NOT NULL, ""Source"" text NOT NULL)"); } catch { }
         try { logsDb.Database.ExecuteSqlRaw(@"CREATE INDEX IF NOT EXISTS ""IX_CaptainLogs_ShipName"" ON ""CaptainLogs"" (""ShipName"")"); } catch { }
         try { logsDb.Database.ExecuteSqlRaw(@"CREATE INDEX IF NOT EXISTS ""IX_CaptainLogs_LogDate"" ON ""CaptainLogs"" (""LogDate"")"); } catch { }

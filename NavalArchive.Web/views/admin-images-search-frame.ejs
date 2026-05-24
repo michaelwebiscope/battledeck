@@ -60,6 +60,7 @@
     (function() {
       var entity = '<%= entity %>';
       var entityId = '<%= entityId %>';
+      var imageSources = <%- JSON.stringify(imageSources || []) %>;
       var queryInput = document.getElementById('queryInput');
       var searchBtn = document.getElementById('searchBtn');
 
@@ -75,7 +76,14 @@
       }
       window.addEventListener('message', function(e) {
         if (e.data && e.data.type === 'imageSources' && Array.isArray(e.data.sources)) {
+          imageSources = e.data.sources;
           populateProviderSelect(e.data.sources);
+        }
+        if (e.data && e.data.type === 'imageKeys' && e.data.keys && typeof e.data.keys === 'object') {
+          try {
+            var existing = JSON.parse(sessionStorage.getItem('adminImageKeys') || '{}');
+            sessionStorage.setItem('adminImageKeys', JSON.stringify(Object.assign({}, existing, e.data.keys)));
+          } catch (err) { /* ignore */ }
         }
       });
       var status = document.getElementById('status');
@@ -263,10 +271,13 @@
           return;
         }
         var keys = getKeys();
+        var body = { query: q, maxCount: 16, provider: provider || undefined };
+        Object.assign(body, keys);
+        if (imageSources && imageSources.length > 0) body.imageSources = imageSources;
         fetch('/api/images/search', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: q, maxCount: 16, provider: provider || undefined, ...keys })
+          body: JSON.stringify(body)
         }).then(function(r) { return r.json(); })
           .then(function(data) {
             var urls = Array.isArray(data) ? data : (Array.isArray(data && data.urls) ? data.urls : []);

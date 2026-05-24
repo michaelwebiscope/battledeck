@@ -1,0 +1,29 @@
+---
+# Copy SqlServer-aware Program.cs and republish API only.
+- name: Rebuild API for SQL Server
+  hosts: navalansible
+  gather_facts: true
+  vars:
+    src_path: C:\navalarchive-src
+    api_changed: true
+    payment_sim_changed: false
+    web_changed: false
+    chain_changed: false
+    card_changed: false
+    cart_changed: false
+    go_payment_changed: false
+    go_account_changed: false
+    image_populator_changed: false
+  tasks:
+    - name: Copy updated Program.cs (SqlServer logs DB support)
+      ansible.windows.win_copy:
+        src: "{{ playbook_dir }}/../../NavalArchive.Api/Program.cs"
+        dest: C:\navalarchive-src\NavalArchive.Api\Program.cs
+
+    - ansible.builtin.import_role:
+        name: navalansible
+        tasks_from: build
+
+    - ansible.builtin.import_role:
+        name: navalansible
+        tasks_from: api_webconfig_refresh

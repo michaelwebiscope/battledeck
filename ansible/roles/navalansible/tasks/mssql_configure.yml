@@ -1,0 +1,49 @@
+---
+# Create navalarchive DBs + login after SQL Server Express is running.
+- name: Wait for SQL Server Express service
+  ansible.windows.win_shell: |
+    $svc = Get-Service -Name 'MSSQL$SQLEXPRESS' -ErrorAction SilentlyContinue
+    if (-not $svc) { throw 'MSSQL$SQLEXPRESS service not found' }
+    if ($svc.Status -ne 'Running') { Start-Service $svc.Name }
+    Start-Sleep -Seconds 5
+    $svc.Refresh()
+  args:
+    executable: powershell
+
+- name: Locate sqlcmd.exe
+  ansible.windows.win_shell: |
+    $cmd = Get-ChildItem 'C:\Program Files\Microsoft SQL Server' -Recurse -Filter sqlcmd.exe -ErrorAction SilentlyContinue |
+      Sort-Object FullName -Descending |
+      Select-Object -First 1 -ExpandProperty FullName
+    if (-not $cmd) { throw 'sqlcmd.exe not found after SQL Server install' }
+    Write-Output $cmd
+  args:
+    executable: powershell
+  register: mssql_sqlcmd_path
+  changed_when: false
+
+- name: Write SQL bootstrap script
+  ansible.windows.win_template:
+    src: mssql_bootstrap.sql.j2
+    dest: C:\Windows\Temp\mssql_bootstrap.sql
+
+- name: Create databases and navalarchive login
+  ansible.windows.win_shell: |
+    $sqlcmd = '{{ mssql_sqlcmd_path.stdout | trim }}'
+    $server = 'localhost\{{ mssql_instance_name | default("SQLEXPRESS") }}'
+    & $sqlcmd -S $server -U sa -C -b -i 'C:\Windows\Temp\mssql_bootstrap.sql'
+  args:
+    executable: powershell
+  environment:
+    SQLCMDPASSWORD: "{{ mssql_sa_password }}"
+
+- name: Open SQL Server port 1433 in Windows Firewall (localhost only)
+  community.windows.win_firewall_rule:
+    name: SQLServer
+    localport: 1433
+    action: allow
+    direction: in
+    protocol: tcp
+    state: present
+    enabled: true
+    remoteip: 127.0.0.1

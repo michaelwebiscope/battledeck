@@ -1,0 +1,62 @@
+{# OpenTelemetry Collector Contrib — sqlserver receiver → New Relic OTLP #}
+{# https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/sqlserverreceiver #}
+receivers:
+  sqlserver:
+    collection_interval: 30s
+    computer_name: '{{ ansible_hostname }}'
+    instance_name: '{{ mssql_instance_name | default("SQLEXPRESS") }}'
+    username: new_relic
+    password: '{{ newrelic_mssql_monitor_password }}'
+    server: 127.0.0.1
+    port: {{ newrelic_mssql_port | int }}
+    events:
+      db.server.query_sample:
+        enabled: true
+      db.server.top_query:
+        enabled: true
+    top_query_collection:
+      lookback_time: 60s
+      top_query_count: 50
+      collection_interval: 60s
+    query_sample_collection:
+      max_rows_per_query: 100
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+  batch:
+    timeout: 10s
+  resourcedetection:
+    detectors: [system]
+    system:
+      hostname_sources: [os]
+  resource:
+    attributes:
+      - key: service.name
+        value: mssql-otel
+        action: upsert
+      - key: db.system
+        value: mssql
+        action: upsert
+      - key: host.name
+        value: '{{ newrelic_mssql_hostname | default(ansible_hostname) }}'
+        action: upsert
+
+exporters:
+  otlphttp/newrelic:
+    endpoint: '{{ otel_exporter_otlp_endpoint | default("https://otlp.nr-data.net") }}'
+    headers:
+      api-key: '{{ newrelic_license_key }}'
+    compression: gzip
+
+service:
+  pipelines:
+    metrics:
+      receivers: [sqlserver]
+      processors: [memory_limiter, resourcedetection, resource, batch]
+      exporters: [otlphttp/newrelic]
+    logs:
+      receivers: [sqlserver]
+      processors: [memory_limiter, resourcedetection, resource, batch]
+      exporters: [otlphttp/newrelic]

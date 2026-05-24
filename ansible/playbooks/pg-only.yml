@@ -1,0 +1,23 @@
+---
+- name: PostgreSQL install + configure only
+  hosts: navalansible-vm
+  gather_facts: true
+  vars:
+    pg_app_password: "{{ pg_app_password }}"
+  pre_tasks:
+    - name: Install Chocolatey
+      ansible.windows.win_shell: |
+        if (!(Get-Command choco -ErrorAction SilentlyContinue)) {
+          $env:chocolateyVersion = '1.4.0'
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+        }
+        $env:Path = [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User")
+      args:
+        executable: powershell
+  tasks:
+    - name: Include PostgreSQL install
+      ansible.builtin.include_tasks: ../roles/navalansible/tasks/postgres_install.yml
+    - name: Include PostgreSQL configure
+      ansible.builtin.include_tasks: ../roles/navalansible/tasks/postgres_configure.yml

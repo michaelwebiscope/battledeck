@@ -501,9 +501,8 @@ app.use('/api', async (req, res) => {
     const queryStr = qIndex >= 0 ? req.url.slice(qIndex) : '';
     // Hard-cut: populator workflows are Java-first (no .NET populator intermediates).
     let javaPath = null;
-    if (/^\/images\/test-keys$/i.test(pathOnly)) javaPath = '/test-keys';
-    else if (/^\/images\/search$/i.test(pathOnly)) javaPath = '/search';
-    else if (/^\/images\/populate$/i.test(pathOnly)) javaPath = '/populate';
+    // search + test-keys go through API so ImageSources from DB are attached (Java returns empty without them)
+    if (/^\/images\/populate$/i.test(pathOnly)) javaPath = '/populate';
     else if (/^\/images\/populate\/ship\/\d+$/i.test(pathOnly)) javaPath = pathOnly.replace(/^\/images/i, '');
     else if (/^\/images\/populate\/captain\/\d+$/i.test(pathOnly)) javaPath = pathOnly.replace(/^\/images/i, '');
     else if (/^\/images\/populate\/wikipedia$/i.test(pathOnly)) javaPath = '/run';
@@ -1689,7 +1688,7 @@ app.post('/admin/images/test-keys', async (req, res) => {
     if (req.body?.googleApiKey) body.googleApiKey = req.body.googleApiKey;
     if (req.body?.googleCseId) body.googleCseId = req.body.googleCseId;
     if (req.body?.customKeys && typeof req.body.customKeys === 'object') body.customKeys = req.body.customKeys;
-    const response = await axios.post(`${IMAGE_POPULATOR_BASE}/test-keys`, body, { timeout: 30000, validateStatus: () => true });
+    const response = await axios.post(`${API_BASE}/api/images/test-keys`, body, { timeout: 30000, validateStatus: () => true });
     res.json(response.data);
   } catch (err) {
     res.status(500).json({ error: err.message });
