@@ -13,34 +13,46 @@
       word-break: break-all;
       color: #0c4a6e;
     }
-    .balance-badge {
-      font-size: 2rem;
-      font-weight: 700;
-      color: #0284c7;
-    }
+    .balance-badge { font-size: 2rem; font-weight: 700; color: #0284c7; }
     .tx-row { border-bottom: 1px solid #f0f9ff; padding: 0.5rem 0; }
     .tx-row:last-child { border-bottom: none; }
     .badge-approved { background: #dcfce7; color: #15803d; border-radius: 6px; padding: 2px 8px; font-size: 0.78rem; font-weight: 600; }
     .badge-pending  { background: #fef9c3; color: #a16207; border-radius: 6px; padding: 2px 8px; font-size: 0.78rem; font-weight: 600; }
     .badge-declined { background: #fee2e2; color: #b91c1c; border-radius: 6px; padding: 2px 8px; font-size: 0.78rem; font-weight: 600; }
     .step-num { width: 28px; height: 28px; border-radius: 50%; background: var(--blue); color: white; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.85rem; flex-shrink: 0; }
+    .step-num.done { background: #15803d; }
+    .step-num.active { box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.35); }
+    .wizard-progress { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+    .wizard-step { flex: 1; min-width: 120px; text-align: center; padding: 0.75rem; border-radius: 10px; background: #f8fafc; border: 1px solid #e2e8f0; font-size: 0.85rem; }
+    .wizard-step.active { border-color: #0284c7; background: #f0f9ff; font-weight: 600; }
+    .wizard-step.done { border-color: #86efac; background: #f0fdf4; }
+    .card.step-locked { opacity: 0.65; pointer-events: none; }
   </style>
 </head>
 <body>
   <%- include('partials/header') %>
   <main class="app-shell">
     <div class="container py-4">
-      <h1 class="mb-1">Payment Account</h1>
-      <p class="text-muted mb-4">Create a wallet account, add funds, and pay from your balance on <a href="/donate">Donate</a> and <a href="/checkout">Checkout</a>.</p>
+      <h1 class="mb-1">Wallet</h1>
+      <p class="text-muted mb-3">Create an account, add funds, and pay from your balance on <a href="/checkout">Checkout</a> or <a href="/donate">Donate</a>. Each step runs through the app stack (Node → API → services → RabbitMQ) and appears in New Relic distributed tracing.</p>
+
+      <div class="wizard-progress" id="wizardProgress">
+        <div class="wizard-step active" data-step="1">1 · Create account</div>
+        <div class="wizard-step" data-step="2">2 · Top up</div>
+        <div class="wizard-step" data-step="3">3 · Pay</div>
+        <div class="wizard-step" data-step="4">4 · Checkout</div>
+      </div>
+
+      <div class="mb-4 d-flex flex-wrap gap-2">
+        <button type="button" class="btn btn-outline-primary btn-sm" id="demoFlowBtn">Run guided demo (create → $100 top-up → $25 payment)</button>
+        <a href="/checkout" class="btn btn-outline-secondary btn-sm">Go to Checkout</a>
+      </div>
 
       <div class="row g-4">
-        <!-- LEFT: Create or load account -->
         <div class="col-lg-5">
-
-          <!-- Create Account -->
           <div class="card mb-4" id="createCard">
             <div class="card-header d-flex align-items-center gap-2">
-              <span class="step-num">1</span> Create Account
+              <span class="step-num active" id="stepNum1">1</span> Create Account
             </div>
             <div class="card-body">
               <form id="registerForm">
@@ -49,37 +61,30 @@
                   <input type="text" id="regName" class="form-control" placeholder="e.g. Admiral Nelson" required>
                 </div>
                 <div class="mb-3">
-                  <label class="form-label fw-semibold">Membership Card ID <span class="text-muted fw-normal">(unique identifier)</span></label>
-                  <input type="text" id="regEmail" class="form-control font-monospace" placeholder="NAV-XXXXXXXX" required pattern="NAV-[A-Za-z0-9]{8}" title="Must be a valid membership card ID (NAV-XXXXXXXX)">
-                  <small class="text-muted">Get one from <a href="/members">Add Member</a></small>
+                  <label class="form-label fw-semibold">Membership Card ID</label>
+                  <input type="text" id="regEmail" class="form-control font-monospace" placeholder="NAV-XXXXXXXX" required pattern="NAV-[A-Za-z0-9]{8}" title="NAV-XXXXXXXX">
+                  <small class="text-muted">Get one from <a href="/members">Add Member</a> or use the demo button above</small>
                 </div>
-                <button type="submit" class="btn btn-modern w-100">Generate Account</button>
+                <button type="submit" class="btn btn-modern w-100">Create Wallet Account</button>
               </form>
               <div id="registerResult" class="mt-3"></div>
             </div>
           </div>
 
-          <!-- Load existing account -->
           <div class="card mb-4">
-            <div class="card-header d-flex align-items-center gap-2">
-              <span class="step-num">2</span> Load Existing Account
-            </div>
+            <div class="card-header">Return visitor</div>
             <div class="card-body">
               <div class="mb-3">
                 <label class="form-label fw-semibold">API Key</label>
                 <input type="text" id="apiKeyInput" class="form-control font-monospace" placeholder="sk_live_..." autocomplete="off">
               </div>
-              <button class="btn btn-modern w-100" onclick="loadAccount()">Load Account</button>
+              <button class="btn btn-modern w-100" type="button" onclick="loadAccount()">Load Account</button>
               <div id="loadResult" class="mt-3"></div>
             </div>
           </div>
-
         </div>
 
-        <!-- RIGHT: Account dashboard (hidden until loaded) -->
         <div class="col-lg-7" id="dashboard" style="display:none;">
-
-          <!-- Balance card -->
           <div class="card mb-4">
             <div class="card-body text-center py-4">
               <div class="text-muted mb-1">Account Balance</div>
@@ -89,28 +94,26 @@
           </div>
 
           <div class="row g-3 mb-4">
-            <!-- Add Funds -->
             <div class="col-md-6">
-              <div class="card h-100">
+              <div class="card h-100 step-locked" id="fundCard">
                 <div class="card-header d-flex align-items-center gap-2">
-                  <span class="step-num">3</span> Add Funds
+                  <span class="step-num" id="stepNum2">2</span> Top Up
                 </div>
                 <div class="card-body">
                   <div class="mb-3">
                     <label class="form-label fw-semibold">Amount (USD)</label>
                     <input type="number" id="fundAmount" class="form-control" value="100" min="1" step="1">
                   </div>
-                  <button class="btn btn-modern w-100" onclick="addFunds()">Top Up</button>
+                  <button class="btn btn-modern w-100" type="button" onclick="addFunds()">Add Funds</button>
                   <div id="fundResult" class="mt-2"></div>
                 </div>
               </div>
             </div>
 
-            <!-- Make Payment -->
             <div class="col-md-6">
-              <div class="card h-100">
+              <div class="card h-100 step-locked" id="payCard">
                 <div class="card-header d-flex align-items-center gap-2">
-                  <span class="step-num">4</span> Make Payment
+                  <span class="step-num" id="stepNum3">3</span> Pay from Balance
                 </div>
                 <div class="card-body">
                   <div class="mb-2">
@@ -121,18 +124,20 @@
                     <label class="form-label fw-semibold">Description</label>
                     <input type="text" id="payDesc" class="form-control" value="Museum donation">
                   </div>
-                  <button class="btn btn-modern w-100" onclick="makePayment()">Pay from Balance</button>
+                  <button class="btn btn-modern w-100" type="button" onclick="makePayment()">Pay Now</button>
                   <div id="payResult" class="mt-2"></div>
+                  <div class="mt-3" id="checkoutCta" style="display:none;">
+                    <a href="/checkout" class="btn btn-outline-primary w-100">Continue to Checkout →</a>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Transaction history -->
           <div class="card">
             <div class="card-header d-flex align-items-center justify-content-between">
               <span>Transaction History</span>
-              <button class="btn btn-sm btn-outline-secondary" onclick="loadHistory()">
+              <button class="btn btn-sm btn-outline-secondary" type="button" onclick="loadHistory()">
                 <i class="bi bi-arrow-clockwise"></i> Refresh
               </button>
             </div>
@@ -140,7 +145,6 @@
               <div class="p-3 text-muted text-center small">No transactions yet</div>
             </div>
           </div>
-
         </div>
       </div>
     </div>
@@ -153,78 +157,117 @@
       d.textContent = s;
       return d.innerHTML;
     }
+
     let currentApiKey = localStorage.getItem('paymentAccountKey') || '';
+    let wizardStep = 1;
+
+    function setWizardStep(n) {
+      wizardStep = n;
+      document.querySelectorAll('.wizard-step').forEach(function(el) {
+        var s = parseInt(el.getAttribute('data-step'), 10);
+        el.classList.toggle('active', s === n);
+        el.classList.toggle('done', s < n);
+      });
+      document.getElementById('fundCard').classList.toggle('step-locked', n < 2);
+      document.getElementById('payCard').classList.toggle('step-locked', n < 3);
+      for (var i = 1; i <= 3; i++) {
+        var num = document.getElementById('stepNum' + i);
+        if (!num) continue;
+        num.classList.toggle('done', i < n);
+        num.classList.toggle('active', i === n);
+      }
+      if (n >= 4) document.getElementById('checkoutCta').style.display = '';
+    }
+
     if (currentApiKey) {
       document.getElementById('apiKeyInput').value = currentApiKey;
       loadAccount();
     }
 
-    // ── Register ──────────────────────────────────────────────────────────────
-    document.getElementById('registerForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const name = document.getElementById('regName').value.trim();
-      const email = document.getElementById('regEmail').value.trim();
-      const el = document.getElementById('registerResult');
-      el.innerHTML = '<span class="text-muted">Creating account...</span>';
+    function randomNavId() {
+      var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      var s = 'NAV-';
+      for (var i = 0; i < 8; i++) s += chars.charAt(Math.floor(Math.random() * chars.length));
+      return s;
+    }
+
+    document.getElementById('demoFlowBtn').addEventListener('click', async function() {
+      var btn = this;
+      btn.disabled = true;
+      btn.textContent = 'Running demo…';
       try {
-        const res = await fetch('/api/accounts/register', {
+        document.getElementById('regName').value = 'Demo Sailor';
+        document.getElementById('regEmail').value = randomNavId();
+        document.getElementById('registerForm').dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+        await new Promise(function(r) { setTimeout(r, 2500); });
+        if (!currentApiKey) throw new Error('Account not created');
+        document.getElementById('fundAmount').value = '100';
+        await addFunds();
+        await new Promise(function(r) { setTimeout(r, 800); });
+        document.getElementById('payAmount').value = '25';
+        document.getElementById('payDesc').value = 'Guided wallet demo payment';
+        await makePayment();
+        setWizardStep(4);
+      } catch (e) {
+        alert('Demo stopped: ' + (e.message || 'see steps above'));
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Run guided demo (create → $100 top-up → $25 payment)';
+      }
+    });
+
+    document.getElementById('registerForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      var name = document.getElementById('regName').value.trim();
+      var email = document.getElementById('regEmail').value.trim();
+      var el = document.getElementById('registerResult');
+      el.innerHTML = '<span class="text-muted">Creating account…</span>';
+      try {
+        var res = await fetch('/api/accounts/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, email })
+          body: JSON.stringify({ name: name, email: email })
         });
-        const data = await res.json();
+        var data = await res.json();
         if (!res.ok) {
-          el.innerHTML = `<div class="alert alert-danger py-2">${data.error || 'Registration failed'}</div>`;
+          el.innerHTML = '<div class="alert alert-danger py-2">' + (data.error || 'Registration failed') + '</div>';
           return;
         }
-        // Store key, show it once
         currentApiKey = data.apiKey;
         localStorage.setItem('paymentAccountKey', currentApiKey);
         document.getElementById('apiKeyInput').value = currentApiKey;
-        el.innerHTML = `
-          <div class="alert alert-success py-2 mb-2">✓ Account created!</div>
-          <div class="mb-1 fw-semibold small">Your API Key <span class="text-danger">(save this — shown once)</span>:</div>
-          <div class="key-display mb-2" id="newApiKeyDisplay">${escapeHtml(String(data.apiKey || ''))}</div>
-          <button class="btn btn-sm btn-outline-secondary" id="copyKeyBtn" type="button">
-            <i class="bi bi-clipboard"></i> Copy Key
-          </button>`;
-        document.getElementById('copyKeyBtn').onclick = function() {
-          var key = document.getElementById('newApiKeyDisplay').textContent;
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(key).then(function() { this.textContent = 'Copied!'; }.bind(this));
-          } else { this.textContent = 'Copied!'; }
-        };
+        el.innerHTML = '<div class="alert alert-success py-2 mb-2">Account created — save your API key (shown once):</div>' +
+          '<div class="key-display mb-2">' + escapeHtml(String(data.apiKey || '')) + '</div>';
         loadDashboard(data);
+        setWizardStep(2);
+        document.getElementById('fundCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       } catch (err) {
         el.innerHTML = '<div class="alert alert-danger py-2">Account service unavailable</div>';
       }
     });
 
-    // ── Load existing account ─────────────────────────────────────────────────
     async function loadAccount() {
-      const key = document.getElementById('apiKeyInput').value.trim();
+      var key = document.getElementById('apiKeyInput').value.trim();
       if (!key) return;
-      const el = document.getElementById('loadResult');
-      el.innerHTML = '<span class="text-muted small">Loading...</span>';
+      var el = document.getElementById('loadResult');
+      el.innerHTML = '<span class="text-muted small">Loading…</span>';
       try {
-        const res = await fetch('/api/accounts/me', {
-          headers: { 'X-API-Key': key }
-        });
-        const data = await res.json();
+        var res = await fetch('/api/accounts/me', { headers: { 'X-API-Key': key } });
+        var data = await res.json();
         if (!res.ok) {
-          el.innerHTML = `<div class="alert alert-danger py-2 small">${data.error || 'Invalid key'}</div>`;
+          el.innerHTML = '<div class="alert alert-danger py-2 small">' + (data.error || 'Invalid key') + '</div>';
           return;
         }
         currentApiKey = key;
         localStorage.setItem('paymentAccountKey', key);
-        el.innerHTML = `<div class="alert alert-success py-2 small">✓ Loaded: ${data.name}</div>`;
+        el.innerHTML = '<div class="alert alert-success py-2 small">Loaded: ' + escapeHtml(data.name || '') + '</div>';
         loadDashboard(data);
+        setWizardStep((data.balance || 0) > 0 ? 3 : 2);
       } catch (err) {
         el.innerHTML = '<div class="alert alert-danger py-2 small">Account service unavailable</div>';
       }
     }
 
-    // ── Dashboard ─────────────────────────────────────────────────────────────
     function loadDashboard(data) {
       document.getElementById('dashboard').style.display = '';
       updateBalance(data.balance || 0, data.name, data.accountId);
@@ -232,91 +275,84 @@
     }
 
     function updateBalance(balance, name, accountId) {
-      document.getElementById('balanceDisplay').textContent = '$' + balance.toFixed(2);
-      document.getElementById('accountLabel').textContent = (name || '') + (accountId ? '  ·  ' + accountId : '');
+      document.getElementById('balanceDisplay').textContent = '$' + Number(balance).toFixed(2);
+      document.getElementById('accountLabel').textContent = (name || '') + (accountId ? ' · ' + accountId : '');
     }
 
-    // ── Add Funds ─────────────────────────────────────────────────────────────
     async function addFunds() {
-      const amount = parseFloat(document.getElementById('fundAmount').value);
-      const el = document.getElementById('fundResult');
+      var amount = parseFloat(document.getElementById('fundAmount').value);
+      var el = document.getElementById('fundResult');
       if (!amount || amount <= 0) { el.innerHTML = '<div class="text-danger small">Enter a valid amount</div>'; return; }
-      el.innerHTML = '<span class="text-muted small">Processing...</span>';
+      el.innerHTML = '<span class="text-muted small">Processing…</span>';
       try {
-        const res = await fetch('/api/accounts/funds', {
+        var res = await fetch('/api/accounts/funds', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-API-Key': currentApiKey },
-          body: JSON.stringify({ amount })
+          body: JSON.stringify({ amount: amount })
         });
-        const data = await res.json();
+        var data = await res.json();
         if (!res.ok) {
-          el.innerHTML = `<div class="text-danger small">${data.error || 'Failed'}</div>`;
+          el.innerHTML = '<div class="text-danger small">' + (data.error || 'Failed') + '</div>';
           return;
         }
-        el.innerHTML = `<div class="text-success small">✓ +$${amount.toFixed(2)} added</div>`;
-        document.getElementById('balanceDisplay').textContent = '$' + (data.balance != null ? Number(data.balance).toFixed(2) : '0.00');
+        el.innerHTML = '<div class="text-success small">+$' + amount.toFixed(2) + ' added</div>';
+        updateBalance(data.balance != null ? data.balance : amount, data.name, data.accountId);
+        setWizardStep(3);
+        document.getElementById('payCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       } catch (err) {
         el.innerHTML = '<div class="text-danger small">Service unavailable</div>';
       }
     }
 
-    // ── Make Payment ──────────────────────────────────────────────────────────
     async function makePayment() {
-      const amount = parseFloat(document.getElementById('payAmount').value);
-      const description = document.getElementById('payDesc').value || 'Payment';
-      const el = document.getElementById('payResult');
+      var amount = parseFloat(document.getElementById('payAmount').value);
+      var description = document.getElementById('payDesc').value || 'Payment';
+      var el = document.getElementById('payResult');
       if (!amount || amount <= 0) { el.innerHTML = '<div class="text-danger small">Enter a valid amount</div>'; return; }
-      el.innerHTML = '<span class="text-muted small">Processing...</span>';
+      el.innerHTML = '<span class="text-muted small">Processing…</span>';
       try {
-        const res = await fetch('/api/payments/simulate', {
+        var res = await fetch('/api/payments/simulate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-API-Key': currentApiKey },
-          body: JSON.stringify({ amount, currency: 'USD', description })
+          body: JSON.stringify({ amount: amount, currency: 'USD', description: description })
         });
-        const data = await res.json();
+        var data = await res.json();
         if (res.status === 402) {
-          el.innerHTML = `<div class="text-danger small">Insufficient funds — add more balance first</div>`;
+          el.innerHTML = '<div class="text-danger small">Insufficient funds — top up first</div>';
           return;
         }
         if (!res.ok) {
-          el.innerHTML = `<div class="text-danger small">${data.error || 'Payment failed'}</div>`;
+          el.innerHTML = '<div class="text-danger small">' + (data.error || 'Payment failed') + '</div>';
           return;
         }
-        var msg = (res.status === 202 || data.status === 'queued') ? (data.message || 'Payment queued') : (data.message || 'Payment approved');
-        el.innerHTML = `<div class="text-success small">✓ ${msg}${data.transactionId ? ' (' + data.transactionId + ')' : ''}</div>`;
-        // Refresh balance + history after a short delay (queue processes async)
-        setTimeout(() => { loadAccount(); loadHistory(); }, 1500);
+        el.innerHTML = '<div class="text-success small">Payment approved' +
+          (data.transactionId ? ' (' + data.transactionId + ')' : '') + '</div>';
+        setWizardStep(4);
+        setTimeout(function() { loadAccount(); loadHistory(); }, 1500);
       } catch (err) {
         el.innerHTML = '<div class="text-danger small">Payment service unavailable</div>';
       }
     }
 
-    // ── History ───────────────────────────────────────────────────────────────
     async function loadHistory() {
-      const el = document.getElementById('historyList');
+      var el = document.getElementById('historyList');
+      if (!currentApiKey) return;
       try {
-        const res = await fetch('/api/accounts/history', {
-          headers: { 'X-API-Key': currentApiKey }
-        });
+        var res = await fetch('/api/accounts/history', { headers: { 'X-API-Key': currentApiKey } });
         if (!res.ok) { el.innerHTML = '<div class="p-3 text-muted small">No history available</div>'; return; }
-        const items = await res.json();
+        var items = await res.json();
         if (!items || items.length === 0) {
           el.innerHTML = '<div class="p-3 text-muted text-center small">No transactions yet</div>';
           return;
         }
-        el.innerHTML = items.map(t => `
-          <div class="tx-row px-3 d-flex align-items-center justify-content-between">
-            <div>
-              <div class="fw-semibold small">${t.description || 'Payment'}</div>
-              <div class="text-muted" style="font-size:0.75rem">${t.transactionId} · ${new Date(t.createdAt).toLocaleString()}</div>
-            </div>
-            <div class="text-end">
-              <div class="fw-bold">$${parseFloat(t.amount).toFixed(2)}</div>
-              <span class="${t.status === 'completed' || t.approved ? 'badge-approved' : t.status === 'queued' ? 'badge-pending' : 'badge-declined'}">
-                ${t.status === 'completed' || t.approved ? 'approved' : t.status || 'pending'}
-              </span>
-            </div>
-          </div>`).join('');
+        el.innerHTML = items.map(function(t) {
+          return '<div class="tx-row px-3 d-flex align-items-center justify-content-between">' +
+            '<div><div class="fw-semibold small">' + (t.description || 'Payment') + '</div>' +
+            '<div class="text-muted" style="font-size:0.75rem">' + t.transactionId + ' · ' + new Date(t.createdAt).toLocaleString() + '</div></div>' +
+            '<div class="text-end"><div class="fw-bold">$' + parseFloat(t.amount).toFixed(2) + '</div>' +
+            '<span class="' + (t.status === 'completed' || t.approved ? 'badge-approved' : t.status === 'queued' ? 'badge-pending' : 'badge-declined') + '">' +
+            (t.status === 'completed' || t.approved ? 'approved' : t.status || 'pending') + '</span></div></div>';
+        }).join('');
       } catch (err) {
         el.innerHTML = '<div class="p-3 text-muted small">Could not load history</div>';
       }

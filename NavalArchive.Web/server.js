@@ -205,12 +205,12 @@ const defaultNavItems = [
   ]},
   { href: '/simulation', label: 'Live Battle' },
   { label: 'Support', items: [
+    { href: '/wallet', label: 'Wallet' },
+    { href: '/checkout', label: 'Checkout' },
     { href: '/donate', label: 'Donate' },
-    { href: '/payment-account', label: 'Payment Account' },
     { href: '/login', label: 'Login' }
   ]},
   { href: '/members', label: 'Member' },
-  { href: '/checkout', label: 'Checkout' },
   { href: '/trace', label: 'Trace' }
 ];
 
@@ -445,10 +445,26 @@ function toEntity(item, type = 'ship') {
   };
 }
 
-// Trace: Web -> API -> Gateway. All backend calls go through API.
+// Inject NR distributed trace headers on proxied API calls (wallet, checkout, etc.).
+function nrTraceHeaders(extra) {
+  const headers = Object.assign({}, extra || {});
+  if (newrelic) {
+    const tx = newrelic.getTransaction();
+    if (tx && typeof tx.insertDistributedTraceHeaders === 'function') {
+      tx.insertDistributedTraceHeaders(headers);
+    }
+  }
+  return headers;
+}
+
+// Trace: Browser → Node → API → Gateway (distributed trace headers forwarded to API).
 app.get('/api/trace', async (req, res) => {
   try {
-    const r = await axios.get(`${API_BASE}/api/trace`, { timeout: 15000, validateStatus: () => true });
+    const r = await axios.get(`${API_BASE}/api/trace`, {
+      timeout: 15000,
+      validateStatus: () => true,
+      headers: nrTraceHeaders()
+    });
     res.json(r.data ?? { error: 'No response' });
   } catch (err) {
     console.error('Trace error:', err.message);
@@ -535,7 +551,7 @@ app.use('/api', async (req, res) => {
     }
 
     const url = `${API_BASE}/api${req.url}`;
-      const headers = { 'Content-Type': 'application/json' };
+      const headers = nrTraceHeaders({ 'Content-Type': 'application/json' });
       if (req.headers['x-api-key']) headers['X-API-Key'] = req.headers['x-api-key'];
       const opts = {
         method: req.method,
@@ -2537,7 +2553,11 @@ app.get('/donate', (req, res) => {
 });
 
 app.get('/payment-account', (req, res) => {
-  res.render('payment-account', { title: 'Payment Account' });
+  res.redirect(301, '/wallet');
+});
+
+app.get('/wallet', (req, res) => {
+  res.render('payment-account', { title: 'Wallet' });
 });
 
 app.get('/login', (req, res) => {

@@ -72,6 +72,27 @@
   ignore_errors: true
   ignore_unreachable: true
 
+- name: Check RabbitMQ AMQP port on VM
+  ansible.windows.win_shell: |
+    $conn = Get-NetTCPConnection -LocalPort {{ rabbitmq_port | default(5672) }} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($conn) { Write-Output "OK" } else { Write-Output "FAIL" }
+  args:
+    executable: powershell
+  register: rabbitmq_listen
+  changed_when: false
+  ignore_errors: true
+  ignore_unreachable: true
+
+- name: Check Order /trace (MassTransit publish)
+  ansible.windows.win_uri:
+    url: http://localhost:5016/trace
+    method: GET
+    timeout: 15
+    return_content: true
+  register: order_trace
+  ignore_errors: true
+  ignore_unreachable: true
+
 - name: Report status
   ansible.builtin.debug:
     msg: >-
@@ -79,7 +100,9 @@
       API DB: {{ 'OK' if api_db_check.status_code | default(0) == 200 else 'FAIL - check C:\inetpub\navalarchive-api\logs\stdout*.log' }} |
       API /api/ships: {{ 'OK' if api_ships_check.status_code | default(0) == 200 else 'FAIL (' + (api_ships_check.status_code | default('N/A') | string) + ')' }} |
       Web: {{ 'OK' if web_check.status_code | default(0) == 200 else 'Check manually' }} |
-      ImagePopulator: {{ 'OK' if populator_check.status_code | default(0) == 200 else 'Check manually' }}
+      ImagePopulator: {{ 'OK' if populator_check.status_code | default(0) == 200 else 'Check manually' }} |
+      RabbitMQ: {{ rabbitmq_listen.stdout | default('unknown') | trim }} |
+      Order /trace: {{ 'OK' if order_trace.status_code | default(0) == 200 else 'FAIL (' + (order_trace.status_code | default('N/A') | string) + ')' }}
 
 - name: Warn if API DB check failed
   ansible.builtin.debug:

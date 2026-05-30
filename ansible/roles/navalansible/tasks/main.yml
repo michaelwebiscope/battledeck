@@ -8,6 +8,8 @@
 - include_tasks: iis.yml
 - include_tasks: services.yml
   when: update_services | default(true) | bool
+- include_tasks: rabbitmq.yml
+  when: rabbitmq_enabled | default(true) | bool
 - include_tasks: populate.yml
 - include_tasks: firewall.yml
 - include_tasks: scheduled_task.yml

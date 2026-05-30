@@ -1,0 +1,29 @@
+---
+# Re-apply MassTransit/RabbitMQ chain env after OTEL playbook restarts services.
+# Imported at the end of newrelic-dotnet-java-go.yml and newrelic-app.yml.
+- name: Post-deploy tracing configuration
+  hosts: navalansible
+  gather_facts: false
+  vars_files:
+    - ../roles/navalansible/vars/main.yml
+  tasks:
+    - name: Apply trace chain env vars (RabbitMQ + NextService URLs)
+      ansible.builtin.include_tasks: ../roles/navalansible/tasks/trace_chain_env.yml
+      when: rabbitmq_enabled | default(true) | bool
+
+    - name: Verify Order /trace publishes via RabbitMQ
+      ansible.windows.win_uri:
+        url: http://localhost:5016/trace
+        method: GET
+        timeout: 30
+        return_content: true
+      register: order_trace_check
+      retries: 5
+      delay: 10
+      until: order_trace_check.status_code | default(0) == 200
+      failed_when: false
+      when: rabbitmq_enabled | default(true) | bool
+
+    - ansible.builtin.debug:
+        msg: "Order /trace: {{ order_trace_check.content | default('skipped or failed') }}"
+      when: rabbitmq_enabled | default(true) | bool

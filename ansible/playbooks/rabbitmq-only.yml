@@ -1,0 +1,9 @@
+---
+# Install RabbitMQ and configure Order/PaymentChain env vars (no full site deploy).
+- name: RabbitMQ on navalansible VM
+  hosts: navalansible
+  gather_facts: false
+  vars_files:
+    - ../roles/navalansible/vars/main.yml
+  tasks:
+    - ansible.builtin.include_tasks: ../roles/navalansible/tasks/rabbitmq.yml

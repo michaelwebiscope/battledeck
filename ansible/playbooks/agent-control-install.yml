@@ -1,0 +1,213 @@
+---
+# Install New Relic Agent Control on Windows host.
+#
+# Prerequisites:
+#   1. Create a fleet of type "Host - Windows" in Fleet Control UI
+#   2. Go to NR > Integrations & Agents > Install Agent Control
+#   3. Copy the install PowerShell snippet (contains fleet_id + system identity creds)
+#
+# Usage:
+#   cd ansible && ../.venv/bin/python3 -m ansible playbook playbooks/agent-control-install.yml \
+#     -e "ansible_host=20.234.82.239" \
+#     -e "vm_admin_password=..." \
+#     -e "vm_admin_username=azureadmin" \
+#     -e "agent_control_install_script='<paste PowerShell one-liner from NR UI>'"
+#
+# If you have the full script saved to a file locally:
+#     -e "agent_control_install_script_path=/tmp/nr-agent-control-install.ps1"
+
+- name: Install New Relic Agent Control (Windows)
+  hosts: navalansible
+  gather_facts: no
+  tasks:
+
+    # ── Pre-flight checks ──────────────────────────────────────────────────
+
+    - name: Check PowerShell version
+      ansible.windows.win_shell: $PSVersionTable.PSVersion.Major
+      args:
+        executable: powershell
+      register: ps_version
+      changed_when: false
+
+    - name: Fail if PowerShell < 5
+      ansible.builtin.fail:
+        msg: "PowerShell 5+ required. Found: {{ ps_version.stdout | trim }}"
+      when: (ps_version.stdout | trim | int) < 5
+
+    - name: Check if port 51200 is in use
+      ansible.windows.win_shell: |
+        $r = netstat -ano | Select-String ':51200\s'
+        if ($r) { Write-Output "IN_USE"; Write-Output $r } else { Write-Output "FREE" }
+      args:
+        executable: powershell
+      register: port_check
+      changed_when: false
+
+    - name: Warn if port 51200 is in use
+      ansible.builtin.debug:
+        msg: "WARNING: Port 51200 is in use. Agent Control needs this port. Output: {{ port_check.stdout }}"
+      when: "'IN_USE' in port_check.stdout"
+
+    # ── Uninstall existing Infrastructure Agent ────────────────────────────
+
+    - name: Check for existing newrelic-infra service
+      ansible.windows.win_shell: |
+        $svc = Get-Service -Name newrelic-infra -ErrorAction SilentlyContinue
+        if ($svc) { Write-Output "FOUND:$($svc.Status)" } else { Write-Output "NOT_FOUND" }
+      args:
+        executable: powershell
+      register: infra_service_check
+      changed_when: false
+
+    - name: Stop existing newrelic-infra service
+      ansible.windows.win_service:
+        name: newrelic-infra
+        state: stopped
+      when: "'FOUND' in infra_service_check.stdout"
+      ignore_errors: true
+
+    - name: Uninstall New Relic Infrastructure Agent MSI
+      ansible.windows.win_shell: |
+        $app = Get-WmiObject -Class Win32_Product | Where-Object { $_.Name -like '*New Relic Infrastructure*' }
+        if ($app) {
+          Write-Output "Uninstalling: $($app.Name)"
+          $app.Uninstall() | Out-Null
+          Write-Output "UNINSTALLED"
+        } else {
+          $msi = 'C:\Windows\Temp\newrelic-infra.msi'
+          if (Test-Path $msi) {
+            msiexec.exe /qn /x $msi
+            Write-Output "UNINSTALLED_VIA_MSI"
+          } else {
+            Write-Output "NO_MSI_PRODUCT_FOUND"
+          }
+        }
+      args:
+        executable: powershell
+      when: "'FOUND' in infra_service_check.stdout"
+      register: infra_uninstall
+      async: 300
+      poll: 15
+
+    - name: Remove leftover newrelic-infra service registration
+      ansible.windows.win_shell: |
+        sc.exe delete newrelic-infra 2>$null
+        Write-Output "OK"
+      args:
+        executable: powershell
+      when: "'FOUND' in infra_service_check.stdout"
+      ignore_errors: true
+
+    - name: Report infra agent removal
+      ansible.builtin.debug:
+        msg: "Infrastructure agent: {{ infra_uninstall.stdout | default('was not installed') | trim }}"
+
+    - name: Verify newrelic-infra service is gone
+      ansible.windows.win_shell: |
+        $svc = Get-Service -Name newrelic-infra -ErrorAction SilentlyContinue
+        if ($svc) { Write-Output "STILL_EXISTS:$($svc.Status)" } else { Write-Output "REMOVED" }
+      args:
+        executable: powershell
+      register: infra_verify
+      changed_when: false
+
+    - name: Fail if infra agent could not be removed
+      ansible.builtin.fail:
+        msg: "newrelic-infra service still exists ({{ infra_verify.stdout | trim }}). Remove manually before installing Agent Control."
+      when: "'STILL_EXISTS' in infra_verify.stdout"
+
+    # ── Add antivirus exclusions ───────────────────────────────────────────
+
+    - name: Add Windows Defender exclusions for Agent Control
+      ansible.windows.win_shell: |
+        Add-MpExclusion -ExclusionPath 'C:\Program Files\New Relic\newrelic-agent-control\' -ErrorAction SilentlyContinue
+        Add-MpExclusion -ExclusionPath 'C:\ProgramData\New Relic\newrelic-agent-control\' -ErrorAction SilentlyContinue
+        Write-Output "Defender exclusions added"
+      args:
+        executable: powershell
+      ignore_errors: true
+
+    # ── Network connectivity ───────────────────────────────────────────────
+
+    - name: Test connectivity to download.newrelic.com
+      ansible.windows.win_shell: |
+        $r = Test-NetConnection -ComputerName download.newrelic.com -Port 443 -WarningAction SilentlyContinue
+        if ($r.TcpTestSucceeded) { Write-Output "OK" } else { Write-Output "FAILED" }
+      args:
+        executable: powershell
+      register: nr_connectivity
+      changed_when: false
+
+    - name: Warn if NR download unreachable
+      ansible.builtin.debug:
+        msg: "WARNING: Cannot reach download.newrelic.com:443. Agent Control install may fail."
+      when: "'FAILED' in nr_connectivity.stdout"
+
+    # ── Install Agent Control ──────────────────────────────────────────────
+
+    - name: Install Agent Control (inline script)
+      ansible.windows.win_shell: "{{ agent_control_install_script }}"
+      args:
+        executable: powershell
+      when: agent_control_install_script is defined and agent_control_install_script | length > 0
+      register: ac_install_inline
+      async: 600
+      poll: 15
+
+    - name: Install Agent Control (from script file)
+      ansible.windows.win_shell: |
+        & 'C:\Windows\Temp\nr-agent-control-install.ps1'
+      args:
+        executable: powershell
+      when:
+        - agent_control_install_script is not defined or agent_control_install_script | length == 0
+        - agent_control_install_script_path is defined and agent_control_install_script_path | length > 0
+      register: ac_install_file
+      async: 600
+      poll: 15
+
+    - name: Skip install — no script provided
+      ansible.builtin.debug:
+        msg: >-
+          Host is prepped (infra agent removed, port 51200 free, Defender exclusions added).
+          Re-run with -e "agent_control_install_script='...'" to complete installation,
+          or paste the NR install command directly in PowerShell on the VM.
+      when:
+        - agent_control_install_script is not defined or agent_control_install_script | length == 0
+        - agent_control_install_script_path is not defined or agent_control_install_script_path | length == 0
+
+    # ── Post-install verification ──────────────────────────────────────────
+
+    - name: Wait for Agent Control service to start
+      ansible.windows.win_shell: |
+        $retries = 12
+        for ($i = 0; $i -lt $retries; $i++) {
+          $svc = Get-Service -Name newrelic-agent-control -ErrorAction SilentlyContinue
+          if ($svc -and $svc.Status -eq 'Running') { Write-Output "RUNNING"; exit 0 }
+          Start-Sleep -Seconds 10
+        }
+        Write-Output "NOT_RUNNING"
+      args:
+        executable: powershell
+      register: ac_service
+      changed_when: false
+      when: (ac_install_inline is defined and ac_install_inline.rc | default(1) == 0) or
+            (ac_install_file is defined and ac_install_file.rc | default(1) == 0)
+
+    - name: Check Agent Control health endpoint
+      ansible.windows.win_uri:
+        url: http://localhost:51200/status
+        method: GET
+        return_content: true
+      register: ac_health
+      failed_when: false
+      when: ac_service is defined and 'RUNNING' in (ac_service.stdout | default(''))
+
+    - name: Report Agent Control status
+      ansible.builtin.debug:
+        msg: >-
+          Agent Control service: {{ ac_service.stdout | default('not checked') | trim }}.
+          Health: {{ ac_health.content | default('not checked') | trim }}.
+          Next: go to Fleet Control in NR UI → select your fleet → deploy Infrastructure Agent + NRDOT.
+      when: ac_service is defined

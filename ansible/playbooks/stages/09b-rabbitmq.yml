@@ -1,0 +1,9 @@
+---
+- name: "Navalansible stage — RabbitMQ + MassTransit trace chain env"
+  hosts: navalansible
+  gather_facts: true
+  tasks:
+    - ansible.builtin.include_role:
+        name: navalansible
+        tasks_from: rabbitmq
+      when: rabbitmq_enabled | default(true) | bool

@@ -10,9 +10,9 @@ pg_app_password: ""
 # Set these via terraform.tfvars and scripts/deploy-navalansible.sh (preferred).
 # Examples:
 #   newrelic_trace_observer_host = "....tracing.edge.nr-data.net"
-#   newrelic_trace_observer_port = "443"
+#   newrelic_trace_observer_port = "4318"
 newrelic_trace_observer_host: ""
-newrelic_trace_observer_port: "443"
+newrelic_trace_observer_port: "4318"
 
 # Paths
 api_path: C:\inetpub\navalarchive-api
@@ -73,29 +73,45 @@ iis_hosted_service_names:
   - NavalArchiveInventory
   - NavalArchiveBasket
 
-# OpenTelemetry (.NET auto-instrumentation) defaults for non-IIS services
+# New Relic .NET APM agent (trace chain: API + IIS microservices + Order/Payment/Shipping/Notification)
+nr_dotnet_profiler_guid: "{36032161-FFC0-4B61-B559-F6C5D41BAE5A}"
+nr_dotnet_profiler_path: 'C:\Program Files\New Relic\.NET Agent\NewRelic.Profiler.dll'
+
+nr_dotnet_trace_chain_windows_services:
+  - NavalArchiveOrder
+  - NavalArchivePaymentChain
+  - NavalArchiveShipping
+  - NavalArchiveNotification
+
+# OpenTelemetry (.NET auto-instrumentation) defaults for Card/Cart only
 # Metrics and logs always go to standard NR OTLP ingest (otlp.nr-data.net).
 # Traces go to Trace Observer when newrelic_trace_observer_host is set (per-signal override),
 # otherwise fall back to the same standard endpoint.
 otel_exporter_otlp_endpoint: "https://otlp.nr-data.net"
-otel_exporter_otlp_traces_endpoint: "{% if newrelic_trace_observer_host is defined and newrelic_trace_observer_host | length > 0 %}https://{{ newrelic_trace_observer_host }}{% else %}https://otlp.nr-data.net{% endif %}"
+# Signal-specific traces endpoint MUST include /v1/traces (SDK does not append it).
+# NR infinite tracing accepts HTTPS on port 443 (default when port omitted).
+otel_exporter_otlp_traces_endpoint: "{% if newrelic_trace_observer_host is defined and newrelic_trace_observer_host | length > 0 %}https://{{ newrelic_trace_observer_host }}/v1/traces{% else %}https://otlp.nr-data.net/v1/traces{% endif %}"
 otel_exporter_otlp_protocol: http/protobuf
+otel_exporter_otlp_traces_protocol: http/protobuf
 otel_dotnet_auto_home: C:\Program Files\OpenTelemetry .NET AutoInstrumentation
-# Pin to v1.9.0 — last release using DiagnosticSource 8.x (compatible with self-contained .NET 8 apps)
+# Pin 1.9.0 for self-contained .NET 8 apps (1.11 requires DiagnosticSource 9.x).
 otel_dotnet_auto_version: "1.9.0"
 
 # Common OTEL .NET auto-instrumentation env vars (shared by Card, Cart, chain non-IIS services).
-# Per-service vars (OTEL_SERVICE_NAME, OTEL_RESOURCE_ATTRIBUTES, OTEL_EXPORTER_OTLP_HEADERS)
-# are set in the service creation task.
+# Per-service vars (OTEL_SERVICE_NAME, OTEL_RESOURCE_ATTRIBUTES, OTEL_EXPORTER_OTLP_HEADERS,
+# OTEL_EXPORTER_OTLP_TRACES_HEADERS when trace observer is configured) are set in newrelic-otel.yml.
 otel_common_env_vars:
   - "OTEL_DOTNET_AUTO_HOME={{ otel_dotnet_auto_home }}"
   - "OTEL_EXPORTER_OTLP_ENDPOINT={{ otel_exporter_otlp_endpoint }}"
   - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT={{ otel_exporter_otlp_traces_endpoint }}"
   - "OTEL_EXPORTER_OTLP_PROTOCOL={{ otel_exporter_otlp_protocol }}"
-  - "OTEL_TRACES_EXPORTER=otlp"
+  - "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL={{ otel_exporter_otlp_traces_protocol }}"
+  - "OTEL_TRACES_EXPORTER=otlp,console"
   - "OTEL_METRICS_EXPORTER=otlp"
   - "OTEL_LOGS_EXPORTER=otlp"
   - "OTEL_DOTNET_AUTO_TRACES_ENABLED=true"
+  - "OTEL_DOTNET_AUTO_TRACES_ADDITIONAL_SOURCES=NavalArchive,MassTransit"
+  - "OTEL_PROPAGATORS=tracecontext,baggage"
   - "OTEL_DOTNET_AUTO_METRICS_ENABLED=true"
   - "OTEL_DOTNET_AUTO_LOGS_ENABLED=true"
   - "CORECLR_ENABLE_PROFILING=1"
@@ -137,3 +153,31 @@ newrelic_mssql_otel_enabled: true
 otelcol_contrib_version: "0.152.0"
 otelcol_install_dir: 'C:\Program Files\OpenTelemetry Collector'
 otelcol_mssql_service_name: otelcol-contrib-mssql
+
+# New Relic Agent Control (fleet-managed infra agent).
+# Set agent_control_enabled to true and provide fleet/org IDs to use Agent Control
+# instead of the standalone newrelic-infra agent.
+# client_id / client_secret are one-time tokens from the NR Fleet Control UI (expire 12h).
+agent_control_enabled: false
+agent_control_version: "1.14.0"
+agent_control_fleet_id: ""
+agent_control_org_id: ""
+agent_control_client_id: ""
+agent_control_client_secret: ""
+agent_control_region: "us"
+
+# RabbitMQ (MassTransit Order → PaymentChain distributed traces)
+rabbitmq_enabled: true
+rabbitmq_base_dir: "C:\\RabbitMQ"
+rabbitmq_chocolatey_version: "3.13.7"
+rabbitmq_host: "127.0.0.1"
+rabbitmq_port: 5672
+rabbitmq_username: "guest"
+rabbitmq_password: "guest"
+rabbitmq_virtual_host: "/"
+rabbitmq_management_enabled: true
+
+# HTTP trace chain: Payment → Shipping → Notification (/trace endpoints)
+trace_chain_next_urls:
+  NavalArchivePaymentChain: "http://localhost:5018"
+  NavalArchiveShipping: "http://localhost:5019"

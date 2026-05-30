@@ -8,7 +8,7 @@
   <main class="app-shell">
     <div class="container py-4">
       <h1 class="mb-4">Distributed Trace</h1>
-      <p class="text-muted mb-4">10-service trace chain: Gateway → Auth → User → Catalog → Inventory → Basket → Order → Payment → Shipping → Notification</p>
+      <p class="text-muted mb-4">Browser → Node → API → Gateway → Auth → User → Catalog → Inventory → Basket → Order → RabbitMQ → Payment → Shipping → Notification. Open New Relic distributed tracing after clicking Run Trace.</p>
       <div class="card">
         <div class="card-body">
           <button id="runBtn" class="btn btn-primary mb-3">Run Trace</button>

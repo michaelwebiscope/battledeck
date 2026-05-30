@@ -1,0 +1,74 @@
+---
+# New Relic .NET APM agent for the browser→Node→API→RabbitMQ trace chain.
+# Uses machine-installed NR .NET profiler (newrelic-infra.yml apm-dotnet target).
+# OTEL is not applied here — Card/Cart stay on newrelic-otel.yml.
+- name: New Relic - .NET APM trace chain
+  hosts: navalansible
+  gather_facts: false
+  vars_files:
+    - ../roles/navalansible/vars/main.yml
+  tasks:
+    - name: Deploy NR .NET agent env to API web.config
+      ansible.windows.win_template:
+        src: ../roles/navalansible/templates/webconfig_api.j2
+        dest: "{{ api_path }}\\web.config"
+      when: newrelic_license_key is defined and newrelic_license_key | length > 0
+
+    - name: Deploy NR .NET agent env to IIS chain web.config
+      ansible.windows.win_template:
+        src: ../roles/navalansible/templates/webconfig_service.j2
+        dest: "{{ chain_paths[item.path_key] }}\\web.config"
+      loop: "{{ iis_chain_services }}"
+      loop_control:
+        label: "{{ item.site }}"
+      when: newrelic_license_key is defined and newrelic_license_key | length > 0
+
+    - name: Recycle IIS app pools after NR web.config update
+      ansible.windows.win_shell: |
+        $appcmd = if (Test-Path "$env:windir\SysNative\inetsrv\appcmd.exe") { "$env:windir\SysNative\inetsrv\appcmd.exe" } else { "$env:windir\System32\inetsrv\appcmd.exe" }
+        {% for item in iis_chain_services %}
+        & $appcmd recycle apppool "{{ item.apppool }}" 2>$null
+        {% endfor %}
+        & $appcmd recycle apppool "NavalArchive-API" 2>$null
+      args:
+        executable: powershell
+      failed_when: false
+      when: newrelic_license_key is defined and newrelic_license_key | length > 0
+
+    - name: Configure NR .NET agent on trace chain Windows services
+      ansible.windows.win_shell: |
+        $svc = "{{ item }}"
+        $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\$svc"
+        if (-not (Test-Path $regPath)) { exit 0 }
+        $existing = @()
+        $prop = Get-ItemProperty -Path $regPath -Name Environment -ErrorAction SilentlyContinue
+        if ($prop -and $prop.Environment) { $existing = @($prop.Environment) }
+        $keep = @($existing | Where-Object {
+          $_ -notmatch '^(OTEL_|CORECLR_|COR_|DOTNET_ADDITIONAL_DEPS|DOTNET_SHARED_STORE|DOTNET_STARTUP_HOOKS|NEW_RELIC_)'
+        })
+        $nrVars = @(
+          "NEW_RELIC_APP_NAME=$svc",
+          "NEW_RELIC_LICENSE_KEY={{ newrelic_license_key }}",
+          "NEW_RELIC_DISTRIBUTED_TRACING_ENABLED=true",
+          "CORECLR_ENABLE_PROFILING=1",
+          "CORECLR_PROFILER={{ nr_dotnet_profiler_guid }}",
+          "CORECLR_PROFILER_PATH_64={{ nr_dotnet_profiler_path }}",
+          "COR_ENABLE_PROFILING=1",
+          "COR_PROFILER={{ nr_dotnet_profiler_guid }}",
+          "COR_PROFILER_PATH_64={{ nr_dotnet_profiler_path }}"
+        )
+        {% if newrelic_trace_observer_host is defined and newrelic_trace_observer_host | length > 0 %}
+        $nrVars += "NEW_RELIC_INFINITE_TRACING_TRACE_OBSERVER_HOST={{ newrelic_trace_observer_host }}"
+        $nrVars += "NEW_RELIC_INFINITE_TRACING_TRACE_OBSERVER_PORT={{ newrelic_trace_observer_port | default('4318') }}"
+        {% endif %}
+        Set-ItemProperty -Path $regPath -Name "Environment" -Value ($keep + $nrVars) -Type MultiString -Force
+        sc.exe stop $svc 2>$null
+        Start-Sleep -Seconds 3
+        sc.exe start $svc
+      args:
+        executable: powershell
+      async: 60
+      poll: 5
+      failed_when: false
+      loop: "{{ nr_dotnet_trace_chain_windows_services }}"
+      when: newrelic_license_key is defined and newrelic_license_key | length > 0

@@ -7,6 +7,9 @@
     <AssemblyName>NavalArchive.Shipping</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\NavalArchive.Messaging\NavalArchive.Messaging.csproj" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.0" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.0" />
   </ItemGroup>

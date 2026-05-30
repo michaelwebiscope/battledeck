@@ -1,0 +1,27 @@
+---
+# Point trace chain at NR .NET agent + Trace Observer; re-apply MassTransit env.
+- ansible.builtin.import_playbook: newrelic-dotnet-trace-chain.yml
+- ansible.builtin.import_playbook: newrelic-node.yml
+- ansible.builtin.import_playbook: newrelic-go.yml
+- ansible.builtin.import_playbook: newrelic-java.yml
+- ansible.builtin.import_playbook: post-deploy-tracing.yml
+
+- name: Refresh API web.config (OTEL + trace observer)
+  hosts: navalansible
+  gather_facts: false
+  vars_files:
+    - ../roles/navalansible/vars/main.yml
+  tasks:
+    - ansible.builtin.include_role:
+        name: navalansible
+        tasks_from: api_webconfig_refresh
+      when: newrelic_license_key is defined and newrelic_license_key | length > 0
+
+    - name: Recycle NavalArchive-API app pool
+      ansible.windows.win_shell: |
+        $appcmd = if (Test-Path "$env:windir\SysNative\inetsrv\appcmd.exe") { "$env:windir\SysNative\inetsrv\appcmd.exe" } else { "$env:windir\System32\inetsrv\appcmd.exe" }
+        & $appcmd recycle apppool "NavalArchive-API" 2>$null
+      args:
+        executable: powershell
+      failed_when: false
+      when: newrelic_license_key is defined and newrelic_license_key | length > 0

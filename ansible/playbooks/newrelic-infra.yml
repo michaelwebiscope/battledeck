@@ -1,8 +1,16 @@
 ---
-# PostgreSQL instrumentation (new_relic user + postgresql-config.yml) runs only from this playbook —
-# e.g. ./scripts/deploy-navalansible.sh -newrelic or -fullrun (not plain site deploy).
-# When newrelic_postgres_monitor_password is set: install nri-postgresql MSI on Windows if needed:
-# https://docs.newrelic.com/docs/infrastructure/host-integrations/installation/install-infrastructure-host-integrations/#install-windows
+# New Relic infrastructure instrumentation.
+#
+# Two modes:
+#   1. Agent Control (fleet-managed): set agent_control_enabled=true + fleet credentials.
+#      Installs Agent Control supervisor which manages the infra agent via Fleet Control.
+#   2. Standalone (default): installs newrelic-infra + logs + .NET APM via newrelic.newrelic_install.
+#
+# MSSQL integration (nri-mssql + OTel collector) runs in both modes when
+# newrelic_mssql_monitor_password is set.
+#
+# Run: ./scripts/deploy-navalansible.sh -newrelic or -fullrun
+
 - name: New Relic - infrastructure, logs, and .NET APM
   hosts: navalansible
   gather_facts: true
@@ -18,10 +26,22 @@
     NEW_RELIC_REGION: "{{ newrelic_region | default('US') }}"
     NEW_RELIC_LICENSE_KEY: "{{ newrelic_license_key | default('') }}"
   tasks:
-    - name: Install infrastructure, logs, and .NET APM agent
+
+    # ── Mode A: Agent Control (fleet-managed) ──────────────────────────────
+    - name: Install New Relic Agent Control (fleet-managed infra agent)
+      ansible.builtin.include_role:
+        name: navalansible
+        tasks_from: agent_control
+      when: agent_control_enabled | default(false) | bool
+
+    # ── Mode B: Standalone infra agent ─────────────────────────────────────
+    - name: Install infrastructure, logs, and .NET APM agent (standalone)
       ansible.builtin.include_role:
         name: newrelic.newrelic_install
       ignore_errors: true
+      when: not (agent_control_enabled | default(false) | bool)
+
+    # ── DB integrations (both modes) ───────────────────────────────────────
 
     - name: Deploy New Relic PostgreSQL integration config (optional, legacy)
       ansible.builtin.include_role:
@@ -29,13 +49,13 @@
         tasks_from: newrelic_postgresql_integration
       when: newrelic_postgres_monitor_password | default('') | length > 0
 
-    - name: Deploy New Relic Microsoft SQL Server integration config (optional)
+    - name: Deploy New Relic Microsoft SQL Server integration config
       ansible.builtin.include_role:
         name: navalansible
         tasks_from: newrelic_mssql_integration
       when: newrelic_mssql_monitor_password | default('') | length > 0
 
-    - name: Deploy OpenTelemetry SQL Server collector (optional)
+    - name: Deploy OpenTelemetry SQL Server collector
       ansible.builtin.include_role:
         name: navalansible
         tasks_from: otel_mssql_collector

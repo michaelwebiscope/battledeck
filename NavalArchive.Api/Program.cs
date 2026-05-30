@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using NavalArchive.Data;
 using NavalArchive.Api.Services;
 using NavalArchive.Api.Middleware;
+using NavalArchive.Messaging;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -43,7 +44,8 @@ static string RedactRedisConfiguration(string? raw)
 
 builder.Services.AddControllers()
     .AddJsonOptions(o => o.JsonSerializerOptions.PropertyNameCaseInsensitive = true);
-builder.Services.AddHttpClient();
+builder.Services.AddTraceChainHttpClient();
+builder.Services.AddSingleton<WalletTracePublisher>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -437,7 +439,7 @@ app.MapControllers();
 // Trace page (served when /trace goes through API)
 app.MapGet("trace", () => Results.Content(
     "<!DOCTYPE html><html><head><title>Distributed Trace</title><link href=\"https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css\" rel=\"stylesheet\"></head><body class=\"p-4\">" +
-    "<h1>Distributed Trace</h1><p class=\"text-muted\">10-service chain: Gateway → Auth → User → Catalog → Inventory → Basket → Order → Payment → Shipping → Notification</p>" +
+    "<h1>Distributed Trace</h1><p class=\"text-muted\">Browser → Node → API → Gateway → Auth → User → Catalog → Inventory → Basket → Order → RabbitMQ → Payment → Shipping → Notification</p>" +
     "<button id=\"run\" class=\"btn btn-primary mb-3\">Run Trace</button>" +
     "<div id=\"status\" class=\"mb-3\"></div>" +
     "<pre id=\"out\" class=\"bg-dark text-light p-3 rounded\" style=\"max-height:400px;overflow:auto\"></pre>" +

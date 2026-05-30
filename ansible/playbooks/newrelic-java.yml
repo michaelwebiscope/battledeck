@@ -2,6 +2,8 @@
 - name: New Relic - Java (NavalArchiveImagePopulator)
   hosts: navalansible
   gather_facts: false
+  vars_files:
+    - ../roles/navalansible/vars/main.yml
   tasks:
     - ansible.builtin.include_role:
         name: navalansible

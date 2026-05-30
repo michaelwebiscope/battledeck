@@ -1,0 +1,94 @@
+---
+# RabbitMQ broker for Order → PaymentChain MassTransit distributed traces.
+
+- name: Ensure RabbitMQ data directory (RABBITMQ_BASE)
+  ansible.windows.win_shell: |
+    $base = "{{ rabbitmq_base_dir }}"
+    New-Item -ItemType Directory -Force -Path $base, "$base\data", "$base\log" | Out-Null
+    [Environment]::SetEnvironmentVariable("RABBITMQ_BASE", $base, "Machine")
+  args:
+    executable: powershell
+
+- name: Check if RabbitMQ port is listening
+  ansible.windows.win_shell: |
+    $conn = Get-NetTCPConnection -LocalPort {{ rabbitmq_port }} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($conn) { Write-Output "listening" } else { Write-Output "not_listening" }
+  args:
+    executable: powershell
+  register: rabbitmq_port_check
+  changed_when: false
+  when: rabbitmq_enabled | default(true) | bool
+
+- name: Copy RabbitMQ official installer script
+  ansible.windows.win_copy:
+    src: install-rabbitmq-official.ps1
+    dest: C:\Temp\install-rabbitmq-official.ps1
+  when:
+    - rabbitmq_enabled | default(true) | bool
+    - rabbitmq_port_check.stdout | default('not_listening') | trim != 'listening'
+
+- name: Install RabbitMQ via official OTP + server installers (reliable on Windows)
+  ansible.windows.win_shell: |
+    $conn = Get-NetTCPConnection -LocalPort {{ rabbitmq_port }} -State Listen -ErrorAction SilentlyContinue
+    if ($conn) { Write-Output 'already_listening'; exit 0 }
+    & C:\Temp\install-rabbitmq-official.ps1
+  args:
+    executable: powershell
+  when:
+    - rabbitmq_enabled | default(true) | bool
+    - rabbitmq_port_check.stdout | default('not_listening') | trim != 'listening'
+
+- name: Reinstall RabbitMQ Windows service with RABBITMQ_BASE
+  ansible.windows.win_shell: |
+    $base = "{{ rabbitmq_base_dir }}"
+    [Environment]::SetEnvironmentVariable("RABBITMQ_BASE", $base, "Machine")
+    $serverDir = Get-ChildItem "C:\Program Files\RabbitMQ Server" -Directory | Where-Object { $_.Name -like "rabbitmq_server-*" } | Select-Object -First 1
+    if ($serverDir) {
+      $sbin = Join-Path $serverDir.FullName "sbin"
+      & "$sbin\rabbitmq-service.bat" stop 2>$null
+      Start-Sleep 2
+      & "$sbin\rabbitmq-service.bat" remove 2>$null
+      & "$sbin\rabbitmq-service.bat" install
+      & "$sbin\rabbitmq-service.bat" start
+    }
+  args:
+    executable: powershell
+  when:
+    - rabbitmq_enabled | default(true) | bool
+    - rabbitmq_port_check.stdout | default('not_listening') | trim != 'listening'
+
+- name: Enable RabbitMQ management plugin
+  ansible.windows.win_shell: |
+    $rabbitctl = Get-ChildItem "C:\Program Files\RabbitMQ Server" -Recurse -Filter rabbitmq-plugins.bat -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($rabbitctl) {
+      & $rabbitctl enable rabbitmq_management
+      Restart-Service RabbitMQ -ErrorAction SilentlyContinue
+    }
+  args:
+    executable: powershell
+  failed_when: false
+  when:
+    - rabbitmq_enabled | default(true) | bool
+    - rabbitmq_management_enabled | default(true) | bool
+
+- name: Wait for RabbitMQ AMQP port
+  ansible.windows.win_shell: |
+    $ok = $false
+    for ($i = 0; $i -lt 60; $i++) {
+      $conn = Get-NetTCPConnection -LocalPort {{ rabbitmq_port }} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+      if ($conn) { $ok = $true; break }
+      Start-Sleep -Seconds 3
+    }
+    if (-not $ok) { throw "RabbitMQ not listening on port {{ rabbitmq_port }}" }
+    Write-Output "ready"
+  args:
+    executable: powershell
+  register: rabbitmq_ready
+  until: rabbitmq_ready.rc == 0
+  retries: 2
+  delay: 10
+  when: rabbitmq_enabled | default(true) | bool
+
+- name: Configure MassTransit trace chain service env vars
+  ansible.builtin.include_tasks: trace_chain_env.yml
+  when: rabbitmq_enabled | default(true) | bool

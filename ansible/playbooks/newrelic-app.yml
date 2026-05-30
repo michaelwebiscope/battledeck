@@ -3,5 +3,7 @@
 # Use: ./scripts/deploy-navalansible.sh -newrelic-only
 - ansible.builtin.import_playbook: newrelic-java.yml
 - ansible.builtin.import_playbook: newrelic-go.yml
+- ansible.builtin.import_playbook: newrelic-dotnet-trace-chain.yml
 - ansible.builtin.import_playbook: newrelic-otel.yml
 - ansible.builtin.import_playbook: newrelic-node.yml
+- ansible.builtin.import_playbook: post-deploy-tracing.yml

@@ -1,8 +1,7 @@
 ---
-# Self-sufficient: installs OTEL auto-instrumentation, sets full env vars on all
-# non-IIS .NET services (Card, Cart, Order, PaymentChain, Shipping, Notification),
-# and restarts them. Safe to run independently of site.yml.
-- name: New Relic - OTEL (.NET services)
+# Self-sufficient: installs OTEL auto-instrumentation on Card and Cart only.
+# Trace chain (API, Gateway–Notification) uses NR .NET agent via newrelic-dotnet-trace-chain.yml.
+- name: New Relic - OTEL (Card + Cart)
   hosts: navalansible
   gather_facts: false
   vars_files:
@@ -23,6 +22,21 @@
       register: otel_current_version
       changed_when: false
 
+    - name: Stop OTEL-instrumented services before OTEL install or upgrade
+      ansible.windows.win_shell: |
+        $services = @('NavalArchiveCard','NavalArchiveCart')
+        foreach ($svc in $services) {
+          sc.exe stop $svc 2>$null
+        }
+        Start-Sleep -Seconds 5
+        Get-Process -Name 'NavalArchive.*' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 3
+      args:
+        executable: powershell
+      when: >
+        otel_current_version.stdout | trim == 'not_installed'
+        or not (otel_current_version.stdout | trim is search(otel_dotnet_auto_version))
+
     - name: Remove incompatible OTEL version if present
       ansible.windows.win_shell: |
         if (Test-Path "{{ otel_dotnet_auto_home }}") {
@@ -30,6 +44,7 @@
         }
       args:
         executable: powershell
+      failed_when: false
       when: >
         otel_current_version.stdout | trim != 'not_installed'
         and not (otel_current_version.stdout | trim is search(otel_dotnet_auto_version))
@@ -49,20 +64,26 @@
         otel_current_version.stdout | trim == 'not_installed'
         or not (otel_current_version.stdout | trim is search(otel_dotnet_auto_version))
 
-    # --- Set full OTEL env vars on each non-IIS .NET service and restart ---
     - name: Configure OTEL env vars and restart service
       ansible.windows.win_shell: |
         $svc = "{{ item }}"
         $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\$svc"
         if (Test-Path $regPath) {
-          $envVars = @(
+          $existing = @()
+          $prop = Get-ItemProperty -Path $regPath -Name Environment -ErrorAction SilentlyContinue
+          if ($prop -and $prop.Environment) { $existing = @($prop.Environment) }
+          $otelVars = @(
             "OTEL_SERVICE_NAME=$svc",
             "OTEL_RESOURCE_ATTRIBUTES=service.name=$svc,service.namespace=NavalArchive,deployment.environment=prod",
             "OTEL_EXPORTER_OTLP_HEADERS=api-key={{ newrelic_license_key }}"
           )
+          {% if newrelic_trace_observer_host is defined and newrelic_trace_observer_host | length > 0 %}
+          $otelVars += "OTEL_EXPORTER_OTLP_TRACES_HEADERS=api-key={{ newrelic_license_key }}"
+          {% endif %}
           {% for ev in otel_common_env_vars %}
-          $envVars += "{{ ev }}"
+          $otelVars += "{{ ev }}"
           {% endfor %}
+          $envVars = @($existing | Where-Object { $_ -notmatch '^(OTEL_|CORECLR_|COR_|DOTNET_)' }) + $otelVars
           Set-ItemProperty -Path $regPath -Name "Environment" -Value $envVars -Type MultiString -Force
           sc.exe stop $svc 2>$null
           $waited = 0
@@ -85,8 +106,4 @@
       loop:
         - NavalArchiveCard
         - NavalArchiveCart
-        - NavalArchiveOrder
-        - NavalArchivePaymentChain
-        - NavalArchiveShipping
-        - NavalArchiveNotification
       when: newrelic_license_key is defined and newrelic_license_key | length > 0

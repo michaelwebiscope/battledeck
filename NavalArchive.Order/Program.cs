@@ -1,20 +1,55 @@
 using System.Diagnostics;
+using MassTransit;
+using NavalArchive.Messaging;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseWindowsService();
-builder.Services.AddHttpClient();
+
+builder.Services.AddMassTransit(x =>
+{
+    x.UsingRabbitMq((context, cfg) =>
+    {
+        ConfigureRabbitMq(builder.Configuration, cfg);
+        cfg.UsePublishFilter(typeof(TracePublishFilter<>), context);
+        cfg.ConfigureEndpoints(context);
+    });
+});
 
 var app = builder.Build();
-var nextUrl = builder.Configuration["NextService:Url"] ?? "http://localhost:5017";
 
 app.MapGet("/health", () => Results.Ok(new { service = "Order", status = "ok" }));
-app.MapGet("/trace", async (IHttpClientFactory http) =>
+
+app.MapPost("/wallet/activity", async (WalletActivityRequest req, IPublishEndpoint publish) =>
 {
-    using var activity = new Activity("Order.Create").Start();
-    var client = http.CreateClient();
-    var res = await client.GetAsync($"{nextUrl}/trace");
-    var body = await res.Content.ReadAsStringAsync();
-    return Results.Ok(new { service = "Order", next = body });
+    await publish.Publish(new WalletActivity(req.Step, req.AccountId, req.Amount, DateTimeOffset.UtcNow));
+    return Results.Json(new { service = "Order", step = req.Step, via = "rabbitmq" }, statusCode: StatusCodes.Status202Accepted);
+});
+
+app.MapGet("/trace", async (IPublishEndpoint publish) =>
+{
+    var orderId = Guid.NewGuid();
+    await publish.Publish(new OrderSubmitted(orderId, DateTimeOffset.UtcNow));
+    return Results.Ok(new
+    {
+        service = "Order",
+        orderId,
+        via = "rabbitmq",
+        traceId = Activity.Current?.TraceId.ToString()
+    });
 });
 
 app.Run();
+
+static void ConfigureRabbitMq(IConfiguration configuration, IRabbitMqBusFactoryConfigurator cfg)
+{
+    var host = configuration["RabbitMQ:Host"] ?? "127.0.0.1";
+    var user = configuration["RabbitMQ:Username"] ?? "guest";
+    var pass = configuration["RabbitMQ:Password"] ?? "guest";
+    var vhost = configuration["RabbitMQ:VirtualHost"] ?? "/";
+
+    cfg.Host(host, vhost, h =>
+    {
+        h.Username(user);
+        h.Password(pass);
+    });
+}

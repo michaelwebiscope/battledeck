@@ -5,7 +5,25 @@
       <handlers>
         <add name="aspNetCore" path="*" verb="*" modules="AspNetCoreModuleV2" resourceType="Unspecified" />
       </handlers>
-      <aspNetCore processPath=".\{{ item.exe }}" arguments="--urls=http://localhost:{{ item.port }}" stdoutLogEnabled="false" stdoutLogFile=".\logs\stdout" hostingModel="outofprocess" />
+      <aspNetCore processPath=".\{{ item.exe }}" arguments="--urls=http://localhost:{{ item.port }}" stdoutLogEnabled="false" stdoutLogFile=".\logs\stdout" hostingModel="outofprocess">
+        <environmentVariables>
+          {% if newrelic_license_key is defined and newrelic_license_key | length > 0 %}
+          <environmentVariable name="NEW_RELIC_APP_NAME" value="{{ item.svc }}" />
+          <environmentVariable name="NEW_RELIC_LICENSE_KEY" value="{{ newrelic_license_key }}" />
+          <environmentVariable name="NEW_RELIC_DISTRIBUTED_TRACING_ENABLED" value="true" />
+          <environmentVariable name="CORECLR_ENABLE_PROFILING" value="1" />
+          <environmentVariable name="CORECLR_PROFILER" value="{{ nr_dotnet_profiler_guid }}" />
+          <environmentVariable name="CORECLR_PROFILER_PATH_64" value="{{ nr_dotnet_profiler_path }}" />
+          <environmentVariable name="COR_ENABLE_PROFILING" value="1" />
+          <environmentVariable name="COR_PROFILER" value="{{ nr_dotnet_profiler_guid }}" />
+          <environmentVariable name="COR_PROFILER_PATH_64" value="{{ nr_dotnet_profiler_path }}" />
+          {% if newrelic_trace_observer_host is defined and newrelic_trace_observer_host | length > 0 %}
+          <environmentVariable name="NEW_RELIC_INFINITE_TRACING_TRACE_OBSERVER_HOST" value="{{ newrelic_trace_observer_host }}" />
+          <environmentVariable name="NEW_RELIC_INFINITE_TRACING_TRACE_OBSERVER_PORT" value="{{ newrelic_trace_observer_port | default('4318') }}" />
+          {% endif %}
+          {% endif %}
+        </environmentVariables>
+      </aspNetCore>
     </system.webServer>
   </location>
 </configuration>

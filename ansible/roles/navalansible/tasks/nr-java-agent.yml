@@ -24,6 +24,7 @@
         infinite_tracing:
           trace_observer:
             host: {{ newrelic_trace_observer_host | default('') }}
+            port: {{ newrelic_trace_observer_port | default('4318') }}
         log_level: info
         log_file_path: 'C:\ProgramData\NewRelic\java\logs'
       production:

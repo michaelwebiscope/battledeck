@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using NavalArchive.Api.Services;
 
 namespace NavalArchive.Api.Controllers;
 
@@ -11,11 +12,13 @@ public class AccountsController : ControllerBase
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _config;
+    private readonly WalletTracePublisher _walletTrace;
 
-    public AccountsController(IHttpClientFactory httpClientFactory, IConfiguration config)
+    public AccountsController(IHttpClientFactory httpClientFactory, IConfiguration config, WalletTracePublisher walletTrace)
     {
         _httpClientFactory = httpClientFactory;
         _config = config;
+        _walletTrace = walletTrace;
     }
 
     private string AccountUrl => _config["AccountService:Url"] ?? "http://localhost:5005";
@@ -25,7 +28,13 @@ public class AccountsController : ControllerBase
     [HttpPost("register")]
     public async Task<IActionResult> Register([FromBody] object body)
     {
-        return await ProxyPost(AccountUrl + "/api/accounts/register", body, forwardApiKey: false);
+        var result = await ProxyPost(AccountUrl + "/api/accounts/register", body, forwardApiKey: false);
+        _walletTrace.TriggerIfSuccess(result, "account.created", root =>
+        {
+            var accountId = root.TryGetProperty("accountId", out var id) ? id.GetString() : null;
+            return (accountId, null);
+        });
+        return result;
     }
 
     // GET /api/accounts/me
@@ -39,7 +48,14 @@ public class AccountsController : ControllerBase
     [HttpPost("funds")]
     public async Task<IActionResult> AddFunds([FromBody] object body)
     {
-        return await ProxyPost(AccountUrl + "/api/accounts/funds", body, forwardApiKey: true);
+        var result = await ProxyPost(AccountUrl + "/api/accounts/funds", body, forwardApiKey: true);
+        _walletTrace.TriggerIfSuccess(result, "account.funded", root =>
+        {
+            var accountId = root.TryGetProperty("accountId", out var id) ? id.GetString() : null;
+            decimal? amount = root.TryGetProperty("added", out var a) && a.TryGetDecimal(out var d) ? d : null;
+            return (accountId, amount);
+        });
+        return result;
     }
 
     // GET /api/accounts/history  (payment history via payment-service)

@@ -103,6 +103,7 @@
          'NavalArchive.Catalog/' in (git_pull_result.stdout | default('')) or
          'NavalArchive.Inventory/' in (git_pull_result.stdout | default('')) or
          'NavalArchive.Basket/' in (git_pull_result.stdout | default('')) or
+         'NavalArchive.Messaging/' in (git_pull_result.stdout | default('')) or
          'NavalArchive.Order/' in (git_pull_result.stdout | default('')) or
          'NavalArchive.Payment/' in (git_pull_result.stdout | default('')) or
          'NavalArchive.Shipping/' in (git_pull_result.stdout | default('')) or

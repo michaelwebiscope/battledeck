@@ -1,0 +1,107 @@
+---
+# Publish Order + PaymentChain with MassTransit to the VM (syncs source from controller).
+- name: Deploy MassTransit Order and Payment to VM
+  hosts: navalansible
+  gather_facts: false
+  vars:
+    clone_path: C:\navalarchive-src
+    dotnet_dir: C:\Program Files\dotnet
+    order_path: C:\inetpub\navalarchive-order
+    payment_path: C:\inetpub\navalarchive-payment-chain
+    shipping_path: C:\inetpub\navalarchive-shipping
+    notification_path: C:\inetpub\navalarchive-notification
+  tasks:
+    - name: Sync NavalArchive.Messaging source
+      ansible.windows.win_copy:
+        src: "{{ playbook_dir }}/../../NavalArchive.Messaging/"
+        dest: "{{ clone_path }}\\NavalArchive.Messaging\\"
+
+    - name: Sync NavalArchive.Order source
+      ansible.windows.win_copy:
+        src: "{{ playbook_dir }}/../../NavalArchive.Order/"
+        dest: "{{ clone_path }}\\NavalArchive.Order\\"
+
+    - name: Sync NavalArchive.Payment source
+      ansible.windows.win_copy:
+        src: "{{ playbook_dir }}/../../NavalArchive.Payment/"
+        dest: "{{ clone_path }}\\NavalArchive.Payment\\"
+
+    - name: Sync NavalArchive.Shipping source
+      ansible.windows.win_copy:
+        src: "{{ playbook_dir }}/../../NavalArchive.Shipping/"
+        dest: "{{ clone_path }}\\NavalArchive.Shipping\\"
+
+    - name: Sync NavalArchive.Notification source
+      ansible.windows.win_copy:
+        src: "{{ playbook_dir }}/../../NavalArchive.Notification/"
+        dest: "{{ clone_path }}\\NavalArchive.Notification\\"
+
+    - name: Publish Order service
+      ansible.windows.win_shell: |
+        $ErrorActionPreference = 'Stop'
+        sc.exe stop NavalArchiveOrder 2>$null
+        Start-Sleep -Seconds 3
+        Push-Location "{{ clone_path }}\NavalArchive.Order"
+        & "{{ dotnet_dir }}\dotnet.exe" publish -c Release -r win-x64 --self-contained true -o "{{ order_path }}"
+        Pop-Location
+        sc.exe start NavalArchiveOrder
+      args:
+        executable: powershell
+      async: 600
+      poll: 15
+
+    - name: Publish PaymentChain service
+      ansible.windows.win_shell: |
+        $ErrorActionPreference = 'Stop'
+        sc.exe stop NavalArchivePaymentChain 2>$null
+        Start-Sleep -Seconds 3
+        Push-Location "{{ clone_path }}\NavalArchive.Payment"
+        & "{{ dotnet_dir }}\dotnet.exe" publish -c Release -r win-x64 --self-contained true -o "{{ payment_path }}"
+        Pop-Location
+        sc.exe start NavalArchivePaymentChain
+      args:
+        executable: powershell
+      async: 600
+      poll: 15
+
+    - name: Publish Shipping service
+      ansible.windows.win_shell: |
+        $ErrorActionPreference = 'Stop'
+        sc.exe stop NavalArchiveShipping 2>$null
+        Start-Sleep -Seconds 3
+        Push-Location "{{ clone_path }}\NavalArchive.Shipping"
+        & "{{ dotnet_dir }}\dotnet.exe" publish -c Release -r win-x64 --self-contained true -o "{{ shipping_path }}"
+        Pop-Location
+        sc.exe start NavalArchiveShipping
+      args:
+        executable: powershell
+      async: 600
+      poll: 15
+
+    - name: Publish Notification service
+      ansible.windows.win_shell: |
+        $ErrorActionPreference = 'Stop'
+        sc.exe stop NavalArchiveNotification 2>$null
+        Start-Sleep -Seconds 3
+        Push-Location "{{ clone_path }}\NavalArchive.Notification"
+        & "{{ dotnet_dir }}\dotnet.exe" publish -c Release -r win-x64 --self-contained true -o "{{ notification_path }}"
+        Pop-Location
+        sc.exe start NavalArchiveNotification
+      args:
+        executable: powershell
+      async: 600
+      poll: 15
+
+    - name: Test Order /trace publishes via RabbitMQ
+      ansible.windows.win_uri:
+        url: http://localhost:5016/trace
+        method: GET
+        timeout: 20
+        return_content: true
+      register: order_trace
+      retries: 5
+      delay: 10
+      until: order_trace.status_code | default(0) == 200
+
+    - ansible.builtin.debug:
+        msg: "Order /trace: {{ order_trace.content | default('no body') }}"

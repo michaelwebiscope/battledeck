@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\NavalArchive.Data\NavalArchive.Data.csproj" />
+    <ProjectReference Include="..\NavalArchive.Messaging\NavalArchive.Messaging.csproj" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="8.0.0" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.4" />
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="8.0.8" />

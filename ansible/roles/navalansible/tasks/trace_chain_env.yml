@@ -1,0 +1,65 @@
+---
+# MassTransit + HTTP trace chain env vars (Order → Payment → Shipping → Notification).
+# Safe to re-run after newrelic-dotnet-trace-chain.yml so RabbitMQ/NextService survive service restarts.
+
+- name: Set RabbitMQ connection env on Order and PaymentChain
+  ansible.windows.win_shell: |
+    $svc = "{{ item }}"
+    $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\$svc"
+    if (Test-Path $regPath) {
+      $existing = @()
+      $prop = Get-ItemProperty -Path $regPath -Name Environment -ErrorAction SilentlyContinue
+      if ($prop -and $prop.Environment) { $existing = @($prop.Environment) }
+      $rabbit = @(
+        "RabbitMQ__Host={{ rabbitmq_host }}",
+        "RabbitMQ__Username={{ rabbitmq_username }}",
+        "RabbitMQ__Password={{ rabbitmq_password }}",
+        "RabbitMQ__VirtualHost={{ rabbitmq_virtual_host }}"
+      )
+      $merged = @($existing | Where-Object { $_ -notmatch '^RabbitMQ__' }) + $rabbit
+      Set-ItemProperty -Path $regPath -Name Environment -Value $merged -Type MultiString -Force
+    }
+  args:
+    executable: powershell
+  loop:
+    - NavalArchiveOrder
+    - NavalArchivePaymentChain
+  when: rabbitmq_enabled | default(true) | bool
+
+- name: Set NextService URL for HTTP trace chain hops
+  ansible.windows.win_shell: |
+    $svc = "{{ item.svc }}"
+    $nextUrl = "{{ item.next_url }}"
+    $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\$svc"
+    if (Test-Path $regPath) {
+      $existing = @()
+      $prop = Get-ItemProperty -Path $regPath -Name Environment -ErrorAction SilentlyContinue
+      if ($prop -and $prop.Environment) { $existing = @($prop.Environment) }
+      $extra = @("NextService__Url=$nextUrl")
+      $merged = @($existing | Where-Object { $_ -notmatch '^NextService__Url=' }) + $extra
+      Set-ItemProperty -Path $regPath -Name Environment -Value $merged -Type MultiString -Force
+    }
+  args:
+    executable: powershell
+  loop:
+    - { svc: NavalArchivePaymentChain, next_url: "{{ trace_chain_next_urls.NavalArchivePaymentChain }}" }
+    - { svc: NavalArchiveShipping, next_url: "{{ trace_chain_next_urls.NavalArchiveShipping }}" }
+  loop_control:
+    label: "{{ item.svc }}"
+
+- name: Restart trace chain Windows services after env update
+  ansible.windows.win_shell: |
+    $svc = "{{ item }}"
+    if (Get-Service -Name $svc -ErrorAction SilentlyContinue) {
+      sc.exe stop $svc 2>$null
+      Start-Sleep -Seconds 2
+      sc.exe start $svc 2>$null
+    }
+  args:
+    executable: powershell
+  loop:
+    - NavalArchiveOrder
+    - NavalArchivePaymentChain
+    - NavalArchiveShipping
+    - NavalArchiveNotification
+  failed_when: false

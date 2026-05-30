@@ -1,0 +1,135 @@
+---
+# Install New Relic Agent Control (fleet-managed infra agent) on Windows.
+# Requires: agent_control_fleet_id, agent_control_org_id,
+#           agent_control_client_id, agent_control_client_secret (one-time from NR UI).
+
+- name: New Relic Agent Control
+  when:
+    - agent_control_enabled | default(false) | bool
+    - agent_control_fleet_id | default('') | length > 0
+    - agent_control_org_id | default('') | length > 0
+    - agent_control_client_id | default('') | length > 0
+    - agent_control_client_secret | default('') | length > 0
+  block:
+
+    - name: Check if Agent Control is already installed
+      ansible.windows.win_shell: |
+        $svc = Get-Service -Name newrelic-agent-control -ErrorAction SilentlyContinue
+        if ($svc -and $svc.Status -eq 'Running') {
+          try {
+            $r = Invoke-WebRequest -Uri 'http://localhost:51200/status' -UseBasicParsing -TimeoutSec 5
+            $j = $r.Content | ConvertFrom-Json
+            if ($j.agent_control.healthy -eq $true) { Write-Output "HEALTHY"; exit 0 }
+          } catch {}
+          Write-Output "RUNNING_UNHEALTHY"
+        } elseif ($svc) {
+          Write-Output "STOPPED"
+        } else {
+          Write-Output "NOT_INSTALLED"
+        }
+      args:
+        executable: powershell
+      register: ac_pre_check
+      changed_when: false
+
+    - name: Skip install when Agent Control is already healthy
+      ansible.builtin.debug:
+        msg: "Agent Control is already installed and healthy — skipping install."
+      when: "'HEALTHY' in ac_pre_check.stdout"
+
+    - name: Install Agent Control
+      when: "'HEALTHY' not in ac_pre_check.stdout"
+      block:
+
+        - name: Add Windows Defender exclusions for Agent Control
+          ansible.windows.win_shell: |
+            Add-MpExclusion -ExclusionPath 'C:\Program Files\New Relic\newrelic-agent-control\' -ErrorAction SilentlyContinue
+            Add-MpExclusion -ExclusionPath 'C:\ProgramData\New Relic\newrelic-agent-control\' -ErrorAction SilentlyContinue
+          args:
+            executable: powershell
+          ignore_errors: true
+
+        - name: Download Agent Control zip
+          ansible.windows.win_get_url:
+            url: "https://download.newrelic.com/preview/binaries/windows/amd64/newrelic-agent-control_{{ agent_control_version }}_windows_amd64.zip"
+            dest: 'C:\Windows\Temp\newrelic-agent-control-{{ agent_control_version }}.zip'
+            force: true
+
+        - name: Create Agent Control install directory
+          ansible.windows.win_file:
+            path: 'C:\Program Files\New Relic\newrelic-agent-control'
+            state: directory
+
+        - name: Extract Agent Control zip
+          community.windows.win_unzip:
+            src: 'C:\Windows\Temp\newrelic-agent-control-{{ agent_control_version }}.zip'
+            dest: 'C:\Program Files\New Relic\newrelic-agent-control'
+            creates: 'C:\Program Files\New Relic\newrelic-agent-control\newrelic-agent-control.exe'
+
+        - name: Stop existing Agent Control service if upgrading
+          ansible.windows.win_shell: |
+            $svc = Get-Service -Name newrelic-agent-control -ErrorAction SilentlyContinue
+            if ($svc) { Stop-Service -Name newrelic-agent-control -Force -ErrorAction SilentlyContinue; sc.exe delete newrelic-agent-control 2>$null }
+          args:
+            executable: powershell
+          when: "'STOPPED' in ac_pre_check.stdout or 'RUNNING_UNHEALTHY' in ac_pre_check.stdout"
+          ignore_errors: true
+
+        - name: Run bundled install.ps1 with fleet params
+          ansible.windows.win_shell: |
+            Set-Location 'C:\Program Files\New Relic\newrelic-agent-control'
+            & .\install.ps1 `
+              -FleetEnabled `
+              -LicenseKey '{{ newrelic_license_key }}' `
+              -FleetId '{{ agent_control_fleet_id }}' `
+              -OrganizationId '{{ agent_control_org_id }}' `
+              -AuthParentClientId '{{ agent_control_client_id }}' `
+              -AuthParentClientSecret '{{ agent_control_client_secret }}' `
+              -Region '{{ agent_control_region | default("us") }}' `
+              -ServiceOverwrite
+          args:
+            executable: powershell
+          async: 300
+          poll: 15
+          register: ac_install
+
+        - name: Show install output
+          ansible.builtin.debug:
+            msg: "{{ ac_install.stdout_lines | default([]) }}"
+
+    - name: Verify Agent Control is running
+      ansible.windows.win_shell: |
+        $retries = 12
+        for ($i = 0; $i -lt $retries; $i++) {
+          $svc = Get-Service -Name newrelic-agent-control -ErrorAction SilentlyContinue
+          if ($svc -and $svc.Status -eq 'Running') {
+            try {
+              $r = Invoke-WebRequest -Uri 'http://localhost:51200/status' -UseBasicParsing -TimeoutSec 5
+              $j = $r.Content | ConvertFrom-Json
+              if ($j.agent_control.healthy -eq $true) { Write-Output "HEALTHY"; exit 0 }
+            } catch {}
+          }
+          Start-Sleep -Seconds 10
+        }
+        Write-Output "NOT_HEALTHY"
+      args:
+        executable: powershell
+      register: ac_verify
+      changed_when: false
+
+    - name: Report Agent Control status
+      ansible.builtin.debug:
+        msg: >-
+          Agent Control: {{ ac_verify.stdout | trim }}.
+          Fleet ID: {{ agent_control_fleet_id }}.
+          Version: {{ agent_control_version }}.
+
+- name: Skip Agent Control — missing required variables
+  ansible.builtin.debug:
+    msg: >-
+      Agent Control install skipped. Set agent_control_enabled=true and provide
+      fleet_id, org_id, client_id, client_secret to enable.
+  when: >-
+    not (agent_control_enabled | default(false) | bool) or
+    agent_control_fleet_id | default('') | length == 0 or
+    agent_control_client_id | default('') | length == 0

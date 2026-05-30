@@ -1,0 +1,100 @@
+---
+- name: Finish RabbitMQ install on navalansible VM
+  hosts: navalansible
+  gather_facts: false
+  vars_files:
+    - ../roles/navalansible/vars/main.yml
+  tasks:
+    - name: Ensure RABBITMQ_BASE directory
+      ansible.windows.win_shell: |
+        $base = "{{ rabbitmq_base_dir }}"
+        New-Item -ItemType Directory -Force -Path $base, "$base\data", "$base\log" | Out-Null
+        [Environment]::SetEnvironmentVariable("RABBITMQ_BASE", $base, "Machine")
+      args:
+        executable: powershell
+
+    - name: Remove broken RabbitMQ Chocolatey package metadata
+      ansible.windows.win_shell: |
+        sc.exe stop RabbitMQ 2>$null
+        choco uninstall rabbitmq -y -n --skip-autouninstaller --force 2>$null
+        Remove-Item "C:\ProgramData\chocolatey\lib\rabbitmq" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item "C:\Program Files\RabbitMQ Server" -Recurse -Force -ErrorAction SilentlyContinue
+      args:
+        executable: powershell
+      failed_when: false
+
+    - name: Install RabbitMQ 3.13.7 (Chocolatey)
+      chocolatey.chocolatey.win_chocolatey:
+        name: rabbitmq
+        version: "{{ rabbitmq_chocolatey_version }}"
+        state: present
+        timeout: 7200
+
+    - name: Reinstall RabbitMQ Windows service with RABBITMQ_BASE
+      ansible.windows.win_shell: |
+        $ErrorActionPreference = 'Stop'
+        $base = '{{ rabbitmq_base_dir }}'
+        New-Item -ItemType Directory -Force -Path $base, "$base\data", "$base\log" | Out-Null
+        [Environment]::SetEnvironmentVariable('RABBITMQ_BASE', $base, 'Machine')
+        $serverDir = Get-ChildItem 'C:\Program Files\RabbitMQ Server' -Directory | Where-Object { $_.Name -like 'rabbitmq_server-*' } | Select-Object -First 1
+        if (-not $serverDir) { throw 'RabbitMQ server directory not found after install' }
+        $sbin = Join-Path $serverDir.FullName 'sbin'
+        & "$sbin\rabbitmq-service.bat" stop 2>$null
+        Start-Sleep 3
+        & "$sbin\rabbitmq-service.bat" remove 2>$null
+        & "$sbin\rabbitmq-service.bat" install
+        & "$sbin\rabbitmq-service.bat" start
+        Start-Sleep 20
+      args:
+        executable: powershell
+
+    - name: Enable management plugin
+      ansible.windows.win_shell: |
+        $plugins = Get-ChildItem "C:\Program Files\RabbitMQ Server" -Recurse -Filter rabbitmq-plugins.bat -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($plugins) { & $plugins.FullName enable rabbitmq_management }
+        Restart-Service RabbitMQ -ErrorAction SilentlyContinue
+      args:
+        executable: powershell
+      failed_when: false
+
+    - name: Wait for AMQP port 5672
+      ansible.windows.win_shell: |
+        for ($i = 0; $i -lt 40; $i++) {
+          if (Get-NetTCPConnection -LocalPort 5672 -State Listen -ErrorAction SilentlyContinue) {
+            Write-Output "ready"; exit 0
+          }
+          Start-Sleep -Seconds 3
+        }
+        throw "port 5672 not listening"
+      args:
+        executable: powershell
+      register: amqp_wait
+      retries: 2
+      delay: 15
+      until: amqp_wait.rc == 0
+
+    - name: Set RabbitMQ env vars on Order and PaymentChain
+      ansible.windows.win_shell: |
+        $svc = "{{ item }}"
+        $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\$svc"
+        if (Test-Path $regPath) {
+          $existing = @()
+          $prop = Get-ItemProperty -Path $regPath -Name Environment -ErrorAction SilentlyContinue
+          if ($prop -and $prop.Environment) { $existing = @($prop.Environment) }
+          $rabbit = @(
+            "RabbitMQ__Host={{ rabbitmq_host }}",
+            "RabbitMQ__Username={{ rabbitmq_username }}",
+            "RabbitMQ__Password={{ rabbitmq_password }}",
+            "RabbitMQ__VirtualHost={{ rabbitmq_virtual_host }}"
+          )
+          $merged = @($existing | Where-Object { $_ -notmatch '^RabbitMQ__' }) + $rabbit
+          Set-ItemProperty -Path $regPath -Name Environment -Value $merged -Type MultiString -Force
+          sc.exe stop $svc 2>$null
+          Start-Sleep -Seconds 2
+          sc.exe start $svc 2>$null
+        }
+      args:
+        executable: powershell
+      loop:
+        - NavalArchiveOrder
+        - NavalArchivePaymentChain

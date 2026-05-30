@@ -7,7 +7,11 @@
     <AssemblyName>NavalArchive.Order</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="MassTransit" Version="8.3.4" />
+    <PackageReference Include="MassTransit.RabbitMQ" Version="8.3.4" />
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\NavalArchive.Messaging\NavalArchive.Messaging.csproj" />
   </ItemGroup>
 </Project>

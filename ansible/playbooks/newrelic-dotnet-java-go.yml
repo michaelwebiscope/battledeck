@@ -3,8 +3,9 @@
 #   1. newrelic-infra — infrastructure, logs, .NET APM (newrelic_install)
 #   2. newrelic-java — ImagePopulator + Java agent
 #   3. newrelic-go — account-service + payment-service
-#   4. newrelic-otel — OTEL auto-instrumentation on Card, Cart, Order, PaymentChain, Shipping, Notification
-#   5. newrelic-node — Node.js APM (NavalArchiveWeb) + browser/RUM via getBrowserTimingHeader() in head.ejs
+#   4. newrelic-dotnet-trace-chain — NR .NET APM on API + Gateway–Notification trace chain
+#   5. newrelic-otel — OTEL auto-instrumentation on Card + Cart only
+#   6. newrelic-node — Node.js APM (NavalArchiveWeb) + browser/RUM via getBrowserTimingHeader() in head.ejs
 #
 # Does not run newrelic-app.yml.
 #
@@ -18,5 +19,7 @@
 - ansible.builtin.import_playbook: newrelic-infra.yml
 - ansible.builtin.import_playbook: newrelic-java.yml
 - ansible.builtin.import_playbook: newrelic-go.yml
+- ansible.builtin.import_playbook: newrelic-dotnet-trace-chain.yml
 - ansible.builtin.import_playbook: newrelic-otel.yml
 - ansible.builtin.import_playbook: newrelic-node.yml
+- ansible.builtin.import_playbook: post-deploy-tracing.yml

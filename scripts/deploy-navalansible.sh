@@ -77,7 +77,7 @@ while [ $# -gt 0 ]; do
     -h|--help)
       echo "Usage: ./scripts/deploy-navalansible.sh [-fullrun] [-newrelic] [-newrelic-only] [-skip-services] [-go-only] [-skip-winrm-check] [-monolithic]"
       echo "  (no NR flags)    deploy only: site.yml (or -go-only) — no observability playbooks"
-      echo "  -fullrun         after site (or -go-only), run full New Relic: infra+logs+.NET → java → go → otel → node"
+      echo "  -fullrun         after site (or -go-only), run full New Relic + OTEL trace observer + MassTransit verify"
       echo "  -newrelic        New Relic only: same full NR stack as -fullrun, but skip site/go deploy"
       echo "  -newrelic-only   NR app layer only (java → go → otel → node), no infra reinstall — ~2 min"
       echo "  -skip-services   skip services.yml (faster repeated deploys)"
@@ -199,13 +199,25 @@ PG_APP_PASSWORD=$(read_tfvar_any "pg_app_password")
 MSSQL_SA_PASSWORD=$(read_tfvar_any "mssql_sa_password")
 NEWRELIC_TRACE_OBSERVER_HOST=$(read_tfvar_any "newrelic_trace_observer_host")
 NEWRELIC_TRACE_OBSERVER_PORT=$(read_tfvar_any "newrelic_trace_observer_port")
+RABBITMQ_HOST=$(read_tfvar_any "rabbitmq_host")
+RABBITMQ_USERNAME=$(read_tfvar_any "rabbitmq_username")
+RABBITMQ_PASSWORD=$(read_tfvar_any "rabbitmq_password")
+RABBITMQ_VIRTUAL_HOST=$(read_tfvar_any "rabbitmq_virtual_host")
 
-export API_DATABASE_PROVIDER API_CONN_MAIN API_CONN_LOGS API_REDIS_CONFIGURATION API_REDIS_INSTANCE_NAME API_DYNAMICLISTS_DB_MODE PG_APP_PASSWORD MSSQL_SA_PASSWORD NEWRELIC_TRACE_OBSERVER_HOST NEWRELIC_TRACE_OBSERVER_PORT
+export API_DATABASE_PROVIDER API_CONN_MAIN API_CONN_LOGS API_REDIS_CONFIGURATION API_REDIS_INSTANCE_NAME API_DYNAMICLISTS_DB_MODE PG_APP_PASSWORD MSSQL_SA_PASSWORD NEWRELIC_TRACE_OBSERVER_HOST NEWRELIC_TRACE_OBSERVER_PORT RABBITMQ_HOST RABBITMQ_USERNAME RABBITMQ_PASSWORD RABBITMQ_VIRTUAL_HOST
 
 # newrelic_postgres_monitor_password is read only when running New Relic infra (-newrelic / -fullrun); never passed to site.yml
 NEWRELIC_POSTGRES_MONITOR_PASSWORD=$(read_tfvar_any "newrelic_postgres_monitor_password")
 NEWRELIC_MSSQL_MONITOR_PASSWORD=$(read_tfvar_any "newrelic_mssql_monitor_password")
 NEWRELIC_MSSQL_PORT=$(read_tfvar_any "newrelic_mssql_port")
+
+# Agent Control (fleet-managed infra agent). fleet_id and org_id are stable; client creds are one-time from NR UI.
+[ -n "$AGENT_CONTROL_ENABLED" ] || AGENT_CONTROL_ENABLED=$(read_tfvar_any "agent_control_enabled")
+[ -n "$AGENT_CONTROL_FLEET_ID" ] || AGENT_CONTROL_FLEET_ID=$(read_tfvar_any "agent_control_fleet_id")
+[ -n "$AGENT_CONTROL_ORG_ID" ] || AGENT_CONTROL_ORG_ID=$(read_tfvar_any "agent_control_org_id")
+[ -n "$AGENT_CONTROL_CLIENT_ID" ] || AGENT_CONTROL_CLIENT_ID=$(read_tfvar_any "agent_control_client_id")
+[ -n "$AGENT_CONTROL_CLIENT_SECRET" ] || AGENT_CONTROL_CLIENT_SECRET=$(read_tfvar_any "agent_control_client_secret")
+[ -n "$AGENT_CONTROL_VERSION" ] || AGENT_CONTROL_VERSION=$(read_tfvar_any "agent_control_version")
 
 API_EXTRAVARS_JSON=$("$PYTHON_FOR_ANSIBLE" - <<'PY'
 import json, os
@@ -224,6 +236,10 @@ put("api_redis_instance_name", os.environ.get("API_REDIS_INSTANCE_NAME"))
 put("api_dynamiclists_db_mode", os.environ.get("API_DYNAMICLISTS_DB_MODE"))
 put("newrelic_trace_observer_host", os.environ.get("NEWRELIC_TRACE_OBSERVER_HOST"))
 put("newrelic_trace_observer_port", os.environ.get("NEWRELIC_TRACE_OBSERVER_PORT"))
+put("rabbitmq_host", os.environ.get("RABBITMQ_HOST"))
+put("rabbitmq_username", os.environ.get("RABBITMQ_USERNAME"))
+put("rabbitmq_password", os.environ.get("RABBITMQ_PASSWORD"))
+put("rabbitmq_virtual_host", os.environ.get("RABBITMQ_VIRTUAL_HOST"))
 print(json.dumps(d))
 PY
 )
@@ -261,17 +277,18 @@ elif [ "$GO_ONLY" = true ]; then
   echo "=== 2. Ansible playbook (Go binaries only - ~2 min) ==="
   run_ansible playbooks/go-binaries-only.yml "${SITE_ARGS[@]}"
 elif [ "$STAGED" = true ]; then
-  echo "=== 2. Staged Ansible deploy (13 short WinRM sessions — default) ==="
+  echo "=== 2. Staged Ansible deploy (14 short WinRM sessions — default) ==="
   STAGE_PLAYBOOKS=(
     playbooks/stages/01-runtime.yml
-    playbooks/stages/02-postgres-install.yml
-    playbooks/stages/03-postgres-config.yml
+    playbooks/stages/02-mssql-install.yml
+    playbooks/stages/03-mssql-config.yml
     playbooks/stages/04-stop_services.yml
     playbooks/stages/05-clone.yml
     playbooks/stages/06-build.yml
     playbooks/stages/07-deploy.yml
     playbooks/stages/08-iis.yml
     playbooks/stages/09-services.yml
+    playbooks/stages/09b-rabbitmq.yml
     playbooks/stages/10-populate.yml
     playbooks/stages/11-firewall.yml
     playbooks/stages/12-scheduled_task.yml
@@ -285,6 +302,29 @@ else
   echo "=== 2. Ansible playbook (single session — deploy Naval Archive - ~45-60 min) ==="
   run_ansible playbooks/site.yml "${SITE_ARGS[@]}"
 fi
+
+# Helper: build Agent Control JSON extra-vars (shared by -newrelic and -fullrun)
+build_agent_control_json() {
+  "$PYTHON_FOR_ANSIBLE" -c "
+import json, os
+d = {}
+def put(k, v):
+    v = (v or '').strip()
+    if v: d[k] = v
+put('agent_control_enabled', os.environ.get('AGENT_CONTROL_ENABLED'))
+put('agent_control_fleet_id', os.environ.get('AGENT_CONTROL_FLEET_ID'))
+put('agent_control_org_id', os.environ.get('AGENT_CONTROL_ORG_ID'))
+put('agent_control_client_id', os.environ.get('AGENT_CONTROL_CLIENT_ID'))
+put('agent_control_client_secret', os.environ.get('AGENT_CONTROL_CLIENT_SECRET'))
+put('agent_control_version', os.environ.get('AGENT_CONTROL_VERSION'))
+print(json.dumps(d))
+" AGENT_CONTROL_ENABLED="$AGENT_CONTROL_ENABLED" \
+  AGENT_CONTROL_FLEET_ID="$AGENT_CONTROL_FLEET_ID" \
+  AGENT_CONTROL_ORG_ID="$AGENT_CONTROL_ORG_ID" \
+  AGENT_CONTROL_CLIENT_ID="$AGENT_CONTROL_CLIENT_ID" \
+  AGENT_CONTROL_CLIENT_SECRET="$AGENT_CONTROL_CLIENT_SECRET" \
+  AGENT_CONTROL_VERSION="$AGENT_CONTROL_VERSION"
+}
 
 # --- New Relic ---
 if [ "$NEWRELIC_STANDALONE" = true ]; then
@@ -319,10 +359,12 @@ sa=(os.environ.get('MSSQL_SA_PASSWORD') or '').strip()
 if sa: d['mssql_sa_password']=sa
 print(json.dumps(d))" NEWRELIC_MSSQL_MONITOR_PASSWORD="$NEWRELIC_MSSQL_MONITOR_PASSWORD" NEWRELIC_MSSQL_PORT="$NEWRELIC_MSSQL_PORT" MSSQL_SA_PASSWORD="$MSSQL_SA_PASSWORD")
   [ "$NR_MSSQL_JSON" != "{}" ] && NR_ARGS+=( -e "$NR_MSSQL_JSON" )
+  NR_AC_JSON=$(build_agent_control_json)
+  [ "$NR_AC_JSON" != "{}" ] && NR_ARGS+=( -e "$NR_AC_JSON" )
   "$PYTHON_FOR_ANSIBLE" -m ansible playbook playbooks/newrelic-dotnet-java-go.yml "${NR_ARGS[@]}"
 
 elif [ "$NEWRELIC_APP_ONLY" = true ]; then
-  echo "=== 3. New Relic app layer only (java → go → otel → node) ==="
+  echo "=== 3. New Relic app layer (java → go → otel → node → trace chain verify) ==="
   [ -n "$NEWRELIC_LICENSE_KEY" ] || NEWRELIC_LICENSE_KEY=$(read_tfvar_any "newrelic_license_key")
   if [ -z "$NEWRELIC_LICENSE_KEY" ]; then
     echo "ERROR: newrelic_license_key is required for -newrelic-only."
@@ -342,7 +384,7 @@ elif [ "$NEWRELIC_APP_ONLY" = true ]; then
   "$PYTHON_FOR_ANSIBLE" -m ansible playbook playbooks/newrelic-app.yml "${NR_ARGS[@]}"
 
 elif [ "$FULLRUN" = true ]; then
-  echo "=== 3. New Relic full stack (infra + logs + .NET → java → go → otel → node) ==="
+  echo "=== 3. New Relic full stack (infra + logs + .NET → java → go → otel → node → trace chain verify) ==="
   [ -n "$NEWRELIC_LICENSE_KEY" ] || NEWRELIC_LICENSE_KEY=$(read_tfvar_any "newrelic_license_key")
   [ -n "$NEWRELIC_API_KEY" ] || NEWRELIC_API_KEY=$(read_tfvar_any "newrelic_api_key")
   [ -n "$NEWRELIC_ACCOUNT_ID" ] || NEWRELIC_ACCOUNT_ID=$(read_tfvar_any "newrelic_account_id")
@@ -373,6 +415,8 @@ sa=(os.environ.get('MSSQL_SA_PASSWORD') or '').strip()
 if sa: d['mssql_sa_password']=sa
 print(json.dumps(d))" NEWRELIC_MSSQL_MONITOR_PASSWORD="$NEWRELIC_MSSQL_MONITOR_PASSWORD" NEWRELIC_MSSQL_PORT="$NEWRELIC_MSSQL_PORT" MSSQL_SA_PASSWORD="$MSSQL_SA_PASSWORD")
   [ "$NR_MSSQL_JSON" != "{}" ] && NR_ARGS+=( -e "$NR_MSSQL_JSON" )
+  NR_AC_JSON=$(build_agent_control_json)
+  [ "$NR_AC_JSON" != "{}" ] && NR_ARGS+=( -e "$NR_AC_JSON" )
   "$PYTHON_FOR_ANSIBLE" -m ansible playbook playbooks/newrelic-dotnet-java-go.yml "${NR_ARGS[@]}"
 fi
 

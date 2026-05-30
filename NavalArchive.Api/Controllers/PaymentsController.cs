@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using NavalArchive.Api.Services;
 
 namespace NavalArchive.Api.Controllers;
 
@@ -8,11 +9,13 @@ public class PaymentsController : ControllerBase
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _config;
+    private readonly WalletTracePublisher _walletTrace;
 
-    public PaymentsController(IHttpClientFactory httpClientFactory, IConfiguration config)
+    public PaymentsController(IHttpClientFactory httpClientFactory, IConfiguration config, WalletTracePublisher walletTrace)
     {
         _httpClientFactory = httpClientFactory;
         _config = config;
+        _walletTrace = walletTrace;
     }
 
     [HttpPost("simulate")]
@@ -36,7 +39,17 @@ public class PaymentsController : ControllerBase
                 paymentMethodToken = request.PaymentMethodToken
             });
             var body = await response.Content.ReadAsStringAsync();
-            return new ContentResult { Content = body, ContentType = "application/json", StatusCode = (int)response.StatusCode };
+            var result = new ContentResult { Content = body, ContentType = "application/json", StatusCode = (int)response.StatusCode };
+            if (response.IsSuccessStatusCode)
+            {
+                _walletTrace.TriggerIfSuccess(result, "payment.completed", root =>
+                {
+                    var txId = root.TryGetProperty("transactionId", out var t) ? t.GetString() : null;
+                    decimal? amount = request.Amount;
+                    return (txId, amount);
+                });
+            }
+            return result;
         }
         catch (HttpRequestException)
         {

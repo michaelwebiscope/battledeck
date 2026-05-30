@@ -1,8 +1,8 @@
-using System.Diagnostics;
+using NavalArchive.Messaging;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseWindowsService();
-builder.Services.AddHttpClient();
+builder.Services.AddTraceChainHttpClient();
 
 var app = builder.Build();
 var nextUrl = builder.Configuration["NextService:Url"] ?? "http://localhost:5012";
@@ -10,7 +10,6 @@ var nextUrl = builder.Configuration["NextService:Url"] ?? "http://localhost:5012
 app.MapGet("/health", () => Results.Ok(new { service = "Auth", status = "ok" }));
 app.MapGet("/trace", async (IHttpClientFactory http) =>
 {
-    using var activity = new Activity("Auth.Validate").Start();
     var client = http.CreateClient();
     var res = await client.GetAsync($"{nextUrl}/trace");
     var body = await res.Content.ReadAsStringAsync();

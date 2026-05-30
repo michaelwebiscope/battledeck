@@ -9,19 +9,22 @@ vm_size              = "Standard_B2s"
 restrict_to_my_ip    = true
 allowed_ip           = ""  # Override if auto-detect fails
 
+# --- New Relic APM ---
+# newrelic_license_key = ""
+# newrelic_api_key     = ""
+# newrelic_account_id  = ""
+
 # --- New Relic Infinite Tracing (Trace Observer) ---
-# Read by scripts/deploy-navalansible.sh and passed into Ansible.
-# newrelic_trace_observer_host = "2488764c-f48e-4517-9f59-984b4399e623.aws-us-east-1.tracing.edge.nr-data.net"
-# newrelic_trace_observer_port = "443"
+# newrelic_trace_observer_host = "xxxx.aws-us-east-1.tracing.edge.nr-data.net"
+# newrelic_trace_observer_port = "4318"
 
-# --- Demo DB/Cache settings (OPTIONAL) ---
-# These are passed into Ansible to configure the API (IIS) at deploy time.
-# WARNING: tfvars is plaintext. For real environments use a secret store.
-
-# api_database_provider = "Sqlite"   # or "PostgreSQL" / "SqlServer"
+# --- Database: SQL Server Express (default) ---
+# The deploy installs SQL Server Express and creates navalarchive + navalarchive_logs databases.
+api_database_provider = "SqlServer"
+mssql_sa_password     = "YourSaPassword123!"  # SQL Server Express install (mixed mode auth)
+# api_conn_main and api_conn_logs are auto-generated when empty; override only if using a remote DB:
 # api_conn_main = "Server=localhost\\SQLEXPRESS;Database=navalarchive;User Id=navalarchive;Password=...;TrustServerCertificate=True;Encrypt=False"
 # api_conn_logs = "Server=localhost\\SQLEXPRESS;Database=navalarchive_logs;User Id=navalarchive;Password=...;TrustServerCertificate=True;Encrypt=False"
-# mssql_sa_password = "YourSaPassword123!"  # SQL Server Express install (mixed mode)
 
 # Redis is optional: if omitted/empty, API uses in-memory distributed cache for sessions.
 # api_redis_configuration = "host:6379,password=..."
@@ -30,13 +33,29 @@ allowed_ip           = ""  # Override if auto-detect fails
 # Dynamic lists DB-query mode (rollout flag)
 # api_dynamiclists_db_mode = "true"
 
-# New Relic PostgreSQL on-host integration (optional, legacy): DB user new_relic + postgresql-config.yml.
-# Applied only when you run deploy with -newrelic or -fullrun (New Relic infra playbook), not on a normal site deploy.
-# newrelic_postgres_monitor_password = "generate-a-strong-password"  # creates PG role new_relic + nri-postgresql config
-
-# New Relic Microsoft SQL Server on-host integration (optional): login new_relic + mssql-config.yml.
+# --- New Relic SQL Server on-host integration (nri-mssql) ---
+# Applied when you run deploy with -newrelic or -fullrun.
 # newrelic_mssql_monitor_password = "generate-a-strong-password"
 # newrelic_mssql_hostname = "navalansible-vm"
 # newrelic_mssql_endpoint = "navalansible-vm"
-# newrelic_mssql_port = "55295"  # optional; auto-discovered from registry when empty
-# newrelic_mssql_query_monitoring = true  # Query Store + QPM (requires VIEW DATABASE STATE)
+# newrelic_mssql_port = ""  # auto-discovered from registry when empty
+# newrelic_mssql_query_monitoring = true
+
+# --- New Relic Agent Control (Fleet-managed infra agent) ---
+# Set agent_control_enabled = "true" to install Agent Control instead of the standalone infra agent.
+# fleet_id and org_id are stable — store them here.
+# client_id and client_secret are one-time tokens from NR Fleet Control UI — pass at deploy time
+# via env vars: AGENT_CONTROL_CLIENT_ID / AGENT_CONTROL_CLIENT_SECRET
+# --- RabbitMQ (MassTransit Order → PaymentChain on VM) ---
+# rabbitmq_host = "127.0.0.1"
+# rabbitmq_username = "guest"
+# rabbitmq_password = "guest"
+# rabbitmq_virtual_host = "/"
+
+# agent_control_enabled    = "true"
+# agent_control_fleet_id   = "Nzg0OTI0M3x..."
+# agent_control_org_id     = "ad831fe3-..."
+# agent_control_version    = "1.14.0"
+
+# --- Legacy PostgreSQL (disabled by default) ---
+# newrelic_postgres_monitor_password = ""  # leave empty to skip PG integration
